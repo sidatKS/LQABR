@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment & secrets — never commit these
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+service-account*.json
+gcp-credentials*.json
+
+# GCP / gcloud local state
+.gcloud/
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+.nyc_output/
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Turborepo / build cache
+.turbo/
+.cache/
