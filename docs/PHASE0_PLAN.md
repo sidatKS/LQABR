@@ -101,6 +101,9 @@ All scripts live in `infra/gcp/`. Configure `config.sh` first, then run in seque
 
 ## Config Checklist (`infra/gcp/config.sh`)
 
+> **Haven't set up your local environment yet?** See `docs/PREREQUISITES.md` first — it covers CLI installation, GCP project setup, billing, IAM roles, and authentication before you touch config.sh.
+
+
 - [ ] `PROJECT_ID` — your GCP project ID
 - [ ] `REGION` — BigQuery multi-region (US / EU) or single region (us-central1, asia-south1 …)
 - [ ] `TAXONOMY_REGION` — lowercase version of region (us, eu, us-central1 …)

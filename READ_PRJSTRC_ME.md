@@ -154,7 +154,8 @@ Human-authored project documentation. Not auto-generated.
 |---|---|
 | `docs/adr/` | Architecture Decision Records — one Markdown file per decision. `001-biglake-architecture.md` documents the BigLake-over-native-BQ decision. Format: context → decision → consequences. |
 | `docs/api/` | OpenAPI 3.x specifications for the API gateway's public surface. Source of truth for contract testing and SDK generation. |
-| `docs/PHASE0_PLAN.md` | Phase 0 project plan — objective, BigLake architecture diagram, run order table, config checklist, verification queries, and next-phase handoff. Start here before running `infra/gcp/` scripts. |
+| `docs/PREREQUISITES.md` | Step-by-step setup guide — GCP project creation, billing, IAM roles, CLI tooling install, authentication, `config.sh` walkthrough, smoke tests, and common error fixes. **Start here first.** |
+| `docs/PHASE0_PLAN.md` | Phase 0 project plan — objective, BigLake architecture diagram, run order table, config checklist, verification queries, and next-phase handoff. Read after PREREQUISITES.md. |
 | `docs/example-queries.sql` | Reference SQL queries demonstrating how agents and developers consume the sandbox views (`vw_lead_masked`, `vw_company`). Not executed by any application — documentation only. |
 
 ---
