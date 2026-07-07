@@ -1,0 +1,2640 @@
+{
+  "summary": {
+    "decision_makers_seen": 263,
+    "profiles_built": 263,
+    "unresolved": 0
+  },
+  "profiles": [
+    {
+      "employee_id": "E00002",
+      "company_id": "C0123",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "9.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00005",
+      "company_id": "C0408",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "1.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00007",
+      "company_id": "C0177",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "91.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00009",
+      "company_id": "C0389",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "33.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00012",
+      "company_id": "C0290",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "4.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00018",
+      "company_id": "C0584",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "9.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00019",
+      "company_id": "C0463",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "3.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00020",
+      "company_id": "C0438",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "1.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00022",
+      "company_id": "C0095",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "7.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00023",
+      "company_id": "C0525",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "4.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00029",
+      "company_id": "C0058",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00033",
+      "company_id": "C0681",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "100.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00036",
+      "company_id": "C0712",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "2.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00038",
+      "company_id": "C0678",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "38.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00041",
+      "company_id": "C0378",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "2.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00042",
+      "company_id": "C0596",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "7.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00060",
+      "company_id": "C0199",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "7.8",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00063",
+      "company_id": "C0323",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "25.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00064",
+      "company_id": "C0725",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "33.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00065",
+      "company_id": "C0692",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00070",
+      "company_id": "C0396",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "5.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00076",
+      "company_id": "C0449",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00077",
+      "company_id": "C0411",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "6.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00084",
+      "company_id": "C0086",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00088",
+      "company_id": "C0540",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "2.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00089",
+      "company_id": "C0334",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "15.0",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00095",
+      "company_id": "C0473",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "2.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00097",
+      "company_id": "C0436",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "19.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00104",
+      "company_id": "C0014",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "128.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00105",
+      "company_id": "C0460",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "5.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00106",
+      "company_id": "C0568",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "41.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00109",
+      "company_id": "C0521",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00121",
+      "company_id": "C0498",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "1.5",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00128",
+      "company_id": "C0385",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "3.6",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00130",
+      "company_id": "C0083",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "17.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00131",
+      "company_id": "C0495",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "25.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00132",
+      "company_id": "C0173",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00133",
+      "company_id": "C0501",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "10.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00138",
+      "company_id": "C0385",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "3.6",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00140",
+      "company_id": "C0351",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00142",
+      "company_id": "C0609",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "9.9",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00145",
+      "company_id": "C0418",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "5.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00146",
+      "company_id": "C0087",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "3.3",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00155",
+      "company_id": "C0131",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "31.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00157",
+      "company_id": "C0295",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "42.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00167",
+      "company_id": "C0132",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00169",
+      "company_id": "C0401",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "6.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00170",
+      "company_id": "C0005",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "8.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00177",
+      "company_id": "C0358",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "23.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00192",
+      "company_id": "C0153",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "31.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00203",
+      "company_id": "C0081",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "10.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00207",
+      "company_id": "C0345",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "9.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00210",
+      "company_id": "C0431",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "1.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00211",
+      "company_id": "C0170",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "7.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00226",
+      "company_id": "C0183",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "3.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00230",
+      "company_id": "C0043",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "1.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00240",
+      "company_id": "C0638",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "3.9",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00243",
+      "company_id": "C0061",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "9.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00244",
+      "company_id": "C0331",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "2.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00252",
+      "company_id": "C0025",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00255",
+      "company_id": "C0519",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "9.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00261",
+      "company_id": "C0491",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "9.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00262",
+      "company_id": "C0484",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "3.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00263",
+      "company_id": "C0344",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "7.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00270",
+      "company_id": "C0151",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "8.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00271",
+      "company_id": "C0674",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "104.6",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00274",
+      "company_id": "C0057",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "9.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00275",
+      "company_id": "C0627",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "1.3",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00276",
+      "company_id": "C0288",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "23.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00279",
+      "company_id": "C0384",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "4.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00281",
+      "company_id": "C0725",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "33.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00288",
+      "company_id": "C0111",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00292",
+      "company_id": "C0324",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "135.3",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00294",
+      "company_id": "C0430",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "12.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00295",
+      "company_id": "C0109",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "7.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00296",
+      "company_id": "C0358",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "23.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00300",
+      "company_id": "C0685",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "35.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00308",
+      "company_id": "C0118",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "38.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00312",
+      "company_id": "C0357",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "2.8",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00321",
+      "company_id": "C0404",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "13.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00328",
+      "company_id": "C0034",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "34.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00329",
+      "company_id": "C0547",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "6.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00332",
+      "company_id": "C0013",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "1.0",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00336",
+      "company_id": "C0303",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "4.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00340",
+      "company_id": "C0465",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "8.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00342",
+      "company_id": "C0707",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "8.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00344",
+      "company_id": "C0498",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "1.5",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00346",
+      "company_id": "C0497",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "1.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00349",
+      "company_id": "C0155",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00350",
+      "company_id": "C0464",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "40.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00351",
+      "company_id": "C0619",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "161.2",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00354",
+      "company_id": "C0478",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00356",
+      "company_id": "C0244",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "8.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00359",
+      "company_id": "C0579",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "9.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00361",
+      "company_id": "C0049",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "25.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00365",
+      "company_id": "C0599",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "6.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00366",
+      "company_id": "C0485",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00371",
+      "company_id": "C0056",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "166.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00373",
+      "company_id": "C0301",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "1.2",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00376",
+      "company_id": "C0431",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "1.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00377",
+      "company_id": "C0718",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "7.8",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00390",
+      "company_id": "C0463",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "3.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00393",
+      "company_id": "C0502",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "2.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00395",
+      "company_id": "C0638",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "3.9",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00404",
+      "company_id": "C0043",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "1.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00409",
+      "company_id": "C0711",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "13.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00419",
+      "company_id": "C0404",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "13.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00423",
+      "company_id": "C0456",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "21.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00424",
+      "company_id": "C0146",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "31.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00431",
+      "company_id": "C0364",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "5.5",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00439",
+      "company_id": "C0732",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "7.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00442",
+      "company_id": "C0198",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "7.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00446",
+      "company_id": "C0580",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "16.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00448",
+      "company_id": "C0249",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "1.3",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00449",
+      "company_id": "C0556",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "2.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00454",
+      "company_id": "C0219",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "140.0",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00456",
+      "company_id": "C0566",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "7.5",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00458",
+      "company_id": "C0550",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "4.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00459",
+      "company_id": "C0697",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "17.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00467",
+      "company_id": "C0704",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "5.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00474",
+      "company_id": "C0728",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "2.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00480",
+      "company_id": "C0149",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00484",
+      "company_id": "C0305",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "3.7",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00487",
+      "company_id": "C0634",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "3.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00489",
+      "company_id": "C0533",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "7.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00492",
+      "company_id": "C0300",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "5.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00494",
+      "company_id": "C0451",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "8.4",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00496",
+      "company_id": "C0014",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "128.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00497",
+      "company_id": "C0329",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "117.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00501",
+      "company_id": "C0033",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "144.9",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00505",
+      "company_id": "C0213",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "9.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00506",
+      "company_id": "C0231",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "1.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00515",
+      "company_id": "C0218",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "6.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00520",
+      "company_id": "C0119",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00522",
+      "company_id": "C0590",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "8.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00526",
+      "company_id": "C0480",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "7.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00532",
+      "company_id": "C0270",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "1.2",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00534",
+      "company_id": "C0308",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "4.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00541",
+      "company_id": "C0057",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "9.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00543",
+      "company_id": "C0669",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "30.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00544",
+      "company_id": "C0504",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "6.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00548",
+      "company_id": "C0528",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "42.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00555",
+      "company_id": "C0344",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "7.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00574",
+      "company_id": "C0181",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "3.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00578",
+      "company_id": "C0373",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "9.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00579",
+      "company_id": "C0351",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00580",
+      "company_id": "C0658",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00584",
+      "company_id": "C0446",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "2.5",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00590",
+      "company_id": "C0202",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "5.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00595",
+      "company_id": "C0273",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "9.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00597",
+      "company_id": "C0665",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "5.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00599",
+      "company_id": "C0348",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "3.0",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00600",
+      "company_id": "C0307",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "30.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00603",
+      "company_id": "C0672",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "3.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00604",
+      "company_id": "C0734",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "116.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00609",
+      "company_id": "C0324",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "135.3",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00610",
+      "company_id": "C0177",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "91.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00615",
+      "company_id": "C0211",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "7.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00623",
+      "company_id": "C0189",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "5.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00624",
+      "company_id": "C0183",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "3.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00626",
+      "company_id": "C0309",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "8.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00627",
+      "company_id": "C0703",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "30.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00636",
+      "company_id": "C0400",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "5.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00639",
+      "company_id": "C0224",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "19.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00646",
+      "company_id": "C0651",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "9.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00653",
+      "company_id": "C0205",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "3.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00654",
+      "company_id": "C0704",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "5.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00655",
+      "company_id": "C0415",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00657",
+      "company_id": "C0200",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "8.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00658",
+      "company_id": "C0728",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "2.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00661",
+      "company_id": "C0432",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "9.2",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00662",
+      "company_id": "C0040",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "4.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00671",
+      "company_id": "C0011",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "42.4",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00674",
+      "company_id": "C0049",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "25.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00679",
+      "company_id": "C0250",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "8.2",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00681",
+      "company_id": "C0377",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00682",
+      "company_id": "C0620",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "3.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00685",
+      "company_id": "C0570",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "3.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00688",
+      "company_id": "C0240",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "8.8",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00690",
+      "company_id": "C0192",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "34.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00691",
+      "company_id": "C0392",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "9.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00693",
+      "company_id": "C0149",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00697",
+      "company_id": "C0120",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "8.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00706",
+      "company_id": "C0611",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "5.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00709",
+      "company_id": "C0420",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "1.5",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00713",
+      "company_id": "C0302",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "4.0",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00721",
+      "company_id": "C0615",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "44.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00724",
+      "company_id": "C0398",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "5.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00733",
+      "company_id": "C0590",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "8.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00738",
+      "company_id": "C0549",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "19.1",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00739",
+      "company_id": "C0407",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "8.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00742",
+      "company_id": "C0117",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "8.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00744",
+      "company_id": "C0107",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "8.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00748",
+      "company_id": "C0658",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00749",
+      "company_id": "C0387",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "34.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00756",
+      "company_id": "C0016",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "3.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00763",
+      "company_id": "C0443",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "7.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00771",
+      "company_id": "C0217",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "5.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00776",
+      "company_id": "C0658",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "4.6",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00778",
+      "company_id": "C0606",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "3.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00779",
+      "company_id": "C0613",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "6.0",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00781",
+      "company_id": "C0411",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "6.4",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00784",
+      "company_id": "C0224",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "19.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00792",
+      "company_id": "C0114",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "1.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00794",
+      "company_id": "C0105",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Mining, metals & minerals",
+      "annual_revenue_m": "2.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00800",
+      "company_id": "C0724",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "34.6",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00803",
+      "company_id": "C0419",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00810",
+      "company_id": "C0624",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "16.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00816",
+      "company_id": "C0248",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "3.3",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00820",
+      "company_id": "C0566",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "7.5",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00821",
+      "company_id": "C0221",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "7.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00823",
+      "company_id": "C0400",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "5.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00824",
+      "company_id": "C0329",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "117.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00825",
+      "company_id": "C0628",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "2.8",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00828",
+      "company_id": "C0486",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "7.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00832",
+      "company_id": "C0727",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "6.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00837",
+      "company_id": "C0239",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "5.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00839",
+      "company_id": "C0502",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "2.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00840",
+      "company_id": "C0170",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "7.3",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00843",
+      "company_id": "C0049",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "25.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00844",
+      "company_id": "C0442",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "3.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00846",
+      "company_id": "C0381",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00847",
+      "company_id": "C0399",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "14.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00849",
+      "company_id": "C0123",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "9.4",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00850",
+      "company_id": "C0503",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "34.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00853",
+      "company_id": "C0629",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "4.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00856",
+      "company_id": "C0488",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "28.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00860",
+      "company_id": "C0445",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "4.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00862",
+      "company_id": "C0041",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "13.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00868",
+      "company_id": "C0130",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "4.4",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00869",
+      "company_id": "C0521",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "6.9",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00874",
+      "company_id": "C0718",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "7.8",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00883",
+      "company_id": "C0451",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "8.4",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00884",
+      "company_id": "C0106",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "8.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00885",
+      "company_id": "C0468",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "7.3",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00886",
+      "company_id": "C0587",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "9.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00891",
+      "company_id": "C0436",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "19.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00894",
+      "company_id": "C0498",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Aerospace",
+      "annual_revenue_m": "1.5",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00898",
+      "company_id": "C0279",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "7.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00902",
+      "company_id": "C0460",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "5.0",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00906",
+      "company_id": "C0378",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "2.6",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00918",
+      "company_id": "C0445",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "4.2",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00919",
+      "company_id": "C0577",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "176.5",
+      "frequency_of_purchase": "Occasionally"
+    },
+    {
+      "employee_id": "E00921",
+      "company_id": "C0267",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "31.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00927",
+      "company_id": "C0103",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "2.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00931",
+      "company_id": "C0615",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "44.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00935",
+      "company_id": "C0373",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "9.8",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00939",
+      "company_id": "C0590",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "8.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00944",
+      "company_id": "C0478",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00945",
+      "company_id": "C0211",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "7.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00950",
+      "company_id": "C0152",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "2.0",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00951",
+      "company_id": "C0701",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Food & beverage",
+      "annual_revenue_m": "23.6",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00957",
+      "company_id": "C0715",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Yearly"
+    },
+    {
+      "employee_id": "E00959",
+      "company_id": "C0200",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Buildings",
+      "annual_revenue_m": "8.9",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00960",
+      "company_id": "C0590",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "8.5",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00964",
+      "company_id": "C0602",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Oil & gas",
+      "annual_revenue_m": "6.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00967",
+      "company_id": "C0143",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Healthcare",
+      "annual_revenue_m": "12.7",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00970",
+      "company_id": "C0430",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Space",
+      "annual_revenue_m": "12.3",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00971",
+      "company_id": "C0381",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Residential",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00973",
+      "company_id": "C0340",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Utilities",
+      "annual_revenue_m": "1.1",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00986",
+      "company_id": "C0168",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Machine building",
+      "annual_revenue_m": "3.2",
+      "frequency_of_purchase": "Quarterly"
+    },
+    {
+      "employee_id": "E00989",
+      "company_id": "C0419",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Data centres",
+      "annual_revenue_m": "5.1",
+      "frequency_of_purchase": "Monthly"
+    },
+    {
+      "employee_id": "E00992",
+      "company_id": "C0207",
+      "decision_maker_flag": "Yes",
+      "email": "svktekninjas@gmail.com",
+      "phone": "415-238-0082",
+      "industry": "Vehicles",
+      "annual_revenue_m": "7.7",
+      "frequency_of_purchase": "Monthly"
+    }
+  ],
+  "unresolved": []
+}
