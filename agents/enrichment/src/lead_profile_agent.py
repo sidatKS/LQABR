@@ -40,9 +40,10 @@ Convention notes (see CLAUDE.md):
     flagged with a reason ("bad-data") and returned separately, not skipped.
 
 Field contract: every record in the tool's "profiles" list — and therefore
-every lead the agent reports — always has exactly these 8 fields, sourced
+every lead the agent reports — always has exactly these 9 fields, sourced
 from the three-way CSV join: employee_id, company_id, decision_maker_flag,
-email, phone, industry, annual_revenue_m, frequency_of_purchase.
+job_title, email, phone, industry, annual_revenue_m, frequency_of_purchase.
+job_title, email, and phone all come from employee_contacts_5234.csv.
 
 Model selection is config-driven (LQABR_ENRICHMENT_MODEL env var) rather than
 hard-coded, per §5 ("never add agent- or model-specific logic into the
@@ -76,6 +77,7 @@ class LeadProfile:
     employee_id: str
     company_id: str
     decision_maker_flag: str
+    job_title: Optional[str]
     email: Optional[str]
     phone: Optional[str]
     industry: Optional[str]
@@ -147,11 +149,11 @@ class LeadProfileAgent:
     def run(self) -> EnrichmentResult:
         employees = _read_csv(
             self.employees_csv,
-            ("Employee_ID", "Company_ID", "Decision_Maker_Flag"),
+            ("Employee_ID", "Company_ID", "Job_Title", "Decision_Maker_Flag"),
         )
         contacts = _read_csv(
             self.contacts_csv,
-            ("Employee_ID", "Company_ID", "Email", "Phone"),
+            ("Employee_ID", "Company_ID", "Job_Title", "Email", "Phone"),
         )
         companies = _read_csv(
             self.companies_csv,
@@ -197,6 +199,7 @@ class LeadProfileAgent:
                     employee_id=employee_id,
                     company_id=company_id,
                     decision_maker_flag=row["Decision_Maker_Flag"],
+                    job_title=contact.get("Job_Title") or None,
                     email=contact.get("Email") or None,
                     phone=contact.get("Phone") or None,
                     industry=company.get("Industry") or None,
@@ -256,10 +259,11 @@ def build_lead_profiles(
     """Build enriched lead profiles for decision-maker contacts.
 
     Joins the employee export (Employee_ID, Company_ID, Decision_Maker_Flag)
-    with the contact export (Email, Phone) and the company export (Industry,
-    Annual_Revenue, Frequency_of_Purchase) into one denormalised profile per
-    qualifying contact. Records that can't be fully joined are returned
-    separately as `unresolved` with a reason — never silently dropped.
+    with the contact export (Job_Title, Email, Phone) and the company export
+    (Industry, Annual_Revenue, Frequency_of_Purchase) into one denormalised
+    profile per qualifying contact. Records that can't be fully joined are
+    returned separately as `unresolved` with a reason — never silently
+    dropped.
 
     Args:
         decision_maker_value: Value Decision_Maker_Flag must match
@@ -279,14 +283,16 @@ def build_lead_profiles(
         file or required column), returns {"error": "<message>"} instead
         of raising, so a bad call never crashes the agent run.
 
-        Every item in "profiles" always has exactly these 8 fields:
-        employee_id, company_id, decision_maker_flag, email, phone,
-        industry, annual_revenue_m, frequency_of_purchase. For example:
+        Every item in "profiles" always has exactly these 9 fields:
+        employee_id, company_id, decision_maker_flag, job_title, email,
+        phone, industry, annual_revenue_m, frequency_of_purchase. For
+        example:
         {
           "employee_id": "E00002", "company_id": "C0123",
-          "decision_maker_flag": "Yes", "email": "svktekninjas@gmail.com",
-          "phone": "415-238-0082", "industry": "Oil & gas",
-          "annual_revenue_m": "9.4", "frequency_of_purchase": "Quarterly"
+          "decision_maker_flag": "Yes", "job_title": "Strategic Buyer",
+          "email": "svktekninjas@gmail.com", "phone": "415-238-0082",
+          "industry": "Oil & gas", "annual_revenue_m": "9.4",
+          "frequency_of_purchase": "Quarterly"
         }
     """
     try:
@@ -321,9 +327,10 @@ root_agent = Agent(
         "the user specifies a different flag value or source files.\n\n"
         "Your final response MUST include the full `profiles` list returned "
         "by the tool, rendered as JSON, with every record kept exactly as "
-        "returned — same 8 fields, same values, nothing summarized, "
+        "returned — same 9 fields, same values, nothing summarized, "
         "reworded, or dropped: employee_id, company_id, decision_maker_flag, "
-        "email, phone, industry, annual_revenue_m, frequency_of_purchase. "
+        "job_title, email, phone, industry, annual_revenue_m, "
+        "frequency_of_purchase. "
         "Do not paraphrase field values or invent/omit any of them. If the "
         "result set is very large, you may say so and offer to page or "
         "filter it, but never silently truncate without telling the user.\n\n"

@@ -49,3 +49,6 @@ logs/
 # Turborepo / build cache
 .turbo/
 .cache/
+
+# ADK local dev artifacts (session store written by `adk web` / `adk run`)
+.adk/

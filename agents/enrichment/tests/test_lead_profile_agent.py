@@ -42,22 +42,22 @@ def seed_files(tmp_path: Path):
     _write_csv(
         employees,
         [
-            {"Employee_ID": "E1", "Company_ID": "C1", "Decision_Maker_Flag": "Yes"},
-            {"Employee_ID": "E2", "Company_ID": "C1", "Decision_Maker_Flag": "No"},
-            {"Employee_ID": "E3", "Company_ID": "C2", "Decision_Maker_Flag": "yes"},  # case-insensitive
-            {"Employee_ID": "E4", "Company_ID": "C3", "Decision_Maker_Flag": "Yes"},  # missing company
-            {"Employee_ID": "E5", "Company_ID": "C1", "Decision_Maker_Flag": "Yes"},  # missing contact
+            {"Employee_ID": "E1", "Company_ID": "C1", "Job_Title": "Marketing Specialist", "Decision_Maker_Flag": "Yes"},
+            {"Employee_ID": "E2", "Company_ID": "C1", "Job_Title": "Analyst", "Decision_Maker_Flag": "No"},
+            {"Employee_ID": "E3", "Company_ID": "C2", "Job_Title": "Strategic Buyer", "Decision_Maker_Flag": "yes"},  # case-insensitive
+            {"Employee_ID": "E4", "Company_ID": "C3", "Job_Title": "Procurement Lead", "Decision_Maker_Flag": "Yes"},  # missing company
+            {"Employee_ID": "E5", "Company_ID": "C1", "Job_Title": "Ops Manager", "Decision_Maker_Flag": "Yes"},  # missing contact
         ],
-        ["Employee_ID", "Company_ID", "Decision_Maker_Flag"],
+        ["Employee_ID", "Company_ID", "Job_Title", "Decision_Maker_Flag"],
     )
 
     _write_csv(
         contacts,
         [
-            {"Employee_ID": "E1", "Company_ID": "C1", "Email": "e1@x.com", "Phone": "111"},
-            {"Employee_ID": "E3", "Company_ID": "C2", "Email": "e3@x.com", "Phone": "333"},
+            {"Employee_ID": "E1", "Company_ID": "C1", "Job_Title": "Marketing Specialist", "Email": "e1@x.com", "Phone": "111"},
+            {"Employee_ID": "E3", "Company_ID": "C2", "Job_Title": "Strategic Buyer", "Email": "e3@x.com", "Phone": "333"},
         ],
-        ["Employee_ID", "Company_ID", "Email", "Phone"],
+        ["Employee_ID", "Company_ID", "Job_Title", "Email", "Phone"],
     )
 
     _write_csv(
@@ -90,6 +90,7 @@ def test_happy_path_join_fields(seed_files):
     employees, contacts, companies = seed_files
     result = LeadProfileAgent(employees, contacts, companies).run()
     e1 = next(p for p in result.profiles if p.employee_id == "E1")
+    assert e1.job_title == "Marketing Specialist"
     assert e1.email == "e1@x.com"
     assert e1.phone == "111"
     assert e1.industry == "Healthcare"
@@ -161,6 +162,7 @@ REQUIRED_PROFILE_FIELDS = (
     "employee_id",
     "company_id",
     "decision_maker_flag",
+    "job_title",
     "email",
     "phone",
     "industry",
@@ -188,6 +190,7 @@ def test_adk_wrapper_returns_exact_field_contract(seed_files):
         "employee_id": "E1",
         "company_id": "C1",
         "decision_maker_flag": "Yes",
+        "job_title": "Marketing Specialist",
         "email": "e1@x.com",
         "phone": "111",
         "industry": "Healthcare",
