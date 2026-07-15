@@ -1,3 +1,0 @@
-# agents/enrichment — Lead Profile Agent (Google ADK)
-# Pinned to the version this agent was built and tested against.
-google-adk==2.3.0

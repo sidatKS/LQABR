@@ -52,3 +52,6 @@ logs/
 
 # ADK local dev artifacts (session store written by `adk web` / `adk run`)
 .adk/
+
+# Pytest
+.pytest_cache/

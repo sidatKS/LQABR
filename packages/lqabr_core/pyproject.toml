@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lqabr-core"
+version = "0.1.0"
+description = "LQABR shared core: lead profile types, probability engine, Secret Manager access, CRM (HubSpot) adapter."
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+gcp = ["google-cloud-secret-manager>=2.20"]
+test = ["pytest>=8", "responses>=0.25"]
+
+[tool.setuptools.packages.find]
+include = ["lqabr_core*"]

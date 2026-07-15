@@ -1,0 +1,19 @@
+# Cloud Build config used by 05_deploy_agents.sh. Substitutions:
+#   _AGENT  agent directory name (e.g. email)
+#   _KIND   agent | webhook
+#   _IMAGE  full image tag to push
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/gcp/cloud-run/Dockerfile
+      - --build-arg
+      - AGENT_DIR=${_AGENT}
+      - --build-arg
+      - SERVICE_KIND=${_KIND}
+      - -t
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
