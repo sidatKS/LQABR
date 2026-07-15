@@ -69,4 +69,4 @@ def get_secret(secret_name: str, project_id: Optional[str] = None) -> str:
         response = client.access_secret_version(request={"name": name})
     except Exception as exc:  # noqa: BLE001
         raise SecretNotFoundError(f"Secret Manager lookup failed for '{secret_name}': {exc}") from exc
-    return re
+    return response.payload.data.decode("utf-8")
