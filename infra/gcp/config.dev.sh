@@ -33,7 +33,7 @@ export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 # Same NAMES as prod; the VALUES differ and live only in this
 # project's Secret Manager. Set them via 02_secret_manager.sh.
 export LQABR_SECRETS=(
-  lqabr-google-api-key
+  lqabr-anthropic-api-key
   lqabr-hubspot-access-token
   lqabr-mailgun-api-key
   lqabr-mailgun-webhook-signing-key
