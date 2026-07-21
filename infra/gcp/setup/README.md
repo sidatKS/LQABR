@@ -14,7 +14,7 @@ way. Dev scripts are run with `source ./config.dev.sh` (not `config.sh`).
 | 00 | [00-enable-apis.md](00-enable-apis.md) | `00_enable_apis.sh` | done (2026-07-21) |
 | 01 | [01-service-accounts.md](01-service-accounts.md) | `01_service_accounts.sh` | done (2026-07-21, SA `lqabr-agent-dev`) |
 | 02 | [02-secret-manager.md](02-secret-manager.md) | `02_secret_manager.sh` | done (2026-07-21, 6/12 populated; zoom/zoominfo parked) |
-| Access | [access-developer-group.md](access-developer-group.md) | dev group IAM grant | pending (secretmanager.viewer + accessor on dev) |
+| Access | [access-developer-group.md](access-developer-group.md) | dev group IAM grant | done (2026-07-21, ai2d@ + secretmanager.viewer/accessor) |
 | 03 | [03-pubsub.md](03-pubsub.md) | `03_pubsub.sh` | pending |
 | 04 | [04-hubspot-properties.md](04-hubspot-properties.md) | `04_hubspot_properties.py` | pending (HubSpot token present) |
 | 05 | [05-deploy-agents.md](05-deploy-agents.md) | `05_deploy_agents.sh` | pending (needs Anthropic model code change) |
