@@ -1,49 +1,57 @@
+#!/usr/bin/env bash
 # ============================================================
-# config.sh — single source of configuration for the whole kit
-# Edit the CHANGE ME values, then: source ./config.sh
+# config.sh — single source of truth for every infra script.
+# Edit ONCE, then `source ./config.sh` before running any script.
+# Do not hardcode values in individual scripts.
 # ============================================================
 
-# --- GCP target ---
+# ── GCP Project ──────────────────────────────────────────────
 export PROJECT_ID="your-gcp-project-id"          # CHANGE ME
-export REGION="US"                                # BigQuery location: US | EU | asia-south1 ...
-export TAXONOMY_REGION="us"                       # Data Catalog region (lowercase): us | eu | ...
+export REGION="us-central1"                      # CHANGE ME if needed
 
-# --- GCS data lake (BigLake architecture: files live here, never loaded into BQ raw tables) ---
-export BUCKET_NAME="${PROJECT_ID}-lead-qual-lake" # CHANGE ME if you want a custom name
-export BUCKET_LOCATION="US"                       # match REGION above
-export GCS_RAW_PREFIX="raw/b2b"                   # gs://${BUCKET_NAME}/${GCS_RAW_PREFIX}/...
+# ── Service accounts ─────────────────────────────────────────
+export AGENT_SA_NAME="lqabr-agent-runtime"
+export AGENT_SA="${AGENT_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
-# --- BigLake connection (bridges BQ external tables → GCS) ---
-export BIGLAKE_CONNECTION="lead-qual-biglake"     # connection display name
-export BIGLAKE_REGION="us"                        # lowercase; matches REGION
+# ── Artifact Registry ────────────────────────────────────────
+export AR_REPO="lqabr"
+export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 
-# --- Layered BQ datasets (raw is now GCS — only 3 BQ datasets needed) ---
-export DS_CLEANSED="cleansed_b2b"                  # reserved for future ETL transforms
-export DS_CURATED="curated_b2b"                    # modeled source-of-truth the agents read
-export DS_SANDBOX="sandbox_b2b"                    # masked authorized views devs consume
-# External tables (pointing at GCS) are created in DS_CURATED as staging inputs
-export DS_EXTERNAL="curated_b2b"                   # same dataset — external + curated live together
+# ── Secret Manager secret names (one per service credential) ─
+# Values are set in 02_secret_manager.sh; agents read them via
+# lqabr_core.secrets (env override locally, --set-secrets on Cloud Run).
+export LQABR_SECRETS=(
+  lqabr-google-api-key
+  lqabr-hubspot-access-token
+  lqabr-mailgun-api-key
+  lqabr-mailgun-webhook-signing-key
+  lqabr-twilio-account-sid
+  lqabr-twilio-auth-token
+  lqabr-zoominfo-username
+  lqabr-zoominfo-password
+  lqabr-zoom-account-id
+  lqabr-zoom-client-id
+  lqabr-zoom-client-secret
+  lqabr-zoom-webhook-secret-token
+)
 
-# --- Tenancy stamp applied to every curated row ---
-export CLIENT_ID="demo-client-01"                 # this dataset's owning client
-export SOURCE_SYSTEM="kaggle_synthetic_b2b"       # where it originated
+# ── Pub/Sub topics ───────────────────────────────────────────
+export TOPIC_INGESTION="lqabr-ingestion-trigger"
+export TOPIC_ENGAGEMENT="lqabr-engagement-events"
 
-# --- Local data location (seed CSVs in data/seeds/b2b — mirrors GCS raw/b2b/ structure) ---
-export DATA_DIR="../../data/seeds/b2b"
+# ── Cloud Run services ───────────────────────────────────────
+# ADK agents (adk api_server):    lqabr-<agent>-agent
+# Webhook apps (uvicorn/FastAPI): lqabr-<agent>-webhook
+export ADK_AGENTS=(ingestion lead_profile email text_voice scheduling orchestrator)
+export WEBHOOK_AGENTS=(email text_voice scheduling)
 
-# --- Access principals — swap group: for user: bindings if you skip Google Groups ---
-# Example user binding: "user:you@gmail.com"
-# Example group binding: "group:data-eng@yourco.com"
-export GROUP_DATAENG="user:your-email@example.com"      # CHANGE ME — write access to curated
-export GROUP_APPDEV="user:your-email@example.com"       # CHANGE ME — read masked sandbox only
-export GROUP_PII_VIEWERS="user:your-email@example.com"  # CHANGE ME — may read unmasked PII
+# ── Non-secret runtime config passed to services ─────────────
+export MAILGUN_DOMAIN="mg.yourdomain.com"        # CHANGE ME
+export MAILGUN_FROM="LQABR Outreach <outreach@${MAILGUN_DOMAIN}>"
+export TWILIO_FROM_NUMBER="+15551234567"         # CHANGE ME
+export LQABR_SENDER_NAME="Your Name"             # CHANGE ME
+export LQABR_CTA_URL="https://yourdomain.com/overview"
+# Optional fixed Zoom booking page (else the Scheduler API is queried):
+export ZOOM_BOOKING_URL=""
 
-# --- Agent runtime identity (NOT a person) ---
-export SA_NAME="lead-agent-runtime"
-export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-
-# --- Policy tag taxonomy ---
-export TAXONOMY_NAME="data-governance"
-export POLICY_TAG_PII="pii-contact"               # tag guarding Email/Phone/Name
-
-echo "Config loaded for project: ${PROJECT_ID} | bucket: gs://${BUCKET_NAME} | region: ${REGION}"
+echo "config: project=${PROJECT_ID} region=${REGION} sa=${AGENT_SA}"

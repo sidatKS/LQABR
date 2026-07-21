@@ -1,0 +1,264 @@
+employee_id,company_id,decision_maker_flag,job_title,email,phone,industry,annual_revenue_m,frequency_of_purchase
+E00002,C0123,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Oil & gas,9.4,Quarterly
+E00005,C0408,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,1.1,Yearly
+E00007,C0177,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,91.4,Monthly
+E00009,C0389,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Utilities,33.3,Monthly
+E00012,C0290,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Residential,4.8,Monthly
+E00018,C0584,Yes,Brand Manager,svktekninjas@gmail.com,415-238-0082,Space,9.4,Monthly
+E00019,C0463,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Data centres,3.9,Quarterly
+E00020,C0438,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Residential,1.1,Yearly
+E00022,C0095,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Healthcare,7.6,Monthly
+E00023,C0525,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Buildings,4.7,Yearly
+E00029,C0058,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Oil & gas,6.7,Occasionally
+E00033,C0681,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Oil & gas,100.0,Monthly
+E00036,C0712,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,Aerospace,2.2,Monthly
+E00038,C0678,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Space,38.7,Monthly
+E00041,C0378,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,Vehicles,2.6,Quarterly
+E00042,C0596,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Space,7.9,Monthly
+E00060,C0199,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,7.8,Yearly
+E00063,C0323,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Data centres,25.7,Monthly
+E00064,C0725,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Oil & gas,33.7,Monthly
+E00065,C0692,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Machine building,2.1,Yearly
+E00070,C0396,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Buildings,5.8,Quarterly
+E00076,C0449,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,4.6,Quarterly
+E00077,C0411,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Aerospace,6.4,Monthly
+E00084,C0086,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.8,Quarterly
+E00088,C0540,Yes,Brand Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,2.3,Quarterly
+E00089,C0334,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Buildings,15.0,Quarterly
+E00095,C0473,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",2.7,Yearly
+E00097,C0436,Yes,Operations Analyst,svktekninjas@gmail.com,415-238-0082,Utilities,19.1,Quarterly
+E00104,C0014,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Machine building,128.1,Monthly
+E00105,C0460,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Utilities,5.0,Yearly
+E00106,C0568,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Buildings,41.7,Monthly
+E00109,C0521,Yes,Quality Assurance Lead,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.9,Quarterly
+E00121,C0498,Yes,Plant Supervisor,svktekninjas@gmail.com,415-238-0082,Aerospace,1.5,Quarterly
+E00128,C0385,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Machine building,3.6,Occasionally
+E00130,C0083,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Food & beverage,17.2,Quarterly
+E00131,C0495,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Data centres,25.4,Monthly
+E00132,C0173,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.2,Monthly
+E00133,C0501,Yes,Electrical Engineer,svktekninjas@gmail.com,415-238-0082,Utilities,10.9,Monthly
+E00138,C0385,Yes,Marketing Specialist,svktekninjas@gmail.com,415-238-0082,Machine building,3.6,Occasionally
+E00140,C0351,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Utilities,4.6,Monthly
+E00142,C0609,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Oil & gas,9.9,Yearly
+E00145,C0418,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,5.3,Monthly
+E00146,C0087,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Residential,3.3,Occasionally
+E00155,C0131,Yes,Plant Supervisor,svktekninjas@gmail.com,415-238-0082,Data centres,31.0,Monthly
+E00157,C0295,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Buildings,42.8,Monthly
+E00167,C0132,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Utilities,2.1,Quarterly
+E00169,C0401,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,6.4,Monthly
+E00170,C0005,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,8.3,Quarterly
+E00177,C0358,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Space,23.4,Monthly
+E00192,C0153,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Utilities,31.1,Monthly
+E00203,C0081,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Data centres,10.0,Yearly
+E00207,C0345,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Aerospace,9.3,Quarterly
+E00210,C0431,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Vehicles,1.4,Quarterly
+E00211,C0170,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Utilities,7.3,Quarterly
+E00226,C0183,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Vehicles,3.8,Monthly
+E00230,C0043,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Oil & gas,1.6,Monthly
+E00240,C0638,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",3.9,Yearly
+E00243,C0061,Yes,Growth Marketer,svktekninjas@gmail.com,415-238-0082,Aerospace,9.6,Quarterly
+E00244,C0331,Yes,Infrastructure Engineer,svktekninjas@gmail.com,415-238-0082,Utilities,2.3,Monthly
+E00252,C0025,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.7,Monthly
+E00255,C0519,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,9.7,Monthly
+E00261,C0491,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Food & beverage,9.8,Monthly
+E00262,C0484,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,3.4,Monthly
+E00263,C0344,Yes,Quality Assurance Lead,svktekninjas@gmail.com,415-238-0082,Buildings,7.7,Monthly
+E00270,C0151,Yes,Operations Analyst,svktekninjas@gmail.com,415-238-0082,Vehicles,8.8,Quarterly
+E00271,C0674,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Residential,104.6,Yearly
+E00274,C0057,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,9.1,Quarterly
+E00275,C0627,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,1.3,Occasionally
+E00276,C0288,Yes,Marketing Specialist,svktekninjas@gmail.com,415-238-0082,Oil & gas,23.6,Monthly
+E00279,C0384,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Aerospace,4.8,Monthly
+E00281,C0725,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Oil & gas,33.7,Monthly
+E00288,C0111,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Buildings,2.1,Monthly
+E00292,C0324,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Space,135.3,Occasionally
+E00294,C0430,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Space,12.3,Monthly
+E00295,C0109,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Vehicles,7.1,Yearly
+E00296,C0358,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Space,23.4,Monthly
+E00300,C0685,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,35.3,Quarterly
+E00308,C0118,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Vehicles,38.3,Monthly
+E00312,C0357,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Aerospace,2.8,Yearly
+E00321,C0404,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Residential,13.6,Monthly
+E00328,C0034,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",34.8,Quarterly
+E00329,C0547,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Utilities,6.1,Quarterly
+E00332,C0013,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Residential,1.0,Quarterly
+E00336,C0303,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,4.0,Yearly
+E00340,C0465,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Healthcare,8.8,Quarterly
+E00342,C0707,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Aerospace,8.7,Monthly
+E00344,C0498,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Aerospace,1.5,Quarterly
+E00346,C0497,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Space,1.2,Monthly
+E00349,C0155,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Data centres,6.7,Yearly
+E00350,C0464,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Utilities,40.1,Monthly
+E00351,C0619,Yes,Electrical Engineer,svktekninjas@gmail.com,415-238-0082,Healthcare,161.2,Yearly
+E00354,C0478,Yes,Electrical Engineer,svktekninjas@gmail.com,415-238-0082,Machine building,5.1,Monthly
+E00356,C0244,Yes,Quality Assurance Lead,svktekninjas@gmail.com,415-238-0082,Data centres,8.9,Quarterly
+E00359,C0579,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Buildings,9.4,Quarterly
+E00361,C0049,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Space,25.0,Yearly
+E00365,C0599,Yes,Marketing Specialist,svktekninjas@gmail.com,415-238-0082,Machine building,6.4,Monthly
+E00366,C0485,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Utilities,2.1,Monthly
+E00371,C0056,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Data centres,166.9,Monthly
+E00373,C0301,Yes,Marketing Specialist,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",1.2,Occasionally
+E00376,C0431,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,1.4,Quarterly
+E00377,C0718,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Residential,7.8,Yearly
+E00390,C0463,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Data centres,3.9,Quarterly
+E00393,C0502,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Residential,2.6,Monthly
+E00395,C0638,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",3.9,Yearly
+E00404,C0043,Yes,Operations Analyst,svktekninjas@gmail.com,415-238-0082,Oil & gas,1.6,Monthly
+E00409,C0711,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",13.6,Monthly
+E00419,C0404,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Residential,13.6,Monthly
+E00423,C0456,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,Data centres,21.0,Monthly
+E00424,C0146,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Machine building,31.2,Monthly
+E00431,C0364,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,5.5,Yearly
+E00439,C0732,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Utilities,7.5,Monthly
+E00442,C0198,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",7.9,Monthly
+E00446,C0580,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Buildings,16.2,Monthly
+E00448,C0249,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Residential,1.3,Yearly
+E00449,C0556,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Aerospace,2.8,Monthly
+E00454,C0219,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Machine building,140.0,Occasionally
+E00456,C0566,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Residential,7.5,Yearly
+E00458,C0550,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Utilities,4.3,Quarterly
+E00459,C0697,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,17.3,Quarterly
+E00467,C0704,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Food & beverage,5.8,Quarterly
+E00474,C0728,Yes,Process Engineer,svktekninjas@gmail.com,415-238-0082,Healthcare,2.3,Monthly
+E00480,C0149,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.2,Quarterly
+E00484,C0305,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Aerospace,3.7,Quarterly
+E00487,C0634,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,Oil & gas,3.3,Monthly
+E00489,C0533,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",7.6,Quarterly
+E00492,C0300,Yes,Software Developer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",5.9,Quarterly
+E00494,C0451,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Healthcare,8.4,Occasionally
+E00496,C0014,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Machine building,128.1,Monthly
+E00497,C0329,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,117.6,Monthly
+E00501,C0033,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Aerospace,144.9,Yearly
+E00505,C0213,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",9.5,Monthly
+E00506,C0231,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",1.2,Quarterly
+E00515,C0218,Yes,Quality Assurance Lead,svktekninjas@gmail.com,415-238-0082,Machine building,6.2,Quarterly
+E00520,C0119,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Aerospace,6.7,Monthly
+E00522,C0590,Yes,Brand Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,8.5,Monthly
+E00526,C0480,Yes,Plant Supervisor,svktekninjas@gmail.com,415-238-0082,Data centres,7.1,Quarterly
+E00532,C0270,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",1.2,Yearly
+E00534,C0308,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",4.9,Monthly
+E00541,C0057,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Food & beverage,9.1,Quarterly
+E00543,C0669,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Space,30.9,Monthly
+E00544,C0504,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Space,6.4,Quarterly
+E00548,C0528,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Utilities,42.2,Quarterly
+E00555,C0344,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Buildings,7.7,Monthly
+E00574,C0181,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Buildings,3.1,Yearly
+E00578,C0373,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Utilities,9.8,Monthly
+E00579,C0351,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Utilities,4.6,Monthly
+E00580,C0658,Yes,Infrastructure Engineer,svktekninjas@gmail.com,415-238-0082,Food & beverage,4.6,Yearly
+E00584,C0446,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Aerospace,2.5,Yearly
+E00590,C0202,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,5.9,Monthly
+E00595,C0273,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",9.2,Monthly
+E00597,C0665,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,5.9,Monthly
+E00599,C0348,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Machine building,3.0,Quarterly
+E00600,C0307,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,Food & beverage,30.1,Quarterly
+E00603,C0672,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Buildings,3.4,Quarterly
+E00604,C0734,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",116.6,Quarterly
+E00609,C0324,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Space,135.3,Occasionally
+E00610,C0177,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Food & beverage,91.4,Monthly
+E00615,C0211,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Vehicles,7.2,Quarterly
+E00623,C0189,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Oil & gas,5.9,Monthly
+E00624,C0183,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Vehicles,3.8,Monthly
+E00626,C0309,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",8.6,Monthly
+E00627,C0703,Yes,Systems Engineer,svktekninjas@gmail.com,415-238-0082,Healthcare,30.8,Quarterly
+E00636,C0400,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Machine building,5.2,Quarterly
+E00639,C0224,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,19.4,Quarterly
+E00646,C0651,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Space,9.0,Yearly
+E00653,C0205,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Utilities,3.4,Quarterly
+E00654,C0704,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Food & beverage,5.8,Quarterly
+E00655,C0415,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Buildings,2.1,Monthly
+E00657,C0200,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Buildings,8.9,Monthly
+E00658,C0728,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Healthcare,2.3,Monthly
+E00661,C0432,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Healthcare,9.2,Yearly
+E00662,C0040,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Data centres,4.0,Monthly
+E00671,C0011,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Data centres,42.4,Yearly
+E00674,C0049,Yes,Plant Supervisor,svktekninjas@gmail.com,415-238-0082,Space,25.0,Yearly
+E00679,C0250,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Buildings,8.2,Yearly
+E00681,C0377,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Utilities,4.6,Quarterly
+E00682,C0620,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",3.1,Quarterly
+E00685,C0570,Yes,Process Engineer,svktekninjas@gmail.com,415-238-0082,Data centres,3.6,Quarterly
+E00688,C0240,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Aerospace,8.8,Yearly
+E00690,C0192,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Machine building,34.0,Monthly
+E00691,C0392,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Machine building,9.2,Monthly
+E00693,C0149,Yes,Systems Engineer,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.2,Quarterly
+E00697,C0120,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Healthcare,8.7,Yearly
+E00706,C0611,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Machine building,5.7,Monthly
+E00709,C0420,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,1.5,Quarterly
+E00713,C0302,Yes,QA Technician,svktekninjas@gmail.com,415-238-0082,Residential,4.0,Quarterly
+E00721,C0615,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Machine building,44.7,Monthly
+E00724,C0398,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Utilities,5.7,Monthly
+E00733,C0590,Yes,Growth Marketer,svktekninjas@gmail.com,415-238-0082,Vehicles,8.5,Monthly
+E00738,C0549,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,19.1,Yearly
+E00739,C0407,Yes,Network Engineer,svktekninjas@gmail.com,415-238-0082,Aerospace,8.3,Monthly
+E00742,C0117,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Food & beverage,8.9,Quarterly
+E00744,C0107,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Utilities,8.6,Quarterly
+E00748,C0658,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Food & beverage,4.6,Yearly
+E00749,C0387,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Food & beverage,34.6,Monthly
+E00756,C0016,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Machine building,3.3,Monthly
+E00763,C0443,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Food & beverage,7.0,Yearly
+E00771,C0217,Yes,Operations Analyst,svktekninjas@gmail.com,415-238-0082,Food & beverage,5.7,Monthly
+E00776,C0658,Yes,Operations Director,svktekninjas@gmail.com,415-238-0082,Food & beverage,4.6,Yearly
+E00778,C0606,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",3.9,Quarterly
+E00779,C0613,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Aerospace,6.0,Occasionally
+E00781,C0411,Yes,Software Developer,svktekninjas@gmail.com,415-238-0082,Aerospace,6.4,Monthly
+E00784,C0224,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Oil & gas,19.4,Quarterly
+E00792,C0114,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Data centres,1.8,Quarterly
+E00794,C0105,Yes,QA Technician,svktekninjas@gmail.com,415-238-0082,"Mining, metals & minerals",2.6,Quarterly
+E00800,C0724,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Vehicles,34.6,Yearly
+E00803,C0419,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Data centres,5.1,Monthly
+E00810,C0624,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Residential,16.6,Quarterly
+E00816,C0248,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Residential,3.3,Occasionally
+E00820,C0566,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Residential,7.5,Yearly
+E00821,C0221,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Healthcare,7.8,Quarterly
+E00823,C0400,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,Machine building,5.2,Quarterly
+E00824,C0329,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Vehicles,117.6,Monthly
+E00825,C0628,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Buildings,2.8,Quarterly
+E00828,C0486,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Utilities,7.1,Quarterly
+E00832,C0727,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Healthcare,6.3,Monthly
+E00837,C0239,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Healthcare,5.9,Quarterly
+E00839,C0502,Yes,Mechanical Engineer,svktekninjas@gmail.com,415-238-0082,Residential,2.6,Monthly
+E00840,C0170,Yes,Brand Manager,svktekninjas@gmail.com,415-238-0082,Utilities,7.3,Quarterly
+E00843,C0049,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Space,25.0,Yearly
+E00844,C0442,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Residential,3.6,Quarterly
+E00846,C0381,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Residential,5.1,Quarterly
+E00847,C0399,Yes,Key Account Executive,svktekninjas@gmail.com,415-238-0082,Food & beverage,14.7,Monthly
+E00849,C0123,Yes,Systems Engineer,svktekninjas@gmail.com,415-238-0082,Oil & gas,9.4,Quarterly
+E00850,C0503,Yes,Procurement Analyst,svktekninjas@gmail.com,415-238-0082,Vehicles,34.7,Monthly
+E00853,C0629,Yes,Ops Coordinator,svktekninjas@gmail.com,415-238-0082,Machine building,4.1,Quarterly
+E00856,C0488,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Space,28.0,Monthly
+E00860,C0445,Yes,Brand Manager,svktekninjas@gmail.com,415-238-0082,Data centres,4.2,Monthly
+E00862,C0041,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Oil & gas,13.2,Monthly
+E00868,C0130,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Buildings,4.4,Yearly
+E00869,C0521,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Food & beverage,6.9,Quarterly
+E00874,C0718,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Residential,7.8,Yearly
+E00883,C0451,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,8.4,Occasionally
+E00884,C0106,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Utilities,8.1,Monthly
+E00885,C0468,Yes,Country Manager,svktekninjas@gmail.com,415-238-0082,Healthcare,7.3,Yearly
+E00886,C0587,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Food & beverage,9.7,Monthly
+E00891,C0436,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Utilities,19.1,Quarterly
+E00894,C0498,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Aerospace,1.5,Quarterly
+E00898,C0279,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Utilities,7.7,Yearly
+E00902,C0460,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Utilities,5.0,Yearly
+E00906,C0378,Yes,Electrical Engineer,svktekninjas@gmail.com,415-238-0082,Vehicles,2.6,Quarterly
+E00918,C0445,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Data centres,4.2,Monthly
+E00919,C0577,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,Vehicles,176.5,Occasionally
+E00921,C0267,Yes,Sales Manager,svktekninjas@gmail.com,415-238-0082,Residential,31.0,Monthly
+E00927,C0103,Yes,Logistics Coordinator,svktekninjas@gmail.com,415-238-0082,Residential,2.1,Monthly
+E00931,C0615,Yes,Production Engineer,svktekninjas@gmail.com,415-238-0082,Machine building,44.7,Monthly
+E00935,C0373,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Utilities,9.8,Monthly
+E00939,C0590,Yes,QA Specialist,svktekninjas@gmail.com,415-238-0082,Vehicles,8.5,Monthly
+E00944,C0478,Yes,Procurement Manager,svktekninjas@gmail.com,415-238-0082,Machine building,5.1,Monthly
+E00945,C0211,Yes,Data Centre Operator,svktekninjas@gmail.com,415-238-0082,Vehicles,7.2,Quarterly
+E00950,C0152,Yes,Operations Manager,svktekninjas@gmail.com,415-238-0082,Data centres,2.0,Monthly
+E00951,C0701,Yes,Account Manager,svktekninjas@gmail.com,415-238-0082,Food & beverage,23.6,Monthly
+E00957,C0715,Yes,Plant Manager,svktekninjas@gmail.com,415-238-0082,Oil & gas,6.7,Yearly
+E00959,C0200,Yes,Procurement Specialist,svktekninjas@gmail.com,415-238-0082,Buildings,8.9,Monthly
+E00960,C0590,Yes,Sales Executive,svktekninjas@gmail.com,415-238-0082,Vehicles,8.5,Monthly
+E00964,C0602,Yes,Growth Marketer,svktekninjas@gmail.com,415-238-0082,Oil & gas,6.7,Monthly
+E00967,C0143,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Healthcare,12.7,Monthly
+E00970,C0430,Yes,Quality-by-Design Engineer,svktekninjas@gmail.com,415-238-0082,Space,12.3,Monthly
+E00971,C0381,Yes,Territory Sales Rep,svktekninjas@gmail.com,415-238-0082,Residential,5.1,Quarterly
+E00973,C0340,Yes,Production Planner,svktekninjas@gmail.com,415-238-0082,Utilities,1.1,Quarterly
+E00986,C0168,Yes,Electrical Engineer,svktekninjas@gmail.com,415-238-0082,Machine building,3.2,Quarterly
+E00989,C0419,Yes,Strategic Buyer,svktekninjas@gmail.com,415-238-0082,Data centres,5.1,Monthly
+E00992,C0207,Yes,Software Developer,svktekninjas@gmail.com,415-238-0082,Vehicles,7.7,Monthly
