@@ -21,6 +21,7 @@ export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 # Values are set in 02_secret_manager.sh; agents read them via
 # lqabr_core.secrets (env override locally, --set-secrets on Cloud Run).
 export LQABR_SECRETS=(
+  lqabr-google-api-key
   lqabr-hubspot-access-token
   lqabr-mailgun-api-key
   lqabr-mailgun-webhook-signing-key
