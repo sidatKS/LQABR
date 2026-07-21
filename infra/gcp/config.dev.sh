@@ -19,7 +19,10 @@ export REGION="us-central1"
 export LQABR_LABELS="environment=dev,app=lqabr,owner=platform,cost-center=engineering"
 
 # ── Service accounts ─────────────────────────────────────────
-export AGENT_SA_NAME="lqabr-agent-runtime"
+# Dev runtime SA is named distinctly (…-agent-dev) so it's identifiable
+# by principalEmail in logs / process signatures without checking the
+# project. Prod uses lqabr-agent-runtime.
+export AGENT_SA_NAME="lqabr-agent-dev"
 export AGENT_SA="${AGENT_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # ── Artifact Registry ────────────────────────────────────────
