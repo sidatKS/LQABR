@@ -1,16 +1,28 @@
 #!/usr/bin/env bash
 # ============================================================
-# config.sh — single source of truth for every infra script.
-# Edit ONCE, then `source ./config.sh` before running any script.
+# config.dev.sh — DEV environment config (project ldqfingsrv-dev).
+# Prod lives in config.sh; this file mirrors it with dev values.
+# Source this instead of config.sh before running any infra script:
+#     source ./config.dev.sh && bash 00_enable_apis.sh
 # Do not hardcode values in individual scripts.
 # ============================================================
 
+# ── Environment marker ───────────────────────────────────────
+export LQABR_ENV="dev"
+
 # ── GCP Project ──────────────────────────────────────────────
-export PROJECT_ID="your-gcp-project-id"          # CHANGE ME
-export REGION="us-central1"                      # CHANGE ME if needed
+export PROJECT_ID="ldqfingsrv-dev"
+export REGION="us-central1"
+
+# ── Resource labels (applied by provisioning scripts) ────────
+# environment=dev separates every dev resource from prod.
+export LQABR_LABELS="environment=dev,app=lqabr,owner=platform,cost-center=engineering"
 
 # ── Service accounts ─────────────────────────────────────────
-export AGENT_SA_NAME="lqabr-agent-runtime"
+# Dev runtime SA is named distinctly (…-agent-dev) so it's identifiable
+# by principalEmail in logs / process signatures without checking the
+# project. Prod uses lqabr-agent-runtime.
+export AGENT_SA_NAME="lqabr-agent-dev"
 export AGENT_SA="${AGENT_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # ── Artifact Registry ────────────────────────────────────────
@@ -18,10 +30,10 @@ export AR_REPO="lqabr"
 export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 
 # ── Secret Manager secret names (one per service credential) ─
-# Values are set in 02_secret_manager.sh; agents read them via
-# lqabr_core.secrets (env override locally, --set-secrets on Cloud Run).
+# Same NAMES as prod; the VALUES differ and live only in this
+# project's Secret Manager. Set them via 02_secret_manager.sh.
 export LQABR_SECRETS=(
-  lqabr-google-api-key
+  lqabr-anthropic-api-key
   lqabr-hubspot-access-token
   lqabr-mailgun-api-key
   lqabr-mailgun-webhook-signing-key
@@ -46,12 +58,12 @@ export ADK_AGENTS=(ingestion lead_profile email text_voice scheduling orchestrat
 export WEBHOOK_AGENTS=(email text_voice scheduling)
 
 # ── Non-secret runtime config passed to services ─────────────
-export MAILGUN_DOMAIN="mg.yourdomain.com"        # CHANGE ME
-export MAILGUN_FROM="LQABR Outreach <outreach@${MAILGUN_DOMAIN}>"
-export TWILIO_FROM_NUMBER="+15551234567"         # CHANGE ME
+export MAILGUN_DOMAIN="dev.reply.tekninjas.com"  # CHANGE ME (dev sending domain)
+export MAILGUN_FROM="LQABR Dev Outreach <outreach@${MAILGUN_DOMAIN}>"
+export TWILIO_FROM_NUMBER="+15551234567"         # CHANGE ME (dev number)
 export LQABR_SENDER_NAME="Your Name"             # CHANGE ME
-export LQABR_CTA_URL="https://yourdomain.com/overview"
+export LQABR_CTA_URL="https://dev.yourdomain.com/overview"
 # Optional fixed Zoom booking page (else the Scheduler API is queried):
 export ZOOM_BOOKING_URL=""
 
-echo "config: project=${PROJECT_ID} region=${REGION} sa=${AGENT_SA}"
+echo "config[DEV]: project=${PROJECT_ID} region=${REGION} sa=${AGENT_SA}"
