@@ -111,10 +111,11 @@ loop_guard:
 dispatch:
   # Off by default: Rev 3 says "send trigger_id only". Turning this on adds the
   # route id to the A2A metadata so an agent can log why it was woken — nothing
-  # else. propertyName/propertyValue and objectId stay off the wire regardless
-  # (a property value is config-controlled: subscribe to a profile property in
-  # the portal and it arrives holding an email address). The audit trail carries
-  # the full basis either way, so leave this false unless an agent needs it.
+  # else. propertyName/propertyValue stay off the wire regardless (a property
+  # value is config-controlled: subscribe to a profile property in the portal and
+  # it arrives holding an email address). objectId DOES travel, always - it is
+  # what the agent resolves the lead with (D-05). The audit trail carries the
+  # full basis either way, so leave this false unless an agent needs it.
   include_routing_basis: false
 
   # The hand-off happens before we respond to HubSpot, so a 200 means

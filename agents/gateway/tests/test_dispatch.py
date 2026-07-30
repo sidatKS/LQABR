@@ -56,18 +56,20 @@ class TestA2AMessage:
         with pytest.raises(PayloadGuardError, match="non-trigger metadata"):
             A2AClient.build_message("trg-1", {field: value})
 
-    def test_only_correlation_metadata_is_permitted(self):
-        """Correlation ids only. propertyName/propertyValue are required in the
-        LOG by FR-7 but must not be on the wire: a property value is
-        config-controlled, so subscribing to a profile property in the portal
-        would turn it into an email address. object_id is out too — the agent
-        resolves its own chunk by criteria and has no use for it."""
+    def test_only_correlation_ids_and_the_record_id_are_permitted(self):
+        """Correlation ids plus object_id (D-05), and nothing else.
+
+        propertyName/propertyValue are required in the LOG by FR-7 but must not
+        be on the wire: a property value is config-controlled, so subscribing to
+        a profile property in the portal would turn it into an email address.
+        """
         assert ALLOWED_METADATA_KEYS == {
-            "trigger_id", "run_id", "route_id", "source", "gateway_version",
+            "trigger_id", "object_id", "run_id", "route_id", "source",
+            "gateway_version",
         }
 
-    @pytest.mark.parametrize("field", ["property_name", "property_value", "object_id"])
-    def test_routing_basis_is_refused_on_the_wire(self, field):
+    @pytest.mark.parametrize("field", ["property_name", "property_value"])
+    def test_the_routing_basis_is_still_refused_on_the_wire(self, field):
         with pytest.raises(PayloadGuardError):
             A2AClient.build_message("trg-1", {field: "anything"})
 
@@ -88,13 +90,22 @@ class TestA2AMessage:
         result = dispatcher.dispatch(decision, "run-1")
         assert result.payload_size_bytes < 1024
 
-    def test_default_payload_is_the_trigger_id_and_correlation_ids_only(
+    def test_default_payload_is_the_trigger_id_the_record_id_and_correlation(
             self, decision, fake_session_factory, audit):
-        """The default, not an opt-in mode: Rev 3 says send trigger_id only."""
         session = fake_session_factory()
         gw_dispatch.Dispatcher(_client(session), audit).dispatch(decision, "run-1")
         metadata = session.last_body["params"]["metadata"]
-        assert set(metadata) == {"trigger_id", "run_id", "source", "gateway_version"}
+        assert set(metadata) == {"trigger_id", "object_id", "run_id", "source",
+                                 "gateway_version"}
+
+    def test_the_record_id_is_the_one_the_agent_can_actually_resolve(
+            self, decision, fake_session_factory, audit):
+        """D-05. This is the whole point of the change: the agent does
+        GET /crm/v3/objects/contacts/<object_id> and has the lead. Neither the
+        trigger_id nor HubSpot's eventId is stored anywhere in the CRM."""
+        session = fake_session_factory()
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(decision, "run-1")
+        assert session.last_body["params"]["metadata"]["object_id"] == "701"
 
     def test_opting_into_the_routing_basis_adds_only_the_route_id(
             self, decision, fake_session_factory, audit):
@@ -103,7 +114,7 @@ class TestA2AMessage:
                                include_routing_basis=True).dispatch(decision, "run-1")
         metadata = session.last_body["params"]["metadata"]
         assert metadata["route_id"] == "R3-email-opened"
-        assert "property_value" not in metadata and "object_id" not in metadata
+        assert "property_name" not in metadata and "property_value" not in metadata
 
     def test_correlation_headers_let_the_sidecar_log_be_joined(
             self, decision, fake_session_factory, audit):

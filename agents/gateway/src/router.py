@@ -573,11 +573,12 @@ class Router:
                     property_name=None, property_value=None, detail=str(exc)))
                 continue
 
-            # objectId is audit metadata, not a routing input: the gateway
-            # routes on property + value, and the agent resolves its profile
-            # chunk by criteria (D-01). An event missing it is therefore still
-            # routable — dropping it here would be exactly the silent lead loss
-            # the design forbids. Its absence is recorded instead.
+            # objectId is not a routing input — the gateway still routes on
+            # property + value alone — but since D-05 it IS what the agent
+            # resolves the lead with, so an event without one is undeliverable.
+            # That is checked at step 4, after the cheap rejections, so a
+            # malformed event that was never going to route is discarded rather
+            # than raised.
 
             # --- 1. filter on propertyValue ------------------------------
             # First, per Rev 3's ordering, and load-bearing: the subscription
@@ -650,6 +651,23 @@ class Router:
 
             # --- 4. mint + validate the endpoint -------------------------
             trigger_id = self.mint_trigger_id(event)
+
+            # The agent looks the lead up by record id (D-05). Without one it
+            # would receive a trigger it cannot act on, so this is a routing
+            # error — 503, HubSpot redelivers — not a discard, which would
+            # return 200 and lose the lead silently.
+            if event.object_id is None:
+                error = RoutingError(
+                    "event matched a route but carries no objectId — the agent "
+                    "cannot resolve the lead without it",
+                    event_id=event.event_id, object_id=None, agent=route.agent,
+                    route_id=route.id, property_name=event.property_name,
+                    property_value=event.property_value, trigger_id=trigger_id)
+                if event.event_id:
+                    batch_seen.discard(event.event_id)
+                result.errors.append(error)
+                continue
+
             try:
                 endpoint = self._registry.endpoint_for(route.agent)
             except RoutingError as exc:

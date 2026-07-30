@@ -39,19 +39,24 @@ class PayloadGuardError(RuntimeError):
     """Something tried to attach non-trigger data to a dispatch."""
 
 
-#: Everything the gateway is permitted to put on the wire: correlation ids, and
-#: nothing else. Rev 3 Step 4 is "send trigger_id only", so this list is
-#: deliberately shorter than what the audit log carries.
+#: Everything the gateway is permitted to put on the wire. Correlation ids plus
+#: the one identifier the agent can actually resolve — and nothing else.
 #:
-#: ``property_name`` / ``property_value`` are NOT here even though FR-7 requires
-#: them in the *log*. A property value is attacker- and config-controlled: put a
-#: subscription on a profile property in the portal and the "value" becomes an
-#: email address. It belongs in the audit trail (where it is redacted if it looks
-#: like a lead field), not on a wire that promised to carry a trigger id.
-#: ``object_id`` is likewise off the wire — the agent resolves its own chunk by
-#: criteria, so it has no use for it (D-01).
+#: ``object_id`` is the HubSpot **contact record id**, and it is here on purpose
+#: (D-05). Neither the ``trigger_id`` nor HubSpot's ``eventId`` can be looked up
+#: in the CRM — no property holds either — so an agent receiving only those has
+#: no way to reach the lead that fired the trigger; Rev 3's answer was a
+#: criteria query returning a *chunk* of ~5 profiles that may not even contain
+#: it. Sending the record id makes the hand-off exact and the lookup a direct,
+#: strongly-consistent read instead of an eventually-consistent search.
+#:
+#: ``property_name`` / ``property_value`` are still NOT here, even though FR-7
+#: requires them in the *log*. A property value is config-controlled: put a
+#: subscription on a profile property in the portal and the "value" arrives
+#: holding an email address. It belongs in the audit trail (where it is redacted
+#: if it looks like a lead field), not on the wire.
 ALLOWED_METADATA_KEYS = frozenset({
-    "trigger_id", "run_id", "route_id", "source", "gateway_version",
+    "trigger_id", "object_id", "run_id", "route_id", "source", "gateway_version",
 })
 
 

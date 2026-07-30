@@ -142,6 +142,7 @@
     <span class="chip"><b>SP-1</b> Agent Gateway — gateway routing service</span>
     <span class="chip">branch <b>leadq-dev-SN</b></span>
     <span class="chip">portal <b>246777241</b> · Contact object</span>
+    <span class="chip">D-05 <b>object_id on the wire</b></span>
     <span class="chip ok"><b>154 tests</b> passing</span>
     <span class="chip"><b>25 files</b> · 3,800 lines</span>
     <span class="chip">30-Jul-2026</span>
@@ -204,8 +205,8 @@ inside it is the gateway. Note what the arrows carry — the payload never grows
       </div>
       <div class="node gw">
         <h4><span class="step">4</span>Forward<span class="who">dispatch.py</span></h4>
-        <p>A2A <code>message/send</code> to the resolved endpoint. Body is the
-        <b>trigger_id and nothing else</b>. HTTPS is converted to agent protocol here. Status,
+        <p>A2A <code>message/send</code> to the resolved endpoint. Carries the
+        <b>trigger_id and the contact record id</b> (D-05), nothing else. HTTPS is converted to agent protocol here. Status,
         latency and retry count recorded either way.</p>
       </div>
     </div>
@@ -222,13 +223,13 @@ inside it is the gateway. Note what the arrows carry — the payload never grows
 
   <div class="arrow">
     <div class="line"></div>
-    <div class="lbl">A2A message/send · trigger_id only · payload &lt; 1 KB</div>
+    <div class="lbl">A2A message/send · trigger_id + object_id · payload &lt; 1 KB</div>
     <div class="head">▼</div>
   </div>
 
   <div class="node agentn">
     <h4><span class="step">5</span>Execute the agent task<span class="who">Email / Voice / Scheduling agent</span></h4>
-    <p>Receives a <code>trigger_id</code> and nothing else. Agents are async, independent, and never
+    <p>Receives a <code>trigger_id</code> and an <code>object_id</code>, nothing else. Agents are async, independent, and never
     talk to each other. Performs its channel action, then writes status back to HubSpot — which may
     itself become the next trigger (<code>email opened → Voice</code>,
     <code>voice completed → Scheduling</code>).</p>
@@ -236,7 +237,7 @@ inside it is the gateway. Note what the arrows carry — the payload never grows
 
   <div class="arrow">
     <div class="line"></div>
-    <div class="lbl" style="color:var(--mcp);font-weight:600">MCP · direct · bypasses the gateway entirely</div>
+    <div class="lbl" style="color:var(--mcp);font-weight:600">GET /crm/v3/objects/contacts/&lt;object_id&gt; · direct · bypasses the gateway</div>
     <div class="head">▼</div>
   </div>
 
@@ -457,6 +458,19 @@ holds it in place.</p>
   and the four streams are all unchanged. Because the business logic depends only on
   <code>lib/soloai</code> interfaces, swapping in a real library later is a change inside that
   package alone.</p>
+</div>
+
+<div class="dev">
+  <div class="h"><span class="id">D-05</span>The contact record id travels with the trigger<span class="st open">needs sign-off</span></div>
+  <p>Neither the <code>trigger_id</code> nor HubSpot's <code>eventId</code> is stored anywhere in the
+  CRM, so an agent holding one cannot reach the lead that fired the trigger — Rev 3 concedes this in
+  D-01. Rejected: stamping a trigger id onto contacts (needs write scope, and the lookup is an
+  eventually-consistent search returning zero for seconds after the write), and buffering to five in
+  the gateway (leads sit unworked at low volume, and an in-memory buffer loses them on restart).</p>
+  <p><b>Built:</b> <code>objectId</code> — already in every webhook payload — travels in the A2A
+  metadata, and the agent does a direct <code>GET /crm/v3/objects/contacts/&lt;id&gt;</code>. Exact,
+  immediate, no new property, no write scope. A matched event with no objectId is now a routing
+  error, not a discard.</p>
 </div>
 
 <div class="dev">

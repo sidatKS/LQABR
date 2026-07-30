@@ -1,15 +1,15 @@
 # Agent Gateway — HubSpot Trigger Routing
 
 Single ingress for HubSpot events. Decides which agent owns a trigger, records
-why, and hands off a **trigger id and nothing else**.
+why, and hands off **a trigger id and the contact's record id — nothing else**.
 
 Built to `Agent_Gateway_Rev3.pdf` (System Architecture · Rev 3 · Functional
 Requirements), approved for development 30-Jul-2026. Planner: *SP-1: Agent
 Gateway — Build gateway routing service (MVP)*.
 
 The one sentence worth remembering: **no lead-profile data crosses this
-service.** Agents resolve the full profile themselves, direct from HubSpot over
-MCP. Everything below is in service of that.
+service.** The agent receives a record id and fetches the profile itself, direct
+from HubSpot. Everything below is in service of that.
 
 ---
 
@@ -66,12 +66,12 @@ router.py     filter on propertyValue  ─── not the routing condition ─�
         ▼
 audit.py      run_id + trigger_id + the property and value behind the decision
         ▼
-dispatch.py   A2A message/send  ·  body = trigger_id  ·  retries, latency, status
+dispatch.py   A2A message/send  ·  trigger_id + object_id  ·  retries, latency, status
         ▼
 Email / Voice / Scheduling agent
-        │  resolves its own profile chunk
+        │  GET /crm/v3/objects/contacts/<object_id>
         ▼
-HubSpot MCP   ← direct. Bypasses this gateway entirely.
+HubSpot       ← direct. Bypasses this gateway entirely.
 ```
 
 **Discard vs routing error.** A discard is normal: HubSpot's free tier fires a
@@ -173,9 +173,9 @@ Three guards, all tested:
 * `audit_hooks` **raises** rather than writing a record containing any of the
   nine lead parameters. A log line is the easiest way for profile data to
   escape a service that swore it carried none.
-* `protocols/a2a` **raises** if anything outside a small allow-list of
-  correlation ids is attached to a dispatch — which is why `propertyName`,
-  `propertyValue` and `objectId` are in the log but not on the wire.
+* `protocols/a2a` **raises** if anything outside a small allow-list is attached
+  to a dispatch — correlation ids plus `object_id`, and nothing else. So
+  `propertyName` and `propertyValue` are in the log but never on the wire.
 * values are **redacted**, not just keys. A property *value* is
   config-controlled: subscribe to a profile property in the portal and
   `propertyValue` arrives holding an email address, under a key FR-7 requires us
@@ -235,6 +235,36 @@ prevents self-triggering without severing the three agent-driven hops.
 line if review prefers it.
 
 **Needs a decision.** Default stays `self_trigger` until then.
+
+### D-05 — the contact record id travels with the trigger
+Rev 3 Step 4 says "send trigger_id only", and Step 6 has the agent resolve a
+*chunk* of ~5 profiles by criteria. The problem: **neither the `trigger_id` nor
+HubSpot's `eventId` is stored anywhere in the CRM**, so an agent holding one has
+no way to reach the lead that actually fired the trigger — Rev 3 acknowledges
+this in D-01 ("HubSpot cannot resolve a chunk by trigger ID"). The chunk the
+agent gets back may not even contain that lead.
+
+Alternatives considered and rejected: writing the trigger id onto the contacts as
+a new property (needs `crm.objects.contacts.write`, makes the gateway a CRM
+writer on the hot path, and the lookup is an *eventually consistent* search that
+returns zero results for several seconds after the write); and buffering leads in
+the gateway until five accumulate (leads sit unworked at low volume, and an
+in-memory buffer loses them on a Cloud Run restart).
+
+**What we built:** `objectId` — already present in every webhook payload, and the
+contact's real record id — travels in the A2A metadata. The agent does a direct
+`GET /crm/v3/objects/contacts/<object_id>`: exact, immediate, strongly
+consistent, no new property, no write scope, no buffering. `trigger_id` still
+travels as the correlation handle that ties the agent's logs to the routing
+decision.
+
+Consequence: an event that matches a route but carries no `objectId` is now a
+**routing error** (503, HubSpot redelivers), not a discard — a trigger the agent
+cannot act on must not be reported as success.
+
+**Needs sign-off:** a record id is profile-adjacent, so this is a real departure
+from "trigger-only". It is still not profile *data* — no name, email, phone or
+revenue crosses the gateway, and the log guards are unchanged.
 
 Worth stating plainly for that review: with the registry as shipped, no route
 targets an agent that writes the property firing it, so **the `self_trigger`
@@ -301,7 +331,7 @@ whatever was buffered. Only matters for `sink: file`, which is local dev.
 
 ## What this service will never do
 
-* hold, cache, log or forward lead-profile data
+* hold, cache, log or forward lead-profile data (a record id is not profile data)
 * call a model
 * let one agent talk to another
 * be the system of record — HubSpot is, and on conflict HubSpot wins

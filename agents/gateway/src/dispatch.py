@@ -88,6 +88,11 @@ class Dispatcher:
     def _metadata(self, decision: RoutingDecision, run_id: str) -> Dict[str, Any]:
         metadata: Dict[str, Any] = {
             "trigger_id": decision.trigger_id,
+            # The HubSpot contact record id — what the agent actually calls the
+            # CRM with (D-05). The trigger_id travels alongside it purely as the
+            # correlation handle that ties the agent's logs back to the routing
+            # decision; it is not resolvable in HubSpot and never was.
+            "object_id": decision.object_id,
             "run_id": run_id,
             "source": "agent_gateway",
             "gateway_version": self._version,

@@ -399,17 +399,20 @@ class TestBatches:
         assert summary["discards_by_reason"] == {
             "not_routing_condition": 1, "no_matching_route": 1}
 
-    def test_event_without_object_id_is_still_routed(self, router):
-        """Regression. objectId is audit metadata, not a routing input — the
-        gateway routes on property + value and the agent resolves its chunk by
-        criteria (D-01). Discarding these returned 200 to HubSpot, so there was
-        never a redelivery: a silently dropped lead, which the design forbids."""
+    def test_event_without_object_id_is_a_routing_error_not_a_discard(self, router):
+        """D-05: the agent resolves the lead by record id, so an event without
+        one is undeliverable. It must be a routing error (503, HubSpot
+        redelivers), never a discard (200), which would lose the lead silently.
+        """
         raw = make_event()
         raw.pop("objectId")
         result = router.route_batch([raw])
-        assert len(result.decisions) == 1
-        assert result.decisions[0].object_id is None
-        assert result.decisions[0].agent == "voice"
+        assert result.decisions == [] and result.discarded == []
+        assert len(result.errors) == 1
+        error = result.errors[0]
+        assert "objectId" in str(error)
+        assert error.agent == "voice"                      # it did match a route
+        assert error.trigger_id.startswith("trg-")         # and is still traceable
 
     def test_empty_batch_is_simply_empty(self, router):
         assert router.route_batch([]).event_count == 0
