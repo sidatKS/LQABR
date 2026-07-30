@@ -1,0 +1,122 @@
+# =====================================================================
+# Agent Gateway — central tunables
+# ---------------------------------------------------------------------
+# Rev 3, "Customization — config file & variable": which protocols are on,
+# audit verbosity, lead-profile chunk-size hint, timeouts. One file, no code
+# changes to adjust behaviour.
+#
+# Secrets do NOT live here — see config/.env.example.
+# Routing lives in config/agents_registry.yaml, not here.
+# =====================================================================
+
+gateway:
+  name: agent-gateway
+  version: "0.1.0"
+
+  # Step 2 — the single HTTP ingress. The only entry point for HubSpot
+  # events; no agent-to-agent traffic passes through it.
+  ingress:
+    path: /hubspot/events
+    # Host and port are NOT set here: uvicorn binds them and Cloud Run injects
+    # PORT. A second source of truth for the bind address is a config key that
+    # looks authoritative and is silently ignored.
+
+    # HubSpot batches up to 100 events per POST (Rev 3, "What the trigger
+    # emits" → Transport). A larger array is a protocol violation, not a
+    # workload to absorb.
+    max_batch_size: 100
+
+    # HubSpot's default throttle is 10 concurrent requests. Rev 3 Step 2
+    # System log: "ingress concurrency against the throttle limit of 10".
+    # This is the concurrency the gateway must absorb, so it is a bound we
+    # hold ourselves rather than a limit we hope HubSpot respects.
+    max_concurrent_requests: 10
+
+    # Signature verification of the inbound webhook. Not named in Rev 3,
+    # added because the ingress is a public HTTPS endpoint: without it
+    # anyone who learns the URL can inject routing triggers.
+    # Secret: HUBSPOT_APP_SECRET (private-app client secret).
+    signature:
+      enabled: true
+      header: X-HubSpot-Signature-v3
+      timestamp_header: X-HubSpot-Request-Timestamp
+      # HubSpot rejects/replays outside 5 minutes; match it.
+      max_age_seconds: 300
+
+# Protocols handled by the co-located runtime (lib/soloai over agentgateway).
+protocols:
+  a2a:
+    enabled: true                 # gateway -> agent hand-off, Step 4
+    timeout_seconds: 30
+    max_retries: 2                # total attempts = 1 + max_retries
+    backoff_seconds: 0.5          # exponential: 0.5s, 1.0s
+    # NOTE: dispatch targets whatever the agent's `endpoint_env` resolves to in
+    # agents_registry.yaml — there is no separate base-URL setting here, on
+    # purpose, so there is exactly one place an agent's address is defined.
+    # To route through the sidecar (and get its access log / OTel span for the
+    # hop), point those env vars at it: http://127.0.0.1:3000/a2a/<agent>.
+    # To bypass it, point them straight at the agent. Both are config, not code.
+
+  mcp:
+    enabled: true
+    # The gateway does NOT proxy profile data. Step 6 is agent -> HubSpot,
+    # direct, bypassing the gateway. This block exists so the sidecar can
+    # publish one MCP endpoint for the agents and so the chunk hint has a
+    # home, per Rev 3's config.yaml responsibilities.
+    sidecar_base_url: http://127.0.0.1:3000
+    proxy_profile_data: false     # must stay false — see FR "trigger-only payload"
+
+# Rev 3 FR-7. Four streams, collected to the runtime's own logging standard.
+audit:
+  level: standard                 # minimal | standard | verbose
+  sink: stdout                    # stdout -> Cloud Logging; "file" for local dev
+  file_path: ./logs/gateway.jsonl # used only when sink: file
+  streams:
+    audit: true                   # network activity: where from, when, which endpoint
+    process: true                 # the routing decision + property/value behind it
+    system: true                  # container activity: memory, concurrency, exceptions
+    token_model: false            # N/A to the gateway — explicit exclusion, not an omission
+  # Belt-and-braces on the trigger-only guarantee: any attempt to log one of
+  # the nine lead parameters raises instead of writing.
+  forbid_profile_fields: true
+
+# Served to agents over MCP (Step 6). The gateway never holds profile data —
+# this is a hint it publishes, not a payload it carries.
+lead_profile:
+  chunk_size_hint: 5              # ~5 profiles per trigger, bounds agent memory
+
+# Step 2 — "De-duplicate using eventId where attemptNumber > 0".
+dedupe:
+  enabled: true
+  # HubSpot retries a failed delivery for up to 24h, so a 15-minute memory would
+  # let a late redelivery of an already-dispatched event through and contact the
+  # lead a second time. Only successful hand-offs are stored (never discards),
+  # so the entry count stays low enough to hold a full day.
+  ttl_seconds: 86400
+  max_entries: 10000              # LRU cap; in-memory, per instance (see README)
+
+# Step 2 — "Ignore events whose changeSource is an agent write-back".
+loop_guard:
+  # self_trigger (default): drop an event only when the agent that owns the
+  #   route is the same agent that writes the property that fired it. This is
+  #   what "so the system does not trigger itself" actually requires.
+  # all_api: the literal Rev 3 reading — drop every changeSource in
+  #   ignored_change_sources. WARNING: this disables three of the four
+  #   configured routes, because contact.creation, lqabr_email_status and
+  #   lqabr_voice_status are all written by agents via the API. See D-03.
+  mode: self_trigger
+  ignored_change_sources: [API]   # applied only when mode: all_api
+
+# Step 4 — hand-off.
+dispatch:
+  # Off by default: Rev 3 says "send trigger_id only". Turning this on adds the
+  # route id to the A2A metadata so an agent can log why it was woken — nothing
+  # else. propertyName/propertyValue and objectId stay off the wire regardless
+  # (a property value is config-controlled: subscribe to a profile property in
+  # the portal and it arrives holding an email address). The audit trail carries
+  # the full basis either way, so leave this false unless an agent needs it.
+  include_routing_basis: false
+
+  # The hand-off happens before we respond to HubSpot, so a 200 means
+  # "dispatched" and the 503 retry path is meaningful. Deliberately not a
+  # setting: a fire-and-forget mode would make the status code a lie.

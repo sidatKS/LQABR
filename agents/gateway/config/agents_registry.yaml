@@ -1,0 +1,113 @@
+# =====================================================================
+# Agent Gateway — routing map
+# ---------------------------------------------------------------------
+# Rev 3: "Declarative property + value -> agent mapping used by router.py
+# and audit.py; onboarding a new agent means editing this file, not the
+# routing code."
+#
+# Event -> agent mapping (Rev 3, page 1):
+#   Decision-maker agent event -> Email agent
+#   Email status: opened       -> Voice agent
+#   Voice status: completed    -> Scheduling agent
+# plus Contact Created -> Email agent (subscribed in addition to
+# decision_maker, because a property set at creation time may not raise a
+# separate property-change event).
+# =====================================================================
+
+version: 1
+
+# The four active HubSpot private-app webhook subscriptions this map serves.
+# Portal 246777241, Contact object. Documentation only — the gateway does not
+# create subscriptions; they are configured in the portal.
+subscriptions:
+  - object: contact
+    event: contact.creation
+  - object: contact
+    event: contact.propertyChange
+    property: decision_maker
+  - object: contact
+    event: contact.propertyChange
+    property: lqabr_email_status
+  - object: contact
+    event: contact.propertyChange
+    property: lqabr_voice_status
+
+# ---------------------------------------------------------------------
+# Downstream agents. `endpoint_env` keeps URLs out of the repo and lets the
+# same registry ship to dev / stage / prod unchanged (Rev 3: swapping an
+# agent implementation is a URL change, never a code edit).
+#
+# `writes` declares the properties each agent writes back to HubSpot. The
+# loop guard uses it: an agent is never triggered by its own write-back.
+# ---------------------------------------------------------------------
+agents:
+  email:
+    description: Email Agent — first-touch outreach (Mailgun)
+    endpoint_env: LQABR_EMAIL_AGENT_URL
+    enabled: true
+    writes:
+      - lqabr_email_status
+
+  voice:
+    description: Text/Voice Agent — SMS + programmable voice (Twilio / Vapi)
+    endpoint_env: LQABR_TEXT_VOICE_AGENT_URL
+    enabled: true
+    writes:
+      - lqabr_voice_status
+
+  scheduling:
+    description: Scheduling Agent — meeting booking (Zoom)
+    endpoint_env: LQABR_SCHEDULING_AGENT_URL
+    enabled: true
+    writes:
+      - lqabr_meeting_status
+
+# ---------------------------------------------------------------------
+# Routes, evaluated top to bottom; first match wins.
+#
+#   subscription_type : optional filter on the event's subscriptionType
+#   property          : propertyName to match (omit for creation events)
+#   values            : the routing condition. A subscription fires on EVERY
+#                       value of the watched property, so anything not listed
+#                       here is discarded by the gateway (D-01: the free tier
+#                       has no custom trigger, so value filtering lives here).
+#   match             : exact_ci (default) | exact | any
+#   agent             : owning agent key from `agents` above
+# ---------------------------------------------------------------------
+routes:
+  - id: R1-contact-created
+    description: >
+      New lead record inserted by the lead-profile agent. Subscribed in
+      addition to decision_maker because a property set at creation time may
+      not raise a separate property-change event.
+    subscription_type: contact.creation
+    match: any                    # a creation event carries no property/value
+    agent: email
+
+  - id: R2-decision-maker
+    description: Lead qualified as a decision maker -> Email agent.
+    subscription_type: contact.propertyChange
+    property: decision_maker
+    values: ["true"]
+    match: exact_ci
+    agent: email
+
+  - id: R3-email-opened
+    description: >
+      Fires on every value of lqabr_email_status; the gateway acts only on
+      OPENED.
+    subscription_type: contact.propertyChange
+    property: lqabr_email_status
+    values: ["OPENED"]
+    match: exact_ci
+    agent: voice
+
+  - id: R4-voice-completed
+    description: >
+      Fires on every value of lqabr_voice_status; the gateway acts only on
+      COMPLETED.
+    subscription_type: contact.propertyChange
+    property: lqabr_voice_status
+    values: ["COMPLETED"]
+    match: exact_ci
+    agent: scheduling
