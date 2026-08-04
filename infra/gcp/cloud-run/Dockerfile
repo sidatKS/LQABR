@@ -31,7 +31,9 @@ RUN mkdir -p "agents/${AGENT_DIR}/src/.adk" \
  && chown -R 65534:65534 "agents/${AGENT_DIR}"
 
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Normalize possible CRLF line endings (repo is edited on a Windows filesystem)
+# so the `#!/bin/sh` shebang resolves, then make the script executable.
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 USER nobody
 ENTRYPOINT ["/entrypoint.sh"]
