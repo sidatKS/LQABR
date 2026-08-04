@@ -1,0 +1,37 @@
+# LQABR — lead_profile agent — image build & push (Docker Compose only, no CI/CD).
+# Spec: docs/IMAGE_SPEC.md — review that first.
+#
+# Builds with the repo's shared parametrized image (infra/gcp/cloud-run/Dockerfile):
+# lqabr_core installed first, then the agent's requirements; the entrypoint runs
+# `adk api_server agents/lead_profile/src`.
+#
+# IMAGE NAME = the LIVE Cloud Run service's image (verified 04 Aug 2026):
+#   service  lqabr-dev-ldpf
+#   image    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
+# `image:` below is that exact repo:tag, so `docker compose push ldpf` updates the
+# tag the running service resolves. The live platform convention is
+# lqabr-dev-<component> (email->lqabr-dev-email-agent, gtwy->lqabr-dev-gtwy,
+# txtv->lqabr-dev-txtv). NOTE: infra/gcp/05_deploy_agents.sh uses a DIFFERENT
+# scheme (lqabr-<agent>-<kind>) that does NOT match live — do not run it as-is or
+# it creates duplicate services.
+#
+# Cloud Run does NOT auto-pull :latest — after pushing you MUST redeploy a new
+# revision to pick up the image:
+#   gcloud run deploy lqabr-dev-ldpf --region us-central1 --project ldqfingsrv-dev \
+#     --image us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
+#
+#   docker compose build ldpf
+#   docker compose push ldpf     # pushes lqabr-dev-ldpf:latest (the live service's tag)
+
+services:
+  ldpf:
+    build:
+      context: .
+      dockerfile: infra/gcp/cloud-run/Dockerfile
+      args:
+        AGENT_DIR: lead_profile
+        SERVICE_KIND: agent
+      tags:
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:0.1.0"
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest"
+    image: "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest"

@@ -1,0 +1,24 @@
+# VCS / IDE
+.git
+.github
+.gitignore
+
+# Python caches & envs
+__pycache__/
+*.py[cod]
+.venv/
+.venv-linux/
+.pytest_cache/
+*.egg-info/
+
+# Per-agent secrets & local ADK state — must NOT be baked into images
+**/.env
+**/.adk/
+**/session.db
+
+# Tests & docs not needed at runtime
+**/tests/
+docs/
+evals/
+data/
+_to_delete/

@@ -25,6 +25,11 @@ RUN pip install --no-cache-dir ./packages/lqabr_core
 COPY agents/${AGENT_DIR} agents/${AGENT_DIR}
 RUN pip install --no-cache-dir -r agents/${AGENT_DIR}/requirements.txt
 
+# ADK writes per-agent session/artifact storage under the agent dir at runtime.
+# The process runs as nobody (65534); make that path writable.
+RUN mkdir -p "agents/${AGENT_DIR}/src/.adk" \
+ && chown -R 65534:65534 "agents/${AGENT_DIR}"
+
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
