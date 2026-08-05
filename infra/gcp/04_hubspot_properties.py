@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
-"""04 — bootstrap the LQABR custom contact properties in HubSpot. Idempotent:
-existing properties are left untouched.
+"""04 — verify the HubSpot contact properties the Email Agent needs.
 
-HubSpot is the central lead-profile source; these properties carry the parts
-of the 9-pointer profile that don't map to standard contact fields, plus the
-pipeline metadata (stage, probability, engagement counters).
+SCHEMA NOTE: this previously bootstrapped custom properties, first under
+a `lqabr_*`-prefixed schema that didn't match the real account, then
+under a second guessed schema (email_status/email_sent/email_opened)
+that also didn't match. Confirmed live against the real account
+(2026-07-23, ldqfingsrv-dev) that everything the Email Agent needs
+ALREADY EXISTS — there is nothing left to create:
+
+    employee_id        (string/text)      — pre-existing
+    email_id            (string/text)      — standard HubSpot property
+    probability         (number/number)    — pre-existing
+    lqabr_email_status  (enumeration)      — pre-existing; allowed values
+                        are PENDING, SENT, DELIVERED, OPENED, FAILED,
+                        BOUNCED (an email delivery-status field, not a
+                        pipeline stage — see lqabr_core/crm/hubspot.py)
+
+This script is now a read-only verification check, not a creator —
+running it confirms the properties above are still present with the
+expected enumeration options, and fails loudly if any are missing.
 
 Auth: reads the private-app token from the environment
 (LQABR_HUBSPOT_ACCESS_TOKEN) or Secret Manager (lqabr-hubspot-access-token)
@@ -23,70 +37,31 @@ import requests
 from lqabr_core.secrets import get_secret
 
 BASE = "https://api.hubapi.com"
-GROUP = {"name": "lqabr", "label": "LQABR Lead Qualification", "displayOrder": -1}
 
-STAGES = ["ingested", "profiled", "email_outreach", "text_voice_outreach",
-          "scheduling", "meeting_scheduled", "unresolved"]
-
-PROPERTIES = [
-    # --- 9-pointer fields without standard HubSpot equivalents -----------
-    {"name": "lqabr_industry", "label": "LQABR Industry", "type": "string", "fieldType": "text"},
-    {"name": "lqabr_company_size_revenue", "label": "LQABR Company Size / Revenue",
-     "type": "string", "fieldType": "text"},
-    {"name": "lqabr_location", "label": "LQABR Location", "type": "string", "fieldType": "text"},
-    {"name": "lqabr_timezone", "label": "LQABR Timezone", "type": "string", "fieldType": "text"},
-    {"name": "lqabr_linkedin_url", "label": "LQABR LinkedIn URL", "type": "string", "fieldType": "text"},
-    # --- provenance -------------------------------------------------------
-    {"name": "lqabr_source", "label": "LQABR Source", "type": "enumeration", "fieldType": "select",
-     "options": [{"label": s, "value": s} for s in ("csv", "zoominfo")]},
-    {"name": "lqabr_employee_id", "label": "LQABR External Employee ID", "type": "string", "fieldType": "text"},
-    {"name": "lqabr_company_id", "label": "LQABR External Company ID", "type": "string", "fieldType": "text"},
-    # --- pipeline ----------------------------------------------------------
-    {"name": "lqabr_stage", "label": "LQABR Stage", "type": "enumeration", "fieldType": "select",
-     "options": [{"label": s, "value": s} for s in STAGES]},
-    {"name": "lqabr_stage_reason", "label": "LQABR Stage Reason", "type": "string", "fieldType": "text"},
-    {"name": "lqabr_probability", "label": "LQABR Probability", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_last_engaged_at", "label": "LQABR Last Engaged At", "type": "string", "fieldType": "text"},
-    # --- engagement counters (incremented by webhooks) ---------------------
-    {"name": "lqabr_email_delivered_count", "label": "LQABR Emails Delivered", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_email_opened_count", "label": "LQABR Emails Opened", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_email_clicked_count", "label": "LQABR Email Links Clicked", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_sms_delivered_count", "label": "LQABR SMS Delivered", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_voicemail_count", "label": "LQABR Voicemails Left", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_call_answered_count", "label": "LQABR Calls Answered", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_call_engaged_count", "label": "LQABR Calls Engaged (Q&A)", "type": "number", "fieldType": "number"},
-    {"name": "lqabr_meeting_count", "label": "LQABR Meetings Scheduled", "type": "number", "fieldType": "number"},
-]
+EXPECTED_EMAIL_STATUS_OPTIONS = {"PENDING", "SENT", "DELIVERED", "OPENED", "FAILED", "BOUNCED"}
+REQUIRED_PROPERTIES = ["employee_id", "email_id", "company_id", "probability", "lqabr_email_status"]
 
 
 def main() -> int:
     token = get_secret("lqabr-hubspot-access-token")
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {token}"}
 
-    # Property group (409 = already exists).
-    resp = requests.post(f"{BASE}/crm/v3/properties/contacts/groups", json=GROUP,
-                         headers=headers, timeout=30)
-    if resp.status_code not in (201, 409):
-        print(f"group create failed: HTTP {resp.status_code}: {resp.text[:300]}", file=sys.stderr)
+    resp = requests.get(f"{BASE}/crm/v3/properties/contacts", headers=headers, timeout=30)
+    resp.raise_for_status()
+    props = {p["name"]: p for p in resp.json().get("results", [])}
+
+    missing = [name for name in REQUIRED_PROPERTIES if name not in props]
+    if missing:
+        print(f"MISSING required properties: {missing}", file=sys.stderr)
         return 1
-    print(f"group lqabr: {'created' if resp.status_code == 201 else 'exists'}")
 
-    created = skipped = 0
-    for prop in PROPERTIES:
-        body = {**prop, "groupName": "lqabr"}
-        resp = requests.post(f"{BASE}/crm/v3/properties/contacts", json=body,
-                             headers=headers, timeout=30)
-        if resp.status_code == 201:
-            created += 1
-            print(f"created  {prop['name']}")
-        elif resp.status_code == 409:
-            skipped += 1
-            print(f"exists   {prop['name']}")
-        else:
-            print(f"FAILED   {prop['name']}: HTTP {resp.status_code}: {resp.text[:300]}",
-                  file=sys.stderr)
-            return 1
-    print(f"04: HubSpot properties ready ({created} created, {skipped} already existed).")
+    status_options = {o["value"] for o in props["lqabr_email_status"].get("options", [])}
+    if status_options != EXPECTED_EMAIL_STATUS_OPTIONS:
+        print(f"lqabr_email_status options changed: expected {EXPECTED_EMAIL_STATUS_OPTIONS}, "
+              f"got {status_options}", file=sys.stderr)
+        return 1
+
+    print("04: all required Email Agent properties present and unchanged.")
     return 0
 
 

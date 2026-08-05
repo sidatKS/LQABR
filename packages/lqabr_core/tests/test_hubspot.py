@@ -54,30 +54,33 @@ def test_upsert_creates_when_email_not_found():
 
 def test_upsert_patches_when_contact_exists():
     client, session = make_client([
-        FakeResponse(200, {"results": [contact_body("55", email="j@x.com")]}),  # search
+        FakeResponse(200, {"results": [contact_body("55", email_id="j@x.com")]}),  # search
+        FakeResponse(200, {"results": []}),                                      # associations (no company)
         FakeResponse(200, {}),                                                   # patch
     ])
     lead = client.upsert_lead(LeadProfile(email="j@x.com"))
     assert lead.hubspot_contact_id == "55"
-    assert session.calls[1][0] == "PATCH"
-    assert session.calls[1][1].endswith("/contacts/55")
+    assert session.calls[2][0] == "PATCH"
+    assert session.calls[2][1].endswith("/contacts/55")
 
 
-def test_record_event_increments_counter_and_promotes():
+def test_record_event_updates_email_status_and_promotes():
     start = TEXT_VOICE_THRESHOLD - 2  # +5 open crosses the threshold
     client, session = make_client([
-        FakeResponse(200, contact_body("77", lqabr_probability=str(start),
-                                       lqabr_stage="email_outreach",
-                                       lqabr_email_opened_count="3", email="j@x.com")),
+        FakeResponse(200, contact_body("77", probability=str(start),
+                                       lqabr_email_status="SENT", email_id="j@x.com")),
+        FakeResponse(200, {"results": []}),  # associations (no company)
         FakeResponse(200, {}),  # patch
     ])
     lead = client.record_event(EngagementEvent(EventType.EMAIL_OPENED, "77"))
     assert lead.probability == start + 5
+    # promotion is in-memory only — no HubSpot property represents
+    # cross-agent pipeline stage in this schema.
     assert lead.stage is LeadStage.TEXT_VOICE_OUTREACH
-    props = session.calls[1][2]["json"]["properties"]
-    assert props["lqabr_email_opened_count"] == "4"
-    assert props["lqabr_stage"] == "text_voice_outreach"
-    assert props["lqabr_probability"] == str(start + 5)
+    props = session.calls[2][2]["json"]["properties"]
+    assert props["lqabr_email_status"] == "OPENED"
+    assert props["probability"] == str(start + 5)
+    assert "email_opened" not in props  # no counter property exists
 
 
 def test_retries_on_5xx_then_raises_crm_error():

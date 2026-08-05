@@ -52,10 +52,77 @@ export TOPIC_INGESTION="lqabr-ingestion-trigger"
 export TOPIC_ENGAGEMENT="lqabr-engagement-events"
 
 # ── Cloud Run services ───────────────────────────────────────
-# ADK agents (adk api_server):    lqabr-<agent>-agent
-# Webhook apps (uvicorn/FastAPI): lqabr-<agent>-webhook
-export ADK_AGENTS=(ingestion lead_profile email text_voice scheduling orchestrator)
-export WEBHOOK_AGENTS=(email text_voice scheduling)
+# Three service kinds (infra/gcp/cloud-run/entrypoint.sh):
+#
+#   SERVICE_AGENTS  the agent's OWN domain surface — uvicorn service_app:app.
+#                   POST /hubspot/campaign, the Mailgun route, /health AND
+#                   /healthz. THIS is what the gateway dispatches to.
+#   ADK_AGENTS      the generic ADK api_server — POST /run with an ADK
+#                   envelope after a session handshake. A gateway domain
+#                   call cannot reach it. For agents with no domain surface
+#                   yet.
+#   WEBHOOK_AGENTS  provider events only — uvicorn webhook_app:app.
+#
+# email moved from ADK_AGENTS to SERVICE_AGENTS on 2026-08-04: the gateway
+# dispatches a domain call (as it does to text_voice), which the ADK runner
+# cannot parse. The service NAME is pinned below so the existing URL — and
+# therefore LQABR_EMAIL_AGENT_URL — does not change.
+#
+# email is NOT in WEBHOOK_AGENTS (2026-08-04). Platform Engineering:
+#
+#   Swaroop, 12:45 — "why do you guys create the webhook image?"
+#   Swaroop, 15:08 — "your mail gun has to send back the event triggers back
+#                     to the SAME agent."
+#
+# One image, one service, one endpoint. Mailgun is configured with the email
+# agent's own URL and the handling is business logic inside the agent. The
+# separate webhook image is gone and agents/email/src/webhook_app.py is
+# deleted, so it cannot be rebuilt by a stray build arg.
+#
+# Because Mailgun must be able to POST to it, that service is deployed
+# --allow-unauthenticated and each entry proves itself instead: the Mailgun
+# HMAC on /mailgun/events, and LQABR_EMAIL_GATEWAY_TOKEN on the gateway
+# entries. SET THAT TOKEN before deploying — see 05_deploy_agents.sh.
+export SERVICE_AGENTS=(email)
+export ADK_AGENTS=(ingestion lead_profile text_voice scheduling orchestrator)
+export WEBHOOK_AGENTS=(text_voice scheduling)
+
+# Cloud Run service name overrides, "<agent>:<kind>=<service name>". Without
+# this, email's service kind would deploy as lqabr-email-service and orphan
+# the URL the gateway already holds.
+export SERVICE_NAME_OVERRIDES=("email:service=lqabr-email-agent")
+
+# Route groups the email service exposes. `all` is the deployed shape: one
+# service serving the gateway entry AND the Mailgun push.
+export LQABR_EMAIL_ROUTES="all"
+
+# Shared secret the gateway must present as X-LQABR-Gateway-Token on
+# /hubspot/campaign and /engagement/sync. Required because the service is
+# reachable without an IAM token (Mailgun has to reach it). Leave empty only
+# for local work — the agent logs loudly on startup when it is unset.
+export LQABR_EMAIL_GATEWAY_TOKEN="${LQABR_EMAIL_GATEWAY_TOKEN:-}"
+
+# ── Credential source ────────────────────────────────────────
+# secret_manager = ignore the environment, always read the Secret Manager
+# API. This is what makes "it comes from Secret Manager" true and provable;
+# every resolution logs the secret NAME and its source (never the value).
+# Needs roles/secretmanager.secretAccessor on the runtime SA.
+# Use `auto` to prefer --set-secrets injection and skip the API call.
+export LQABR_SECRETS_SOURCE="secret_manager"
+
+# Model is config-driven. The provider's API key is resolved from Secret
+# Manager at runtime (lqabr_core.model.ensure_provider_credentials), so an
+# Anthropic model does NOT need ANTHROPIC_API_KEY in the environment.
+export LQABR_EMAIL_MODEL="anthropic/claude-sonnet-5"
+export LQABR_EMAIL_TEMPERATURE="1.0"
+
+# ── HubSpot property names (owned by the HubSpot schema) ─────
+# Confirm both against GET /crm/v3/properties/contacts before a real run.
+# The selection property picks WHICH leads a campaign works; if the name is
+# wrong the run now fails loudly rather than emailing a different audience.
+export LQABR_HUBSPOT_OBJECT_ID_PROPERTY="object_id"
+# Set when lqabr_email_status reaches OPENED — the step-10 hand-off to voice.
+export LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY="email_campaign_complete"
 
 # ── Non-secret runtime config passed to services ─────────────
 export MAILGUN_DOMAIN="dev.reply.tekninjas.com"  # CHANGE ME (dev sending domain)

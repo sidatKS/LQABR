@@ -1,6 +1,16 @@
-# agents/email — Email Agent (Mailgun outreach + engagement webhook)
-google-adk==2.3.0
+# agents/email — Email Agent v2 (Mailgun outreach + engagement webhook)
+#
+# The central MCP (mcp/hubspot/) is a dependency of this container and is
+# loaded in-process — it is not a separate service and needs no extra
+# package. The PyPI package named `mcp` (the MCP SDK) is deliberately NOT a
+# dependency: the design mandates in-process loading, so no standalone
+# server is started.
+google-adk[extensions]==2.3.0  # [extensions] -> LiteLlm for non-Gemini models (lqabr_core.model.build_model)
+google-genai>=1.0             # step 6 model call when LQABR_EMAIL_MODEL is a gemini-* name
 requests>=2.31
 fastapi>=0.111
 uvicorn>=0.30
-# lqabr_core is installed separately: pip install -e packages/lqabr_core (repo root)
+python-dotenv>=1.0            # load agents/email/.env at entry points (email_agent.py, webhook_app.py); no-op on Cloud Run
+google-cloud-secret-manager>=2.20  # the Secret Manager API path; without it only env vars can resolve a secret
+# lqabr_core is installed separately, WITH the gcp extra:
+#   pip install -e "packages/lqabr_core[gcp]"   (repo root)
