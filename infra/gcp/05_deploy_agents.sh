@@ -6,10 +6,17 @@
 #   source ./config.sh && bash 05_deploy_agents.sh
 #
 # Services deployed:
-#   lqabr-<agent>-agent    ADK api_server endpoints (A2A) — internal only,
-#                          invoked by the orchestrator service account
-#   lqabr-<agent>-webhook  Mailgun/Twilio/Zoom webhook receivers — public
-#                          (verified by provider signatures)
+#   SERVICE_AGENTS   the agent's own domain surface (uvicorn service_app:app)
+#                    — POST /hubspot/campaign, /health AND /healthz. This is
+#                    what the gateway dispatches to. Internal only.
+#   ADK_AGENTS       lqabr-<agent>-agent — generic ADK api_server (A2A),
+#                    internal only, invoked by the orchestrator SA.
+#   WEBHOOK_AGENTS   lqabr-<agent>-webhook — Mailgun/Twilio/Zoom receivers,
+#                    public (authenticity is the provider signature).
+#
+# A service kind's name can be pinned via SERVICE_NAME_OVERRIDES so a kind
+# change does not orphan a URL something else already holds — that is how
+# email keeps serving on lqabr-email-agent after moving off the ADK runner.
 set -euo pipefail
 : "${PROJECT_ID:?source ./config.sh first}"
 
@@ -29,6 +36,11 @@ SECRET_FLAGS+=",LQABR_ZOOM_CLIENT_SECRET=lqabr-zoom-client-secret:latest"
 SECRET_FLAGS+=",LQABR_ZOOM_WEBHOOK_SECRET_TOKEN=lqabr-zoom-webhook-secret-token:latest"
 
 ENV_FLAGS="GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
+# auto = env-first, and --set-secrets below injects Secret Manager values AS
+# env vars, so credentials come from Secret Manager without an API call on
+# every cold start. Set LQABR_SECRETS_SOURCE=secret_manager to force the
+# direct API instead (rotation without redeploy, at ~one call per secret).
+ENV_FLAGS+=",LQABR_SECRETS_SOURCE=${LQABR_SECRETS_SOURCE:-secret_manager}"
 ENV_FLAGS+=",GOOGLE_GENAI_USE_ENTERPRISE=1"
 ENV_FLAGS+=",GOOGLE_CLOUD_LOCATION=${REGION}"
 ENV_FLAGS+=",MAILGUN_DOMAIN=${MAILGUN_DOMAIN}"
@@ -37,10 +49,32 @@ ENV_FLAGS+=",TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER}"
 ENV_FLAGS+=",LQABR_SENDER_NAME=${LQABR_SENDER_NAME}"
 ENV_FLAGS+=",LQABR_CTA_URL=${LQABR_CTA_URL}"
 [[ -n "${ZOOM_BOOKING_URL}" ]] && ENV_FLAGS+=",ZOOM_BOOKING_URL=${ZOOM_BOOKING_URL}"
+ENV_FLAGS+=",LQABR_EMAIL_MODEL=${LQABR_EMAIL_MODEL:-gemini-2.0-flash}"
+ENV_FLAGS+=",LQABR_EMAIL_TEMPERATURE=${LQABR_EMAIL_TEMPERATURE:-1.0}"
+ENV_FLAGS+=",LQABR_EMAIL_ROUTES=${LQABR_EMAIL_ROUTES:-all}"
+# HubSpot property names are owned by the HubSpot schema, so they are config,
+# never defaults to be discovered at runtime. Passed explicitly: the code
+# default for the selection property is a guess, and a wrong name now FAILS
+# the run rather than quietly working a different set of leads.
+ENV_FLAGS+=",LQABR_HUBSPOT_OBJECT_ID_PROPERTY=${LQABR_HUBSPOT_OBJECT_ID_PROPERTY:-object_id}"
+ENV_FLAGS+=",LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY=${LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY:-email_campaign_complete}"
+# Explicit rather than implied: the image provisions this path and chowns
+# it to `nobody`. Without a writable state dir every campaign 503s at step 3.
+ENV_FLAGS+=",LQABR_EMAIL_RUNSTATE_DIR=${LQABR_EMAIL_RUNSTATE_DIR:-/var/lib/lqabr/email/runstate}"
+[[ -n "${LQABR_EMAIL_GATEWAY_TOKEN:-}" ]] && ENV_FLAGS+=",LQABR_EMAIL_GATEWAY_TOKEN=${LQABR_EMAIL_GATEWAY_TOKEN}"
+
+# Cloud Run service name for an <agent>:<kind>, honouring SERVICE_NAME_OVERRIDES.
+service_name() {  # <agent_dir> <kind>
+  local key="$1:$2" entry
+  for entry in "${SERVICE_NAME_OVERRIDES[@]:-}"; do
+    [[ "${entry%%=*}" == "${key}" ]] && { echo "${entry#*=}"; return; }
+  done
+  echo "lqabr-${1//_/-}-${2}"
+}
 
 build_and_deploy() {  # <agent_dir> <kind> <extra deploy flags...>
   local agent="$1" kind="$2"; shift 2
-  local service="lqabr-${agent//_/-}-${kind}"
+  local service; service="$(service_name "${agent}" "${kind}")"
   local image="${IMAGE_BASE}/${service}:latest"
 
   echo "== building ${service}"
@@ -60,24 +94,55 @@ build_and_deploy() {  # <agent_dir> <kind> <extra deploy flags...>
     --project "${PROJECT_ID}" --quiet "$@"
 }
 
-# 1) ADK agents — internal; only the runtime SA (orchestrator/A2A) may invoke.
+# 1) Domain surfaces — ONE service per agent, serving both the gateway entry
+#    and the provider push (Platform Engineering, 2026-08-04: "your mail gun
+#    has to send back the event triggers back to the SAME agent").
+#
+#    Deployed --allow-unauthenticated because Mailgun cannot present a Google
+#    ID token. Each entry proves itself instead: the Mailgun HMAC on
+#    /mailgun/events, and LQABR_EMAIL_GATEWAY_TOKEN on /hubspot/campaign and
+#    /engagement/sync.
+#
+#    WARNS rather than blocks when that token is unset. Swaroop was explicit
+#    (2026-08-04, 1:29 / 4:18) that .env is the MVP path and nobody should be
+#    held up waiting on Secret Manager — so set it in .env today and move,
+#    and add lqabr-email-gateway-token to Secret Manager next sprint with the
+#    rest (docs/EMAIL_AGENT_ENV_VARS.md).
+if [[ ${#SERVICE_AGENTS[@]:-0} -gt 0 && -z "${LQABR_EMAIL_GATEWAY_TOKEN:-}" ]]; then
+  echo "05: WARNING — LQABR_EMAIL_GATEWAY_TOKEN is empty." >&2
+  echo "    The email service is public (Mailgun has to reach it), so the" >&2
+  echo "    gateway entries /hubspot/campaign and /engagement/sync will accept" >&2
+  echo "    any caller. Fine for a dev smoke test; set the token before this" >&2
+  echo "    URL is shared or real leads are loaded." >&2
+fi
+for agent in "${SERVICE_AGENTS[@]:-}"; do
+  [[ -n "${agent}" ]] || continue
+  build_and_deploy "${agent}" service --allow-unauthenticated
+done
+
+# 2) ADK agents — internal; only the runtime SA (orchestrator/A2A) may invoke.
 for agent in "${ADK_AGENTS[@]}"; do
   build_and_deploy "${agent}" agent --no-allow-unauthenticated
 done
 
-# 2) Webhook receivers — public endpoints; authenticity is enforced by
+# 3) Webhook receivers — public endpoints; authenticity is enforced by
 #    Mailgun/Twilio/Zoom signature verification inside the app.
 for agent in "${WEBHOOK_AGENTS[@]}"; do
   build_and_deploy "${agent}" webhook --allow-unauthenticated
 done
 
-# 3) Wire the orchestrator to the deployed agent URLs (A2A endpoints).
+# 4) Wire the orchestrator to the deployed agent URLs.
+#    NOTE: LQABR_EMAIL_AGENT_URL now points at a DOMAIN surface
+#    (POST /hubspot/campaign), not an ADK runner. Anything dispatching to it
+#    must send the domain shape — the same shape text_voice takes — not an
+#    ADK {appName, userId, sessionId, newMessage} envelope. `service_name`
+#    keeps the URL itself unchanged.
 url_of() { gcloud run services describe "$1" --region "${REGION}" --project "${PROJECT_ID}" --format 'value(status.url)'; }
 gcloud run services update lqabr-orchestrator-agent \
   --region "${REGION}" --project "${PROJECT_ID}" --quiet \
   --update-env-vars "LQABR_LEAD_PROFILE_AGENT_URL=$(url_of lqabr-lead-profile-agent),LQABR_EMAIL_AGENT_URL=$(url_of lqabr-email-agent),LQABR_TEXT_VOICE_AGENT_URL=$(url_of lqabr-text-voice-agent),LQABR_SCHEDULING_AGENT_URL=$(url_of lqabr-scheduling-agent)"
 
-# 4) Tell the text_voice services their own public webhook base URL (TwiML callbacks).
+# 5) Tell the text_voice services their own public webhook base URL (TwiML callbacks).
 TV_WEBHOOK_URL="$(url_of lqabr-text-voice-webhook)"
 gcloud run services update lqabr-text-voice-webhook \
   --region "${REGION}" --project "${PROJECT_ID}" --quiet \
@@ -87,7 +152,16 @@ gcloud run services update lqabr-text-voice-agent \
   --update-env-vars "LQABR_WEBHOOK_BASE_URL=${TV_WEBHOOK_URL}"
 
 echo "05: all services deployed."
+echo
+echo "    Email agent contract (what the gateway must send):"
+echo "      POST $(url_of "$(service_name email service)")/hubspot/campaign"
+echo "           {\"object_id\": \"<trigger id>\"}      # trigger_id also accepted"
+echo "      GET  $(url_of "$(service_name email service)")/health   (also /healthz)"
+echo "      POST $(url_of "$(service_name email service)")/engagement/sync"
+echo "           {\"object_id\": \"...\", \"run_id\": \"...\"}   # Mailgun track-ID tool call"
+echo "      Both gateway entries need header: X-LQABR-Gateway-Token"
 echo "    Configure provider webhooks to:"
-echo "      Mailgun (delivered/opened/clicked): $(url_of lqabr-email-webhook)/webhooks/mailgun"
+echo "      Mailgun (delivered/opened/clicked): $(url_of "$(service_name email service)")/mailgun/events"
+echo "        ^ the SAME service the gateway calls. There is no email webhook service."
 echo "      Zoom (scheduler events):            $(url_of lqabr-scheduling-webhook)/webhooks/zoom"
 echo "      Twilio callbacks are set per-call by the agent automatically."

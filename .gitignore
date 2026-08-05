@@ -55,3 +55,10 @@ logs/
 
 # Pytest
 .pytest_cache/
+
+# Email Agent runtime state (v2)
+# Run state written at step 7 so late Mailgun events still resolve to a lead.
+.runstate/
+# Local tee of the four observability streams (LQABR_EMAIL_LOG_DIR).
+.logs/
+*_log.jsonl

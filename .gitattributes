@@ -1,0 +1,11 @@
+# The team develops on Windows checkouts with core.autocrlf unset. Shell
+# scripts copied into Linux images must keep LF endings or the shebang
+# breaks at exec time.
+* text=auto eol=lf
+*.sh  text eol=lf
+*.py  text eol=lf
+*.yml text eol=lf
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.pdf  binary
