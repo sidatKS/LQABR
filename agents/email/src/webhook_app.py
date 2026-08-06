@@ -65,12 +65,12 @@ async def mailgun_webhook(request: Request) -> Dict[str, Any]:
         return {"status": "ignored", "event": event_name}
 
     variables = event_data.get("user-variables", {}) or {}
-    contact_id = variables.get("hubspot_contact_id")
+    contact_id = variables.get("contact_id")
     if not contact_id:
         # Never silently drop: surface loudly so the send path gets fixed.
-        logger.error("Mailgun %s event without hubspot_contact_id: %s",
+        logger.error("Mailgun %s event without contact_id: %s",
                      event_name, event_data.get("message", {}))
-        raise HTTPException(status_code=422, detail="event missing hubspot_contact_id")
+        raise HTTPException(status_code=422, detail="event missing contact_id")
 
     detail = None
     if event_type is EventType.EMAIL_CLICKED:
@@ -79,7 +79,7 @@ async def mailgun_webhook(request: Request) -> Dict[str, Any]:
     try:
         lead = _crm().record_event(EngagementEvent(
             event_type=event_type,
-            hubspot_contact_id=str(contact_id),
+            contact_id=str(contact_id),
             occurred_at=str(event_data.get("timestamp") or "") or None,
             detail=detail,
         ))

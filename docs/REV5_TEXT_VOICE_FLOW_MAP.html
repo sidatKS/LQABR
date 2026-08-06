@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SP-1 Voice Campaign — Rev 5 text_voice flow map</title>
+<style>
+  :root{
+    --bg:#fbfbfa; --panel:#ffffff; --ink:#1d1c1a; --ink-2:#5c5a55; --ink-3:#8b8882;
+    --line:#e3e1dc; --line-2:#cfccc5;
+    --a:#1f6f5c;      /* agent / ours */
+    --a-soft:#eef5f2;
+    --b:#7a5c1f;      /* external */
+    --b-soft:#f8f2e4;
+    --c:#6b3f8f;      /* mcp */
+    --c-soft:#f3eef8;
+    --warn:#9a3b28; --warn-soft:#fbeeea;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#16161a; --panel:#1e1e23; --ink:#eceae5; --ink-2:#a8a5a0; --ink-3:#7d7a75;
+      --line:#2e2e35; --line-2:#3d3d46;
+      --a:#5fbfa3; --a-soft:#17282400; --a-soft:#152420;
+      --b:#d4ac63; --b-soft:#241f14;
+      --c:#b892d8; --c-soft:#211a29;
+      --warn:#e0836c; --warn-soft:#2a1a16;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:44px 28px 96px}
+  header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:38px}
+  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--a);margin-bottom:12px}
+  h1{margin:0 0 8px;font-size:29px;line-height:1.2;font-weight:650;letter-spacing:-.02em}
+  .sub{color:var(--ink-2);margin:0;font-size:15px;max-width:66ch}
+  .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font:500 12px/1 var(--mono);padding:6px 10px;border-radius:999px;
+    background:var(--panel);border:1px solid var(--line);color:var(--ink-2)}
+  h2{margin:52px 0 6px;font-size:12px;font-weight:650;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-3);font-family:var(--mono)}
+  h2 + .lede{margin:0 0 22px;color:var(--ink-2);font-size:14.5px;max-width:74ch}
+
+  /* ---------- flow ---------- */
+  .flow{display:grid;gap:14px}
+  .row{display:grid;gap:14px;align-items:stretch}
+  .row.three{grid-template-columns:1fr 1fr 1fr}
+  .row.two{grid-template-columns:1fr 1fr}
+  @media(max-width:840px){.row.three,.row.two{grid-template-columns:1fr}}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:15px 17px;position:relative}
+  .box.ours{border-color:color-mix(in srgb,var(--a) 34%,var(--line))}
+  .box.ext{border-style:dashed;border-color:color-mix(in srgb,var(--b) 40%,var(--line))}
+  .box.mcp{border-color:color-mix(in srgb,var(--c) 34%,var(--line))}
+  .num{display:inline-flex;align-items:center;justify-content:center;
+    width:21px;height:21px;border-radius:50%;font:650 11px/1 var(--mono);
+    color:#fff;background:var(--a);margin-right:8px;flex:0 0 auto}
+  .ext .num{background:var(--b)} .mcp .num{background:var(--c)}
+  .bhead{display:flex;align-items:center;margin-bottom:3px}
+  .btitle{font-weight:650;font-size:15.5px;letter-spacing:-.01em}
+  .bfile{font:500 11.5px/1.5 var(--mono);color:var(--ink-3);margin:0 0 10px 29px}
+  .tag{position:absolute;top:13px;right:14px;font:600 9.5px/1 var(--mono);
+    letter-spacing:.1em;padding:5px 8px;border-radius:5px;text-transform:uppercase}
+  .tag.model{background:var(--a-soft);color:var(--a)}
+  .tag.inproc{background:var(--c-soft);color:var(--c)}
+  .tag.out{background:var(--b-soft);color:var(--b)}
+  ul.items{list-style:none;margin:0;padding:0}
+  ul.items li{display:grid;grid-template-columns:20px 1fr;gap:9px;
+    padding:7px 0;border-top:1px solid var(--line);font-size:13.5px}
+  ul.items li:first-child{border-top:0}
+  .sn{font:650 11px/1.5 var(--mono);color:var(--a)}
+  .ext .sn{color:var(--b)}
+  .items code,.items .fn{font:500 12px/1.5 var(--mono);color:var(--ink-2)}
+  .note{color:var(--ink-2);font-size:13px;margin:9px 0 0}
+  .arrow{display:flex;align-items:center;justify-content:center;gap:9px;
+    color:var(--ink-3);font:500 11.5px/1 var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;padding:2px 0}
+  .arrow::before,.arrow::after{content:"";height:1px;background:var(--line-2);flex:1}
+
+  /* ---------- tables ---------- */
+  .tw{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:640px}
+  th{text-align:left;font:600 10.5px/1.4 var(--mono);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);padding:12px 15px;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:11px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td code{font:500 12px/1.5 var(--mono);color:var(--ink)}
+  .st{font:650 11px/1 var(--mono);color:var(--a);white-space:nowrap}
+  .yes{color:var(--a);font-weight:600}
+  .no{color:var(--warn);font-weight:600}
+
+  /* ---------- tree ---------- */
+  pre.tree{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:20px 22px;overflow-x:auto;font:12.5px/1.75 var(--mono);margin:0;
+    color:var(--ink-2)}
+  pre.tree b{color:var(--ink);font-weight:600}
+  pre.tree .n{color:var(--a);font-weight:600}
+  pre.tree .add{color:var(--a);font-weight:600}
+  pre.tree .del{color:var(--warn)}
+  pre.tree .cm{color:var(--ink-3)}
+  pre.tree .own{color:var(--c);font-weight:600}
+
+  /* ---------- callouts ---------- */
+  .callout{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 26%,transparent);
+    border-left:3px solid var(--warn);border-radius:9px;padding:14px 17px;margin:0 0 14px}
+  .callout .ct{font-weight:650;font-size:13.5px;margin-bottom:4px;color:var(--warn)}
+  .callout p{margin:0;font-size:13.5px;color:var(--ink-2)}
+  .streams{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:840px){.streams{grid-template-columns:1fr}}
+  .stream{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px 18px}
+  .stream h3{margin:0 0 3px;font:650 13px/1.4 var(--mono);color:var(--a)}
+  .stream .q{color:var(--ink-3);font-size:12.5px;font-style:italic;margin:0 0 9px}
+  .stream p{margin:0;font-size:13px;color:var(--ink-2)}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);
+    color:var(--ink-3);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">SP-1 · Voice Campaign · Rev 5</div>
+  <h1>text_voice — flow map &amp; implementation tree</h1>
+  <p class="sub">One deployable service, two inbound routes, one outbound telephony leg.
+  Vapi replaces Twilio and owns every conversational turn — no code in this repo runs mid-call.</p>
+  <div class="meta">
+    <span class="chip">built 2026-07-30</span>
+    <span class="chip">59/59 wiring checks green</span>
+    <span class="chip">HubSpot portal 246777241</span>
+    <span class="chip">hubspot.py untouched</span>
+  </div>
+</header>
+
+<h2>The flow</h2>
+<p class="lede">Green is ours. Purple is the shared in-process tool folder. Dashed amber is outside this system.</p>
+
+<div class="flow">
+  <div class="row three">
+    <div class="box ext">
+      <div class="bhead"><span class="num">1</span><span class="btitle">HubSpot trigger</span></div>
+      <div class="bfile">inside HubSpot · nothing polls</div>
+      <ul class="items">
+        <li><span class="sn">→</span><span>A workflow fires the moment a contact becomes eligible: <code>lqabr_email_status = OPENED</code></span></li>
+        <li><span class="sn">→</span><span>Posts the contact's <code>employee_id</code> to route 1</span></li>
+      </ul>
+      <p class="note">Push-based, so outreach starts with no polling delay.</p>
+    </div>
+
+    <div class="box ours">
+      <span class="tag inproc">handoff</span>
+      <div class="bhead"><span class="num">2</span><span class="btitle">API gateway</span></div>
+      <div class="bfile">agents/text_voice/src/tools.py</div>
+      <ul class="items">
+        <li><span class="sn">r1</span><span><code>POST /hubspot/lead</code><br>verify signature · answer 200 · hand off</span></li>
+        <li><span class="sn">r2</span><span><code>POST /vapi/report</code><br>verify secret · answer 200 · hand off</span></li>
+      </ul>
+      <p class="note">One app, two routes. No business logic: verify, respond fast, hand off in-process.</p>
+    </div>
+
+    <div class="box ext">
+      <span class="tag out">not ours</span>
+      <div class="bhead"><span class="num">6</span><span class="btitle">Vapi runs the call</span></div>
+      <div class="bfile">api.vapi.ai</div>
+      <ul class="items">
+        <li><span class="sn">→</span><span>Dials, handles ringing/busy, runs every conversational turn, handles voicemail</span></li>
+        <li><span class="sn">→</span><span>On end, POSTs <code>endedReason</code> · <code>transcript</code> · <code>recordingUrl</code> to route 2</span></li>
+      </ul>
+      <p class="note">Three outcomes: not answered · rings or busy · answered.</p>
+    </div>
+  </div>
+
+  <div class="arrow">in-process handoff — a function call, not a network hop</div>
+
+  <div class="box ours">
+    <span class="tag model">model</span>
+    <div class="bhead"><span class="num">3</span><span class="btitle">The agent — one place</span></div>
+    <div class="bfile">agents/text_voice/src/text_voice.py · steps 3–4 and 7–8</div>
+    <ul class="items">
+      <li><span class="sn">3</span><span><b>Read the lead</b> — <span class="fn">get_lead(employee_id)</span> → MCP.
+        Stops on: no contact · no phone · opted out · already complete.</span></li>
+      <li><span class="sn">4</span><span><b>Place the call</b> — <span class="fn">tools.place_call(lead)</span> → <code>POST /call</code>.
+        The only outbound telephony leg. Then <code>voice_status = INITIATED</code>.</span></li>
+      <li><span class="sn">7</span><span><b>Summarise the report</b> — <span class="fn">summarise_report(endedReason, transcript)</span>.
+        The agent decides the outcome, <em>not</em> a prebuilt Vapi <code>analysisPlan</code>.</span></li>
+      <li><span class="sn">8</span><span><b>Push it to MCP</b> — <span class="fn">push_to_mcp(outcome, summary, recordingUrl)</span>.</span></li>
+    </ul>
+    <p class="note">Steps 3–4 and 7–8 are separate invocations, split by the call itself. The agent holds no state between them — HubSpot is the only system of record.</p>
+  </div>
+
+  <div class="arrow">3 · calls        ·        8 · writes</div>
+
+  <div class="box mcp">
+    <span class="tag inproc">in-process</span>
+    <div class="bhead"><span class="num">5</span><span class="btitle">Central MCP folder</span></div>
+    <div class="bfile">packages/lqabr_core/</div>
+    <ul class="items">
+      <li><span class="sn">R</span><span><b>Read tools</b> — <span class="fn">get_lead()</span> · contact fields + associated company</span></li>
+      <li><span class="sn">W</span><span><b>Write tools</b> — <span class="fn">upsert_lead()</span> · <span class="fn">record_event()</span></span></li>
+    </ul>
+    <p class="note">One shared copy every agent imports. A package import, not a second service — no network hop, no second process. Writes land back on the HubSpot contact, closing the loop to step 1: crossing probability 60 fires the Scheduling stage's trigger.</p>
+  </div>
+</div>
+
+<h2>Step by step</h2>
+<p class="lede">Every step mapped to its code, credential and log streams.</p>
+<div class="tw">
+<table>
+<thead><tr><th>Step</th><th>Code</th><th>Credential</th><th>Logs</th></tr></thead>
+<tbody>
+<tr><td class="st">1 trigger</td><td>none — inside HubSpot</td><td>—</td><td>none (first appears at 2)</td></tr>
+<tr><td class="st">2 gateway</td><td><code>tools.py :: hubspot_lead()</code></td><td>HubSpot sig v3 → v2 → shared token</td><td>audit + process</td></tr>
+<tr><td class="st">3 read lead</td><td><code>text_voice.py :: get_lead()</code></td><td><code>lqabr-hubspot-access-token</code></td><td>process + audit (1–3 GETs)</td></tr>
+<tr><td class="st">4 place call</td><td><code>tools.py :: place_call()</code></td><td><code>lqabr-vapi-api-key</code></td><td>process + audit (<code>POST /call</code>)</td></tr>
+<tr><td class="st">6 vapi call</td><td>none — Vapi's side</td><td>—</td><td>none (first appears at 7)</td></tr>
+<tr><td class="st">6→7 gateway</td><td><code>tools.py :: vapi_report()</code></td><td><code>lqabr-vapi-webhook-secret</code></td><td>audit</td></tr>
+<tr><td class="st">7 summarise</td><td><code>text_voice.py :: summarise_report()</code></td><td>model provider key</td><td>process — <b>model, in/out tokens, latency</b></td></tr>
+<tr><td class="st">8 push to MCP</td><td><code>text_voice.py :: push_to_mcp()</code></td><td><code>lqabr-hubspot-access-token</code></td><td>process + audit (both writes)</td></tr>
+<tr><td class="st">always on</td><td><code>observability.py</code></td><td>—</td><td>system</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Step 7 — how the outcome is decided</h2>
+<p class="lede">Three paths, in order. Only the third spends a completion.</p>
+<div class="tw">
+<table>
+<thead><tr><th>Path</th><th>When</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>ended_reason</code></td><td><code>customer-did-not-answer</code>, <code>customer-busy</code>, <code>voicemail</code>, any <code>pipeline-error-*</code> / <code>call.start.error-*</code></td><td>Settled without the model — no conversation happened, so there is nothing to interpret</td></tr>
+<tr><td><code>empty_transcript</code></td><td>Call connected, zero words transcribed</td><td><b>voicemail</b> — words are the only evidence a person was there</td></tr>
+<tr><td><code>model</code></td><td>There is a transcript</td><td>Model classifies + summarises; tokens and latency logged</td></tr>
+<tr><td><code>fallback</code></td><td>The model call failed</td><td>Deterministic outcome, logged at ERROR — step 8 still runs</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Outcome → what gets written</h2>
+<div class="tw">
+<table>
+<thead><tr><th>Outcome</th><th>lqabr_voice_status</th><th>Events recorded</th><th>Probability from 30</th><th>Promotes?</th></tr></thead>
+<tbody>
+<tr><td><code>not_answered</code></td><td><code>FAILED</code></td><td><code>CALL_NOT_ANSWERED</code></td><td>30 — unmoved by design</td><td class="no">no</td></tr>
+<tr><td><code>voicemail</code></td><td><code>VOICEMAIL_LEFT</code></td><td><code>VOICEMAIL_LEFT</code></td><td>32</td><td class="no">no</td></tr>
+<tr><td><code>answered_not_engaged</code></td><td><code>COMPLETED</code></td><td><code>CALL_ANSWERED</code></td><td>45</td><td class="no">no</td></tr>
+<tr><td><code>answered_and_engaged</code></td><td><code>COMPLETED</code></td><td><code>CALL_ANSWERED</code> <b>+</b> <code>CALL_ENGAGED</code></td><td><b>60</b></td><td class="yes">yes → Scheduling</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout" style="margin-top:14px">
+  <div class="ct">An engaged call records two events, not one</div>
+  <p><code>probability.py</code> is built so 30 (text/voice entry) + 15 (answered) + 15 (engaged) = 60 = <code>SCHEDULING_THRESHOLD</code>. Recording only <code>CALL_ENGAGED</code> leaves an engaged lead at 45 and it never promotes.</p>
+</div>
+
+<h2>Repository tree</h2>
+<p class="lede"><span class="add">+</span> new · <span class="add">~</span> modified · <span class="del">−</span> retired · <span class="own">◆</span> owned by another developer</p>
+<pre class="tree"><b>LQABR/</b>
+│
+├── <b>agents/text_voice/</b>                    <span class="cm">the one service that gets deployed</span>
+│   ├── <b>src/</b>                              <span class="cm">three files, nothing else</span>
+│   │   ├── <span class="add">~</span> agent.py                     <span class="cm">ADK shim: re-exports root_agent</span>
+│   │   ├── <span class="add">+</span> text_voice.py                <span class="n">[3][7][8]</span> <span class="cm">the model and its tools</span>
+│   │   │     ├── get_lead()                  <span class="cm">3 · read + 4 stop conditions</span>
+│   │   │     ├── summarise_report()          <span class="cm">7 · outcome + summary</span>
+│   │   │     ├── push_to_mcp()               <span class="cm">8 · both writes</span>
+│   │   │     ├── handle_new_lead()           <span class="cm">entrypoint: 3 → 4</span>
+│   │   │     ├── handle_call_report()        <span class="cm">entrypoint: 7 → 8</span>
+│   │   │     ├── list_text_voice_queue()     <span class="cm">operator tool (queue ≥ 30)</span>
+│   │   │     ├── _MCPAdapter                 <span class="cm">TEMPORARY — see deviations</span>
+│   │   │     └── root_agent                  <span class="cm">ADK agent + instructions</span>
+│   │   └── <span class="add">+</span> tools.py                     <span class="n">[2][4]</span> <span class="cm">the two routes in + POST /call</span>
+│   │         ├── app                         <span class="cm">FastAPI · one service</span>
+│   │         ├── POST /hubspot/lead          <span class="cm">2 · verify · 200 · hand off</span>
+│   │         ├── POST /vapi/report           <span class="cm">6→7 · verify · 200 · hand off</span>
+│   │         ├── GET  /healthz
+│   │         ├── place_call()                <span class="cm">4 · the one outbound leg</span>
+│   │         ├── build_call_payload()        <span class="cm">destination + personalization</span>
+│   │         ├── build_assistant_config()    <span class="cm">Q&amp;A script, in version control</span>
+│   │         ├── VapiClient                  <span class="cm">retry + audit, REST to api.vapi.ai</span>
+│   │         ├── verify_hubspot_signature()  <span class="cm">v3 → v2 → shared token</span>
+│   │         └── verify_vapi_secret()        <span class="cm">X-Vapi-Secret / Bearer</span>
+│   │       <span class="del">− twilio_client.py · conversation.py · webhook_app.py</span>
+│   │       <span class="del">− text_voice_agent.py            → _to_delete/text_voice_twilio_rev4/</span>
+│   ├── <b>tests/</b>
+│   │   ├── <span class="add">~</span> conftest.py                  <span class="cm">loads tools.py + text_voice.py</span>
+│   │       <span class="del">− 5 twilio test modules          → _to_delete/text_voice_twilio_rev4/</span>
+│   ├── <span class="add">~</span> requirements.txt                 <span class="cm">+ vapi-server-sdk   − twilio</span>
+│   └── <span class="add">~</span> .env.example                     <span class="cm">Vapi + gateway + eligibility config</span>
+│
+├── <b>packages/lqabr_core/</b>                  <span class="cm">central tool folder — NOT under the agent</span>
+│   └── lqabr_core/
+│       ├── <span class="own">◆</span> crm/hubspot.py               <span class="n">[5]</span> <span class="cm">read tools + write tools</span>
+│       ├── <span class="add">+</span> observability.py             <span class="cm">system_log · process_log · audit_log</span>
+│       ├── <span class="add">~</span> types.py                     <span class="cm">+ VoiceLead · VoiceOutcome</span>
+│       ├── probability.py                    <span class="cm">increments + thresholds (unchanged)</span>
+│       ├── secrets.py                        <span class="cm">Secret Manager + env fallback</span>
+│       └── timezones.py
+│
+├── <b>docs/</b>
+│   ├── <span class="add">+</span> REV5_TEXT_VOICE_FLOW_MAP.md      <span class="cm">this map, in the repo</span>
+│   └── <span class="add">+</span> REV5_MCP_TOOL_CONTRACT.md        <span class="cm">the step-5 handoff spec</span>
+│
+└── <b>infra/gcp/</b>
+    ├── <span class="add">~</span> config.sh                        <span class="cm">+ lqabr-vapi-* secrets</span>
+    └── <span class="add">~</span> config.dev.sh                    <span class="cm">+ lqabr-vapi-* secrets</span></pre>
+
+<h2>Observability — three streams, one correlation id</h2>
+<div class="streams">
+  <div class="stream">
+    <h3>system_log</h3>
+    <p class="q">Is the service itself healthy?</p>
+    <p>Startup/shutdown, revision, config problems. Carries no lead identity on purpose.</p>
+  </div>
+  <div class="stream">
+    <h3>process_log</h3>
+    <p class="q">Where did this call get stuck, and what did the model decide at what cost?</p>
+    <p>Every step: <code>started</code> → <code>ok</code>/<code>stopped</code>/<code>error</code>/<code>degraded</code> with <code>duration_ms</code>; plus model, input/output tokens and latency at step 7.</p>
+  </div>
+  <div class="stream">
+    <h3>audit_log</h3>
+    <p class="q">Did this request actually go out, and what came back?</p>
+    <p>Every inbound (signature scheme, status) and outbound (credential <em>name</em>, status, attempt) HTTP call. Token values are never logged.</p>
+  </div>
+</div>
+<pre class="tree" style="margin-top:14px">jsonPayload.correlation_id="&lt;id&gt;"                          <span class="cm"># one lead, every step</span>
+jsonPayload.log_stream="audit"   AND jsonPayload.status_code&gt;=400
+jsonPayload.log_stream="process" AND jsonPayload.step="step7.summarise_report"
+jsonPayload.log_stream="process" AND jsonPayload.status="degraded"</pre>
+
+<h2>Deviations from Rev 5</h2>
+<p class="lede">Places the spec could not be implemented literally. None silently dropped.</p>
+
+<div class="callout">
+  <div class="ct">HubSpot rejects self-minted JWTs</div>
+  <p>Rev 5 steps 3 and 8 send <code>Authorization: Bearer &lt;jwt&gt;</code> to HubSpot. The CRM v3 API accepts only HubSpot-issued credentials; a self-signed JWT returns <b>401</b>, and the token endpoint has no <code>jwt-bearer</code> grant. Now uses the private-app token from Secret Manager per your call — the "no static tokens" requirement is unmet on this leg and tracked separately.</p>
+</div>
+<div class="callout">
+  <div class="ct">Step 1 could not fire as written</div>
+  <p>The spec triggers on <code>email_status = "clicked"</code>. The real <code>lqabr_email_status</code> enum has no <code>CLICKED</code> option — only PENDING / SENT / DELIVERED / OPENED / FAILED / BOUNCED. Eligibility is now <code>OPENED</code>, config-driven via <code>LQABR_TEXT_VOICE_ELIGIBLE_EMAIL_STATUS</code>.</p>
+</div>
+<div class="callout">
+  <div class="ct">Two Data-Fields entries are UI labels, not API names</div>
+  <p><code>voice_status</code> and <code>email_status</code> both return <code>propertiesNotFound</code>. The real properties are <code>lqabr_voice_status</code> and <code>lqabr_email_status</code>. Verified against portal 246777241 via the properties API.</p>
+</div>
+<div class="callout">
+  <div class="ct">Step 5 is owned by another developer</div>
+  <p><code>crm/hubspot.py</code> is untouched. <code>text_voice.py</code> carries a clearly-marked temporary <code>_MCPAdapter</code> that satisfies the same contract and defers automatically once the real module-level tools land. Full spec in <code>REV5_MCP_TOOL_CONTRACT.md</code>.</p>
+</div>
+
+<h2>Twilio bugs this retires</h2>
+<div class="tw">
+<table>
+<thead><tr><th>Bug</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><code>AnsweredBy</code> "unknown"/"fax" treated as a confirmed human answer</td><td><b>Gone by design.</b> No human-vs-machine guess at connect time. Step 7 decides from what was said; a connected call with no speech is <code>voicemail</code>, not <code>answered</code>.</td></tr>
+<tr><td>No try/except around <code>_context_for()</code> — a CRM error 500s the webhook</td><td><b>Gone.</b> <code>webhook_app.py</code> retired. Verify → 200 → background task; a CRM failure inside a step cannot fail the webhook response.</td></tr>
+<tr><td>A call that rings out never invokes <code>/voice/answer</code>, so nothing is recorded</td><td><b>Gone.</b> Vapi posts <code>end-of-call-report</code> for every call however it ends, including <code>customer-did-not-answer</code>.</td></tr>
+<tr><td><code>list_text_voice_queue()</code> has no try/except — a CRM failure kills the adk session</td><td><b>Fixed.</b> Returns <code>{"error": "crm-error: …"}</code>.</td></tr>
+<tr><td>No opt-out enforcement before dialing</td><td><b>Fixed twice.</b> Step 3 blocks with <code>opted-out:</code>, and <code>place_call()</code> re-checks at the boundary — the last code before a real phone rings.</td></tr>
+<tr><td><code>is_affirmative()</code> substring matching ("sure" inside "assure")</td><td><b>Not applicable.</b> <code>conversation.py</code> retired; Vapi's model handles intent.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Before the first live call</h2>
+<div class="tw">
+<table>
+<thead><tr><th>What</th><th>Where</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><code>lqabr-vapi-api-key</code></td><td>Secret Manager (name already added to <code>config.sh</code>)</td><td class="no">create — the org's <em>private</em> key</td></tr>
+<tr><td><code>lqabr-vapi-webhook-secret</code></td><td>Secret Manager</td><td class="no">create — any long random string</td></tr>
+<tr><td><code>lqabr-hubspot-webhook-token</code></td><td>Secret Manager</td><td class="no">create — same value in the workflow's <code>X-LQABR-Webhook-Token</code></td></tr>
+<tr><td><code>LQABR_VAPI_PHONE_NUMBER_ID</code></td><td>Cloud Run env</td><td class="no">set — step 4 cannot dial without it</td></tr>
+<tr><td><code>LQABR_GATEWAY_BASE_URL</code></td><td>Cloud Run env</td><td class="no">set — wrong value means calls run and no result is recorded</td></tr>
+<tr><td>Workflow → <code>POST /hubspot/lead</code></td><td>HubSpot portal 246777241</td><td class="no">configure on <code>lqabr_email_status = OPENED</code></td></tr>
+<tr><td>pytest suite for the two new modules</td><td><code>agents/text_voice/tests/</code></td><td class="no">next session</td></tr>
+</tbody>
+</table>
+</div>
+
+<footer>
+  SP-1 Voice Campaign · Rev 5 · <code>agents/text_voice</code> · generated 2026-07-30.
+  Repo copy: <code>docs/REV5_TEXT_VOICE_FLOW_MAP.md</code>. Step-5 handoff: <code>docs/REV5_MCP_TOOL_CONTRACT.md</code>.
+</footer>
+
+</div>
+</body>
+</html>

@@ -29,7 +29,7 @@ class FakeMailgun:
 def test_send_personalizes_and_tags_contact_id(monkeypatch):
     lead = LeadProfile(full_name="Jane Smith", email="jane@acme.example",
                        company="Acme", job_title="VP", industry="Mfg",
-                       stage=LeadStage.PROFILED, hubspot_contact_id="42")
+                       stage=LeadStage.PROFILED, contact_id="42")
     crm = FakeCRM(lead)
     monkeypatch.setattr(email_agent, "HubSpotClient", lambda: crm)
     monkeypatch.setattr(email_agent, "MailgunClient", FakeMailgun)
@@ -39,7 +39,7 @@ def test_send_personalizes_and_tags_contact_id(monkeypatch):
     sent = FakeMailgun.last_send
     assert sent["to"] == "jane@acme.example"
     assert "Jane" in sent["html"] and "Acme" in sent["subject"]
-    assert sent["variables"] == {"hubspot_contact_id": "42"}
+    assert sent["variables"] == {"contact_id": "42"}
     # first send moves the lead into email_outreach
     assert crm.stage_calls[0][1] is LeadStage.EMAIL_OUTREACH
 
@@ -51,7 +51,7 @@ def test_unknown_lead_is_an_error_not_a_send(monkeypatch):
 
 
 def test_queue_lists_stage_leads(monkeypatch):
-    lead = LeadProfile(email="a@b.c", stage=LeadStage.EMAIL_OUTREACH, hubspot_contact_id="1")
+    lead = LeadProfile(email="a@b.c", stage=LeadStage.EMAIL_OUTREACH, contact_id="1")
     monkeypatch.setattr(email_agent, "HubSpotClient", lambda: FakeCRM(lead))
     queue = email_agent.list_email_queue()
     assert queue["count"] == 1

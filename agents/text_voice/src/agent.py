@@ -3,6 +3,6 @@ agents/text_voice/src` finds this directory as a single-agent module."""
 
 from __future__ import annotations
 
-from .text_voice_agent import root_agent
+from .adk_agent import root_agent
 
 __all__ = ["root_agent"]

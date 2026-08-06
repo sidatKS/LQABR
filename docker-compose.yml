@@ -1,0 +1,68 @@
+# ============================================================
+# LOCAL BUILD + PUSH ONLY — Cloud Run deploys still go through
+# infra/gcp/05_deploy_agents.sh. This file implements the
+# approved image spec (claude/text-voice-image-spec.md):
+#
+#   build + run locally:   docker compose up --build
+#   push to registry:      docker compose build txtv
+#                          docker compose push  txtv
+#
+# Naming per the org convention (lqabr-dev-<component>-<kind>).
+# Version: VERSION env var at build time (default 0.1.0), e.g.
+#   VERSION=0.2.0 docker compose build text-voice-webhook
+# Every build also moves
+# the `latest` tag to point at it.
+#
+# Secrets are injected at RUNTIME from agents/text_voice/.env
+# (git-ignored AND docker-ignored — they never enter the image).
+# ============================================================
+
+services:
+  # The production service — the text_voice agent itself.
+  # FastAPI (tools:app) behind the Agent Gateway.
+  # Routes: POST /lead, POST /call-report, GET /healthz
+  #
+  # Named txtv (TeXT-Voice, 4-letter style like gtwy): text_voice has NO
+  # separate webhook service — this one container IS the agent; its HTTP
+  # routes are the agent's sensors. SERVICE_KIND=webhook below is only the
+  # entrypoint's process selector (uvicorn vs adk api_server), not a name.
+  txtv:
+    build:
+      context: .                              # repo root — Dockerfile copies packages/ + agents/
+      dockerfile: infra/gcp/cloud-run/Dockerfile
+      args:
+        AGENT_DIR: text_voice
+        SERVICE_KIND: webhook
+        APP_MODULE: tools:app   # baked into the image — bare deploys boot correctly
+      tags:
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-txtv:${VERSION:-0.1.0}"
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-txtv:latest"
+    image: "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-txtv:${VERSION:-0.1.0}"
+    env_file:
+      - agents/text_voice/.env
+    environment:
+      # Rev 5 retired webhook_app.py — the app lives in tools.py.
+      APP_MODULE: tools:app
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+  # Dev/test surface only (NOT in the prod flow, never pushed): ADK
+  # api_server serving root_agent. Start with: docker compose --profile adk up
+  text-voice-adk:
+    profiles: ["adk"]
+    build:
+      context: .
+      dockerfile: infra/gcp/cloud-run/Dockerfile
+      args:
+        AGENT_DIR: text_voice
+        SERVICE_KIND: agent
+    image: lqabr-text-voice-agent:local
+    env_file:
+      - agents/text_voice/.env
+    ports:
+      - "8000:8080"

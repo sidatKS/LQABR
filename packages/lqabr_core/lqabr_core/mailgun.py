@@ -46,7 +46,7 @@ class MailgunClient:
                    variables: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Send one tracked email. `variables` are attached as Mailgun user
         variables and echoed back in webhook events (we always attach
-        hubspot_contact_id so events can be tied back to the lead)."""
+        contact_id so events can be tied back to the lead)."""
         data: Dict[str, Any] = {
             "from": self._sender,
             "to": to,

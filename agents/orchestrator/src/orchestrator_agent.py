@@ -92,12 +92,12 @@ def dispatch_cycle(batch_per_stage: int = 10, dry_run: bool = False) -> Dict[str
     for stage, (agent_key, instruction) in STAGE_ROUTING.items():
         for lead in crm.leads_in_stage(stage, limit=batch_per_stage):
             if not lead.email:
-                failures.append({"contact_id": lead.hubspot_contact_id or "?",
+                failures.append({"contact_id": lead.contact_id or "?",
                                  "stage": stage.value,
                                  "reason": "bad-data: lead has no email lookup key"})
                 continue
-            text = instruction.format(email=lead.email, contact_id=lead.hubspot_contact_id)
-            item = {"contact_id": lead.hubspot_contact_id or "?", "stage": stage.value,
+            text = instruction.format(email=lead.email, contact_id=lead.contact_id)
+            item = {"contact_id": lead.contact_id or "?", "stage": stage.value,
                     "agent": agent_key, "instruction": text,
                     "probability": str(lead.probability)}
             if dry_run:
@@ -105,7 +105,7 @@ def dispatch_cycle(batch_per_stage: int = 10, dry_run: bool = False) -> Dict[str
                 continue
             try:
                 dispatcher.send_message(agent_key, text,
-                                        metadata={"hubspot_contact_id": lead.hubspot_contact_id,
+                                        metadata={"contact_id": lead.contact_id,
                                                   "stage": stage.value})
                 dispatched.append({**item, "status": "dispatched"})
             except A2AError as exc:

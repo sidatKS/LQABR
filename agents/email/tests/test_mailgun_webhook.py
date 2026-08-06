@@ -24,7 +24,7 @@ class FakeCRM:
     def record_event(self, event):
         FakeCRM.events.append(event)
         return LeadProfile(probability=17, stage=LeadStage.EMAIL_OUTREACH,
-                           hubspot_contact_id=event.hubspot_contact_id)
+                           contact_id=event.contact_id)
 
 
 def signed(timestamp="100", token="tok"):
@@ -35,7 +35,7 @@ def signed(timestamp="100", token="tok"):
 
 def payload(event="opened", variables=None):
     if variables is None:
-        variables = {"hubspot_contact_id": "42"}
+        variables = {"contact_id": "42"}
     return {"signature": signed(),
             "event-data": {"event": event, "timestamp": 1234.5,
                            "user-variables": variables}}
