@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2620" height="1580" viewBox="0 0 2620 1580">
+<defs><marker id="a" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0,1 L10,5.5 L0,10 z" fill="#1a5fb4"/></marker><marker id="ag" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0,1 L10,5.5 L0,10 z" fill="#5b6470"/></marker><marker id="ar" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0,1 L10,5.5 L0,10 z" fill="#c62828"/></marker><marker id="ao" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0,1 L10,5.5 L0,10 z" fill="#e65100"/></marker><marker id="ap" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto"><path d="M0,1 L10,5.5 L0,10 z" fill="#6a1b9a"/></marker></defs>
+<rect width="2620" height="1580" fill="#ffffff"/>
+<text x="50" y="62" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="34" fill="#111" font-weight="700" text-anchor="start">LQABR Agent Gateway — dataflow: HubSpot trigger → Email / Voice / Scheduling agents</text>
+<text x="50" y="98" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="17" fill="#555" font-weight="normal" text-anchor="start">SP-1 · Rev 3 · trigger-only routing, no lead data crosses the gateway · verified live 31 Jul + 4 Aug 2026 on real CRM records</text>
+<rect x="40" y="200" width="250" height="190" rx="10" fill="#f6f7f9" stroke="#5b6470" stroke-width="2.5"/>
+<text x="60" y="235" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="15" fill="#5b6470" font-weight="700" text-anchor="start">UPSTREAM</text>
+<text x="60" y="264" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#111" font-weight="700" text-anchor="start">lead_profile agent</text>
+<text x="60" y="296" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">263 decision-makers</text>
+<text x="60" y="317" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">built from 3 seed CSVs</text>
+<text x="60" y="338" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">pushed to HubSpot</text>
+<text x="60" y="359" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">(see lead_profile dataflow)</text>
+<line x1="295" y1="292" x2="355" y2="292" stroke="#5b6470" stroke-width="3" marker-end="url(#ag)"/>
+<rect x="360" y="185" width="250" height="300" rx="10" fill="#f0f8f1" stroke="#2e7d32" stroke-width="3"/>
+<text x="485" y="222" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="21" fill="#111" font-weight="700" text-anchor="middle">HubSpot CRM</text>
+<text x="485" y="247" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#2e7d32" font-weight="normal" text-anchor="middle">system of record</text>
+<text x="380" y="285" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#333" font-weight="normal" text-anchor="start">Private app: Agent Gateway</text>
+<text x="380" y="306" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#333" font-weight="normal" text-anchor="start">portal 246777241</text>
+<line x1="378" y1="322" x2="592" y2="322" stroke="#cfe3d1" stroke-width="2"/>
+<text x="380" y="348" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#1b5e20" font-weight="700" text-anchor="start">4 webhook subscriptions</text>
+<text x="380" y="374" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#333" font-weight="normal" text-anchor="start">contact.creation</text>
+<text x="380" y="395" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#333" font-weight="normal" text-anchor="start">decision_maker</text>
+<text x="380" y="416" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#333" font-weight="normal" text-anchor="start">lqabr_email_status</text>
+<text x="380" y="437" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#333" font-weight="normal" text-anchor="start">lqabr_voice_status</text>
+<text x="380" y="466" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#2e7d32" font-weight="normal" text-anchor="start">Active 4/4 · throttle 10</text>
+<line x1="615" y1="300" x2="700" y2="300" stroke="#1a5fb4" stroke-width="3" marker-end="url(#a)"/>
+<text x="658" y="288" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="middle">webhook</text>
+<text x="658" y="322" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12" fill="#444" font-weight="normal" text-anchor="middle">POST</text>
+<rect x="705" y="150" width="560" height="640" rx="10" fill="#ffffff" stroke="#1a5fb4" stroke-width="3.5"/>
+<rect x="705" y="150" width="560" height="52" rx="10" fill="#1e6bd6"/>
+<rect x="705" y="190" width="560" height="12" fill="#1e6bd6"/>
+<text x="985.0" y="184" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="21" fill="#fff" font-weight="700" text-anchor="middle">AGENT GATEWAY   ·   lqabr-dev-gtwy</text>
+<text x="727" y="232" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="15" fill="#1a5fb4" font-weight="700" text-anchor="start">STEP 1 · INGRESS</text>
+<text x="727" y="256" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="15" fill="#111" font-weight="normal" text-anchor="start">POST /hubspot/events</text>
+<text x="727" y="282" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• HMAC-SHA256 v3 signature verified</text>
+<text x="727" y="303" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• URI rebuilt from LQABR_GATEWAY_PUBLIC_URL</text>
+<text x="727" y="324" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• batch ≤ 100 events · concurrency ≤ 10</text>
+<line x1="725" y1="356" x2="1245" y2="356" stroke="#dbe6f5" stroke-width="2"/>
+<text x="727" y="386" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="15" fill="#1a5fb4" font-weight="700" text-anchor="start">STEP 2 · ROUTE</text>
+<text x="727" y="410" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="15" fill="#1a5fb4" font-weight="normal" text-anchor="start">src/router.py</text>
+<text x="727" y="438" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#333" font-weight="normal" text-anchor="start">1  filter      property + value must match a route</text>
+<text x="727" y="461" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#333" font-weight="normal" text-anchor="start">2  dedupe      eventId seen before → drop</text>
+<text x="727" y="484" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#333" font-weight="normal" text-anchor="start">3  loop guard  agent's own write-back → drop</text>
+<text x="727" y="507" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#333" font-weight="normal" text-anchor="start">4  mint        trigger_id = uuid5(portalId:eventId)</text>
+<text x="727" y="530" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#333" font-weight="normal" text-anchor="start">5  validate    objectId required (D-05)</text>
+<line x1="725" y1="566" x2="1245" y2="566" stroke="#dbe6f5" stroke-width="2"/>
+<text x="727" y="596" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="15" fill="#1a5fb4" font-weight="700" text-anchor="start">ROUTING TABLE</text>
+<text x="727" y="618" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#555" font-weight="normal" text-anchor="start">config/agents_registry.yaml · first match wins</text>
+<text x="729" y="646" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#1a5fb4" font-weight="700" text-anchor="start">R1</text>
+<text x="771" y="646" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#111" font-weight="normal" text-anchor="start">contact.creation</text>
+<text x="973" y="646" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#7a5200" font-weight="normal" text-anchor="start">any</text>
+<text x="1089" y="646" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#1a5fb4" font-weight="700" text-anchor="start">→ email</text>
+<text x="729" y="673" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#1a5fb4" font-weight="700" text-anchor="start">R2</text>
+<text x="771" y="673" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#111" font-weight="normal" text-anchor="start">decision_maker</text>
+<text x="973" y="673" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#7a5200" font-weight="normal" text-anchor="start">"true"</text>
+<text x="1089" y="673" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#1a5fb4" font-weight="700" text-anchor="start">→ email</text>
+<text x="729" y="700" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#6a1b9a" font-weight="700" text-anchor="start">R3</text>
+<text x="771" y="700" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#111" font-weight="normal" text-anchor="start">lqabr_email_status</text>
+<text x="973" y="700" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#7a5200" font-weight="normal" text-anchor="start">"OPENED"</text>
+<text x="1089" y="700" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#6a1b9a" font-weight="700" text-anchor="start">→ voice</text>
+<text x="729" y="727" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#00695c" font-weight="700" text-anchor="start">R4</text>
+<text x="771" y="727" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#111" font-weight="normal" text-anchor="start">lqabr_voice_status</text>
+<text x="973" y="727" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#7a5200" font-weight="normal" text-anchor="start">"COMPLETED"</text>
+<text x="1089" y="727" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" fill="#00695c" font-weight="700" text-anchor="start">→ scheduling</text>
+<text x="727" y="768" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#1a5fb4" font-weight="700" text-anchor="start">STEP 4 · HAND-OFF   A2A JSON-RPC 2.0  message/send</text>
+<rect x="1300" y="190" width="300" height="205" rx="10" fill="#1e6bd6" stroke="#1e6bd6" stroke-width="0"/>
+<text x="1450" y="222" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#cfe0fa" font-weight="700" text-anchor="middle">WHAT CROSSES</text>
+<text x="1450" y="248" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="16" fill="#fff" font-weight="normal" text-anchor="middle">the wire</text>
+<text x="1322" y="282" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#ffffff" font-weight="normal" text-anchor="start">trigger_id</text>
+<text x="1322" y="306" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#ffffff" font-weight="normal" text-anchor="start">object_id     ← the lead</text>
+<text x="1322" y="330" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#ffffff" font-weight="normal" text-anchor="start">run_id</text>
+<text x="1322" y="354" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#ffffff" font-weight="normal" text-anchor="start">source, gateway_version</text>
+<text x="1450" y="380" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#cfe0fa" font-weight="normal" text-anchor="middle">no name · no email · no phone</text>
+<line x1="1268" y1="292" x2="1296" y2="292" stroke="#1a5fb4" stroke-width="3" marker-end="url(#a)"/>
+<rect x="1660" y="175" width="400" height="160" rx="10" fill="#eef4fd" stroke="#1a5fb4" stroke-width="2.5"/>
+<text x="1680" y="210" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#111" font-weight="700" text-anchor="start">EMAIL AGENT</text>
+<text x="1680" y="234" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#1a5fb4" font-weight="normal" text-anchor="start">lqabr-dev-emal · ADK</text>
+<text x="1680" y="262" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">GET /crm/v3/objects/contacts/{object_id}</text>
+<text x="1680" y="283" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">→ personalise → Mailgun send</text>
+<text x="1680" y="304" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">→ writes lqabr_email_status</text>
+<rect x="1660" y="375" width="400" height="200" rx="10" fill="#f7f0fb" stroke="#6a1b9a" stroke-width="2.5"/>
+<text x="1680" y="410" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#111" font-weight="700" text-anchor="start">TEXT / VOICE AGENT</text>
+<text x="1680" y="434" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#6a1b9a" font-weight="normal" text-anchor="start">lqabr-dev-txtv · ADK</text>
+<text x="1680" y="462" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">POST /lead          ← trigger in</text>
+<text x="1680" y="483" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">POST /call-report   ← report in</text>
+<text x="1680" y="512" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">fetches the lead, places the Vapi call,</text>
+<text x="1680" y="533" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">classifies outcome → lqabr_voice_status</text>
+<rect x="1660" y="615" width="400" height="130" rx="10" fill="#eef7f6" stroke="#00695c" stroke-width="2.5"/>
+<text x="1680" y="650" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#111" font-weight="700" text-anchor="start">SCHEDULING AGENT</text>
+<text x="1680" y="674" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#00695c" font-weight="normal" text-anchor="start">lqabr-dev-schd · ADK</text>
+<text x="1680" y="702" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#111" font-weight="normal" text-anchor="start">books the meeting (Zoom) → writes back</text>
+<path d="M1604,255 L1630,255 L1630,240 L1654,240" fill="none" stroke="#1a5fb4" stroke-width="3" marker-end="url(#a)"/>
+<path d="M1604,300 L1640,300 L1640,455 L1654,455" fill="none" stroke="#6a1b9a" stroke-width="3" marker-end="url(#ap)"/>
+<path d="M1604,340 L1620,340 L1620,668 L1654,668" fill="none" stroke="#00695c" stroke-width="3" marker-end="url(#ag)"/>
+<text x="1500" y="168" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#1a5fb4" font-weight="normal" text-anchor="middle">R1 · R2</text>
+<text x="1620" y="600" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#00695c" font-weight="normal" text-anchor="middle">R4</text>
+<path d="M2060,300 L2120,300 L2120,120 L905,120 L905,146" fill="none" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#ag)"/>
+<text x="1500" y="108" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#2e7d32" font-weight="normal" text-anchor="middle">agents write status back to HubSpot  →  fires the next route (loop guard stops self-triggering)</text>
+<path d="M2060,520 L2120,520 L2120,300" fill="none" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#ag)"/>
+<rect x="2160" y="375" width="430" height="200" rx="10" fill="#fff4e6" stroke="#e65100" stroke-width="2.5"/>
+<text x="2180" y="410" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#111" font-weight="700" text-anchor="start">VAPI</text>
+<text x="2180" y="434" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#e65100" font-weight="normal" text-anchor="start">assistant 4f00be12…</text>
+<text x="2180" y="462" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">places the outbound call</text>
+<text x="2180" y="483" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">hubspot_contact_id injected into</text>
+<text x="2180" y="504" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">assistantOverrides.variableValues</text>
+<text x="2180" y="525" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#333" font-weight="normal" text-anchor="start">on end: POSTs the transcript back</text>
+<path d="M2060,440 L2154,440" fill="none" stroke="#e65100" stroke-width="3" marker-end="url(#ao)"/>
+<text x="2107" y="424" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#e65100" font-weight="normal" text-anchor="middle">dial</text>
+<rect x="705" y="830" width="560" height="215" rx="10" fill="#fffaf4" stroke="#e65100" stroke-width="3"/>
+<text x="727" y="866" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="15" fill="#e65100" font-weight="700" text-anchor="start">SECOND INGRESS · VAPI END-OF-CALL REPORT</text>
+<text x="727" y="892" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="16" fill="#111" font-weight="normal" text-anchor="start">POST /call-report</text>
+<text x="727" y="920" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• x-vapi-secret verified HERE (txtv checks nothing)</text>
+<text x="727" y="943" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• body forwarded UNCHANGED — no router, no A2A envelope</text>
+<text x="727" y="966" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• Google OIDC ID token attached (txtv is private)</text>
+<text x="727" y="989" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#333" font-weight="normal" text-anchor="start">• audit line = call_id + hubspot_contact_id only</text>
+<text x="727" y="1028" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="14" fill="#e65100" font-weight="normal" text-anchor="start">src/call_report.py</text>
+<path d="M2375,578 L2375,810 L985,810 L985,824" fill="none" stroke="#e65100" stroke-width="3" marker-end="url(#ao)"/>
+<text x="1700" y="800" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#e65100" font-weight="normal" text-anchor="middle">end-of-call report   ·   transcript · recordingUrl · endedReason</text>
+<path d="M1265,900 L1560,900 L1560,545 L1654,545" fill="none" stroke="#e65100" stroke-width="3" marker-end="url(#ao)"/>
+<text x="1300" y="880" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13.5" fill="#e65100" font-weight="normal" text-anchor="start">relayed verbatim to POST /call-report</text>
+<text x="50" y="1110" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="18" fill="#111" font-weight="700" text-anchor="start">Never route a lead by accident — every event has a terminal outcome</text>
+<rect x="40" y="1135" width="330" height="108" rx="9" fill="#fdecea" stroke="#c62828" stroke-width="2"/>
+<text x="56" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#c62828" font-weight="700" text-anchor="start">401 UNAUTHORISED</text>
+<text x="56" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">bad / stale / missing signature</text>
+<text x="56" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">HubSpot retries with attemptNumber+1</text>
+<rect x="400" y="1135" width="330" height="108" rx="9" fill="#f6f7f9" stroke="#5b6470" stroke-width="2"/>
+<text x="416" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#5b6470" font-weight="700" text-anchor="start">DISCARD · not_routing_condition</text>
+<text x="416" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">property matched, value did not</text>
+<text x="416" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">e.g. decision_maker=false · 1.05 ms</text>
+<rect x="760" y="1135" width="330" height="108" rx="9" fill="#f6f7f9" stroke="#5b6470" stroke-width="2"/>
+<text x="776" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#5b6470" font-weight="700" text-anchor="start">DISCARD · duplicate / loop</text>
+<text x="776" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">eventId already handed off, or the</text>
+<text x="776" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">agent's own write-back (D-03)</text>
+<rect x="1120" y="1135" width="340" height="108" rx="9" fill="#fff4e6" stroke="#e65100" stroke-width="2"/>
+<text x="1136" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#e65100" font-weight="700" text-anchor="start">503 ROUTING ERROR</text>
+<text x="1136" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">matched but no endpoint, or dispatch</text>
+<text x="1136" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">failed — NOT deduped, so HubSpot retries</text>
+<rect x="1490" y="1135" width="340" height="108" rx="9" fill="#fdecea" stroke="#c62828" stroke-width="2"/>
+<text x="1506" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#c62828" font-weight="700" text-anchor="start">500 PROFILE GUARD</text>
+<text x="1506" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">something tried to attach lead data</text>
+<text x="1506" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">to an A2A payload → fail loudly</text>
+<rect x="1860" y="1135" width="340" height="108" rx="9" fill="#fff4e6" stroke="#e65100" stroke-width="2"/>
+<text x="1876" y="1167" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#e65100" font-weight="700" text-anchor="start">401 REPORT REJECTED</text>
+<text x="1876" y="1193" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">x-vapi-secret missing or wrong —</text>
+<text x="1876" y="1213" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="13" fill="#444" font-weight="normal" text-anchor="start">nothing is relayed to the agent</text>
+<rect x="40" y="1275" width="2540" height="118" rx="10" fill="#fbfcfd" stroke="#c9cfd8" stroke-width="2"/>
+<text x="62" y="1308" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="17" fill="#111" font-weight="700" text-anchor="start">Observability — FR-7, four JSON streams to stdout (Cloud Logging)</text>
+<text x="62" y="1338" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">audit  every inbound + outbound hop (source_ip, endpoint, status, latency)   ·   process  routing_decision with the property and value it was based on   ·   system  concurrency, config errors, exceptions   ·   token-model  silent — the gateway calls no model</text>
+<text x="62" y="1366" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14" fill="#444" font-weight="normal" text-anchor="start">keys: one run_id per request  ·  one trigger_id per routed event, carried to the agent as x-lqabr-trigger-id  ·  transcripts are never logged (profile-field guard)</text>
+<rect x="40" y="1415" width="2540" height="128" rx="10" fill="#f1f8f2" stroke="#2e7d32" stroke-width="2.5"/>
+<text x="1310" y="1452" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="19" fill="#1b5e20" font-weight="700" text-anchor="middle">✓ Verified live on real HubSpot records — no mocks upstream of the agent</text>
+<text x="1310" y="1482" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#333" font-weight="normal" text-anchor="middle">31 Jul · contact 523828708059 · decision_maker true → R2 → email agent · signature_verified · 11.63 ms      |      4 Aug · contact 530431312580 · lqabr_email_status OPENED → R3 → voice agent · 111.44 ms</text>
+<text x="1310" y="1512" font-family="-apple-system,'Segoe UI',Inter,Helvetica,Arial,sans-serif" font-size="14.5" fill="#8a5a00" font-weight="normal" text-anchor="middle">PENDING (needs run.admin): make lqabr-dev-gtwy public  ·  grant its SA roles/run.invoker on lqabr-dev-txtv  ·  POST /lead body shape unconfirmed</text>
+</svg>

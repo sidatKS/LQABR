@@ -12,6 +12,7 @@ being handled and a lead being dropped.
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 import pytest
@@ -25,6 +26,8 @@ from soloai.protocols.http import compute_v3_signature
 
 SECRET = "test-app-secret"
 BASE = "http://testserver"
+VAPI_SECRET = "test-vapi-secret"
+REPORT_URL = "http://text-voice.test/call-report"
 
 
 @pytest.fixture()
@@ -32,6 +35,8 @@ def app_bundle(config_dir, registry, fake_session_factory, monkeypatch):
     """A wired app plus handles on its audit records and fake transport."""
     monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
     monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
+    monkeypatch.setenv("LQABR_VOICE_REPORT_URL", REPORT_URL)
+    monkeypatch.setenv("LQABR_VAPI_WEBHOOK_SECRET", VAPI_SECRET)
 
     config = load_config(config_dir / "config.yaml")
     hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True,
@@ -88,7 +93,7 @@ class TestProbes:
     def test_root_describes_what_the_service_refuses_to_carry(self, client):
         body = client.get("/").json()
         assert body["carries"] == "trigger_id only"
-        assert len(body["routes"]) == 4
+        assert len(body["routes"]) == 3
 
     def test_metrics_exposes_handoff_counters(self, client):
         body = client.get("/metrics").json()
@@ -181,8 +186,6 @@ class TestRoutingEndToEnd:
              "https://email-agent.example.test/a2a"),
             (make_event("lqabr_email_status", "OPENED", event_id="e2"),
              "https://voice-agent.example.test/a2a"),
-            (make_event("lqabr_voice_status", "COMPLETED", event_id="e3"),
-             "https://scheduling-agent.example.test/a2a"),
         ]
         for payload, expected_url in cases:
             body, headers = signed([payload])
@@ -278,6 +281,67 @@ class TestRetryContract:
         assert response.json()["discards_by_reason"]["duplicate_event"] == 1
         # and crucially, the agent was not woken twice
         assert len(app_bundle["session"].calls) == calls_after_first
+
+    def test_a_redelivery_during_an_in_flight_dispatch_is_deduped(
+            self, config_dir, registry, fake_response_factory, monkeypatch):
+        """Why the reservation is taken BEFORE the hand-off, not after.
+
+        HubSpot's response budget is 5s. A slow agent means the redelivery
+        lands while the first hand-off is still open — observed live on
+        05-Aug-2026 as ``peak_in_flight: 4`` against a 30s dispatch. With the
+        store written only on success it is still empty when the redelivery
+        checks it, and the same lead is handed over twice.
+        """
+        monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
+        monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        class SlowSession:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(url)
+                started.set()
+                release.wait(10)
+                return fake_response_factory(200)
+
+        session = SlowSession()
+        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        audit = gw_audit.GatewayAudit(hooks)
+        dispatcher = gw_dispatch.Dispatcher(
+            A2AClient(session=session, backoff_seconds=0, sleep=lambda _s: None), audit)
+        app = gw_server.create_app(config=load_config(config_dir / "config.yaml"),
+                                   registry=registry, dispatcher=dispatcher, audit=audit)
+
+        body, headers = signed([make_event(event_id="evt-slow")])
+        retry_body, retry_headers = signed(
+            [make_event(event_id="evt-slow", attempt_number=1)])
+
+        with TestClient(app) as first_client, TestClient(app) as second_client:
+            outcome = {}
+
+            def fire_first():
+                outcome["response"] = first_client.post(
+                    "/hubspot/events", content=body, headers=headers)
+
+            worker = threading.Thread(target=fire_first)
+            worker.start()
+            assert started.wait(10), "the first dispatch never reached the agent"
+
+            redelivery = second_client.post(
+                "/hubspot/events", content=retry_body, headers=retry_headers)
+
+            release.set()
+            worker.join(15)
+
+        assert redelivery.status_code == 200
+        assert redelivery.json()["discards_by_reason"]["duplicate_event"] == 1
+        assert outcome["response"].status_code == 200
+        # The whole point: one HubSpot event, one hand-off.
+        assert len(session.calls) == 1
 
     def test_a_failed_event_is_retried_rather_than_deduped(
             self, config_dir, registry, fake_session_factory, fake_response_factory,

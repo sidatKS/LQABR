@@ -48,6 +48,9 @@ gw_audit = _load("gw_audit", "audit.py")
 sys.modules["audit"] = gw_audit
 gw_dispatch = _load("gw_dispatch", "dispatch.py")
 sys.modules["dispatch"] = gw_dispatch
+# server.py imports call_report by flat name, same as the others.
+gw_call_report = _load("gw_call_report", "call_report.py")
+sys.modules["call_report"] = gw_call_report
 gw_server = _load("gw_server", "server.py")
 
 
@@ -75,7 +78,6 @@ def agent_env() -> Dict[str, str]:
     return {
         "LQABR_EMAIL_AGENT_URL": "https://email-agent.example.test/a2a",
         "LQABR_TEXT_VOICE_AGENT_URL": "https://voice-agent.example.test/a2a",
-        "LQABR_SCHEDULING_AGENT_URL": "https://scheduling-agent.example.test/a2a",
     }
 
 

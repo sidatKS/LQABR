@@ -8,7 +8,6 @@
 # Event -> agent mapping (Rev 3, page 1):
 #   Decision-maker agent event -> Email agent
 #   Email status: opened       -> Voice agent
-#   Voice status: completed    -> Scheduling agent
 # plus Contact Created -> Email agent (subscribed in addition to
 # decision_maker, because a property set at creation time may not raise a
 # separate property-change event).
@@ -16,7 +15,7 @@
 
 version: 1
 
-# The four active HubSpot private-app webhook subscriptions this map serves.
+# The three active HubSpot private-app webhook subscriptions this map serves.
 # Portal 246777241, Contact object. Documentation only — the gateway does not
 # create subscriptions; they are configured in the portal.
 subscriptions:
@@ -28,9 +27,6 @@ subscriptions:
   - object: contact
     event: contact.propertyChange
     property: lqabr_email_status
-  - object: contact
-    event: contact.propertyChange
-    property: lqabr_voice_status
 
 # ---------------------------------------------------------------------
 # Downstream agents. `endpoint_env` keeps URLs out of the repo and lets the
@@ -54,13 +50,6 @@ agents:
     enabled: true
     writes:
       - lqabr_voice_status
-
-  scheduling:
-    description: Scheduling Agent — meeting booking (Zoom)
-    endpoint_env: LQABR_SCHEDULING_AGENT_URL
-    enabled: true
-    writes:
-      - lqabr_meeting_status
 
 # ---------------------------------------------------------------------
 # Routes, evaluated top to bottom; first match wins.
@@ -101,13 +90,3 @@ routes:
     values: ["OPENED"]
     match: exact_ci
     agent: voice
-
-  - id: R4-voice-completed
-    description: >
-      Fires on every value of lqabr_voice_status; the gateway acts only on
-      COMPLETED.
-    subscription_type: contact.propertyChange
-    property: lqabr_voice_status
-    values: ["COMPLETED"]
-    match: exact_ci
-    agent: scheduling

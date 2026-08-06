@@ -290,6 +290,66 @@ class GatewayAudit:
         self._hooks.process("run_summary", run_id=run_id, **summary)
         return summary
 
+    # ---------------------------------------------------- vapi call report
+    def record_call_report(self, run_id: str, *, source_ip: Optional[str],
+                           endpoint: str, payload_bytes: int,
+                           call_id: Optional[str],
+                           hubspot_contact_id: Optional[str],
+                           secret_verified: bool) -> None:
+        """Audit stream: a Vapi end-of-call report arrived at the gateway.
+
+        Correlation ids only. The transcript is never recorded: the audit
+        hooks scan every payload for profile fields and a real conversation
+        would trip ``ProfileFieldLeak`` — correctly, because the gateway is
+        not a place lead content should ever come to rest.
+
+        ``hubspot_contact_id`` may legitimately be None; txtv falls back to a
+        phone lookup. It is logged as absent, never treated as an error.
+        """
+        self._hooks.audit(
+            "vapi_call_report_received",
+            run_id=run_id,
+            direction="inbound",
+            source="vapi",
+            source_ip=source_ip,
+            endpoint=endpoint,
+            payload_bytes=payload_bytes,
+            call_id=call_id,
+            hubspot_contact_id=hubspot_contact_id,
+            contact_id_present=hubspot_contact_id is not None,
+            secret_verified=secret_verified,
+            received_at=time.time(),
+        )
+
+    def record_call_report_relayed(self, run_id: str, *, target: str,
+                                   status_code: int, latency_ms: float,
+                                   authenticated: bool) -> None:
+        """Audit stream: the outbound leg to the text/voice agent.
+
+        Deliberately mirrors ``record_dispatch`` so the two outbound paths —
+        A2A trigger and report relay — read the same way in the log.
+        """
+        self._hooks.audit(
+            "vapi_call_report_relayed",
+            run_id=run_id,
+            direction="outbound",
+            agent="text_voice",
+            endpoint=target,
+            status=status_code,
+            latency_ms=round(latency_ms, 2),
+            authenticated=authenticated,
+        )
+
+    def record_call_report_rejected(self, run_id: str, *, reason: str,
+                                    status_code: int,
+                                    source_ip: Optional[str] = None,
+                                    endpoint: Optional[str] = None) -> None:
+        self._hooks.audit(
+            "vapi_call_report_rejected", run_id=run_id, direction="inbound",
+            source="vapi", source_ip=source_ip, endpoint=endpoint,
+            status=status_code, reason=reason,
+        )
+
     def record_exception(self, run_id: str, exc: BaseException,
                          where: str) -> None:
         """System stream: *exceptions*."""

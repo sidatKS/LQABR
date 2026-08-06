@@ -78,13 +78,13 @@ class TestDecisionLogging:
         together with the property and value it was based on.*"""
         run_id = audit.new_run_id()
         decision = router.route_batch([
-            make_event("lqabr_voice_status", "COMPLETED")]).decisions[0]
+            make_event("lqabr_email_status", "OPENED")]).decisions[0]
         audit.record_decision(run_id, decision)
         record = _records(hooks, Stream.PROCESS, "routing_decision")[0]
-        assert record["agent"] == "scheduling"
-        assert record["property_name"] == "lqabr_voice_status"
-        assert record["property_value"] == "COMPLETED"
-        assert record["route_id"] == "R4-voice-completed"
+        assert record["agent"] == "voice"
+        assert record["property_name"] == "lqabr_email_status"
+        assert record["property_value"] == "OPENED"
+        assert record["route_id"] == "R3-email-opened"
 
     def test_discards_are_logged_with_a_reason(self, audit, hooks, router):
         run_id = audit.new_run_id()

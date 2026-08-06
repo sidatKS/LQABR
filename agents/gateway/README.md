@@ -68,7 +68,7 @@ audit.py      run_id + trigger_id + the property and value behind the decision
         ▼
 dispatch.py   A2A message/send  ·  trigger_id + object_id  ·  retries, latency, status
         ▼
-Email / Voice / Scheduling agent
+Email / Voice agent
         │  GET /crm/v3/objects/contacts/<object_id>
         ▼
 HubSpot       ← direct. Bypasses this gateway entirely.
@@ -92,9 +92,8 @@ Edit `config/agents_registry.yaml` to change any of this — never the code.
 | `R1-contact-created` | Contact created | *(any)* | Email |
 | `R2-decision-maker` | `decision_maker` changed | `true` | Email |
 | `R3-email-opened` | `lqabr_email_status` changed | `OPENED` | Voice |
-| `R4-voice-completed` | `lqabr_voice_status` changed | `COMPLETED` | Scheduling |
 
-Onboarding a fifth agent is: add it under `agents:`, add a route, set its
+Onboarding a third agent is: add it under `agents:`, add a route, set its
 `endpoint_env`. No code change, no redeploy of routing logic.
 
 ---
@@ -215,13 +214,12 @@ in-process library ever ships, it is a change inside that package alone.
 `docker-entrypoint.sh` degrades to dispatching direct at the agents if the
 sidecar cannot start.
 
-### D-03 — A global "ignore `changeSource=API`" would disable three of the four routes
+### D-03 — A global "ignore `changeSource=API`" would disable two of the three routes
 Rev 3 Step 2 says to *ignore events whose `changeSource` is an agent
 write-back (`API`)*. Taken literally that removes:
 
 * `R1` — the Contact is **created by the lead-profile agent** via the API
 * `R3` — `lqabr_email_status=OPENED` is **written by the Email agent**
-* `R4` — `lqabr_voice_status=COMPLETED` is **written by the Voice agent**
 
 Only `R2` (a human setting `decision_maker`) would survive, so the pipeline
 would stop after the first hop. Rev 3 also states the purpose of the guard:

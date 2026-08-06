@@ -52,6 +52,19 @@ _GATEWAY_ROOT = Path(__file__).resolve().parents[1]
 if str(_GATEWAY_ROOT / "lib") not in sys.path:
     sys.path.insert(0, str(_GATEWAY_ROOT / "lib"))
 
+# --- local development: load config/.env if python-dotenv is installed ------
+# Deployed environments inject real environment variables (Cloud Run pulls them
+# from Secret Manager), so this is a convenience for running locally and never
+# a requirement. `override=False` means a real environment variable always wins
+# over the file — otherwise a stale .env on a developer's machine could quietly
+# beat the value the platform set.
+try:  # pragma: no cover - depends on the local environment
+    from dotenv import load_dotenv
+
+    load_dotenv(_GATEWAY_ROOT / "config" / ".env", override=False)
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request, Response  # noqa: E402
 from fastapi.concurrency import run_in_threadpool  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
@@ -69,10 +82,13 @@ from soloai.protocols.http import (  # noqa: E402
 
 try:
     from .audit import GatewayAudit
+    from .call_report import CallReportRelay, ReportRelayError, extract_correlation
     from .dispatch import Dispatcher
     from .router import AgentRegistry, DedupeStore, Router
 except ImportError:  # pragma: no cover - uvicorn run from inside src/
     from audit import GatewayAudit  # type: ignore
+    from call_report import (  # type: ignore
+        CallReportRelay, ReportRelayError, extract_correlation)
     from dispatch import Dispatcher  # type: ignore
     from router import AgentRegistry, DedupeStore, Router  # type: ignore
 
@@ -121,6 +137,19 @@ def create_app(
                                       "X-HubSpot-Request-Timestamp"))
     signature_max_age = int(config.get("gateway.ingress.signature.max_age_seconds", 300))
 
+    # --- Vapi end-of-call report relay ----------------------------------
+    # A second inbound path, deliberately outside the router. See
+    # call_report.py for why it does not use the A2A/trigger machinery.
+    report_path = str(config.get("vapi.report.path", "/call-report"))
+    report_enabled = bool(config.get("vapi.report.enabled", True))
+    report_verify_secret = bool(config.get("vapi.report.signature.enabled", True))
+    report_relay = CallReportRelay(
+        target_url=os.environ.get("LQABR_VOICE_REPORT_URL", "").strip(),
+        secret=os.environ.get("LQABR_VAPI_WEBHOOK_SECRET", "").strip(),
+        verify_secret=report_verify_secret,
+        timeout_seconds=int(config.get("vapi.report.timeout_seconds", 30)),
+    )
+
     # Fails fast at startup if someone configured the gateway to proxy profiles.
     mcp_endpoint = mcp_protocol.endpoint_from_config(config)
 
@@ -157,6 +186,17 @@ def create_app(
                 problems["LQABR_GATEWAY_PUBLIC_URL"] = (
                     "unset — behind a TLS-terminating proxy the reconstructed URI "
                     "will not match the one HubSpot signed, so signatures will fail")
+        if report_enabled:
+            if not report_relay.target_url:
+                problems["LQABR_VOICE_REPORT_URL"] = (
+                    f"unset while {report_path} is enabled — Vapi end-of-call "
+                    "reports have nowhere to be relayed and will 503")
+            if report_verify_secret and not os.environ.get(
+                    "LQABR_VAPI_WEBHOOK_SECRET", "").strip():
+                problems["LQABR_VAPI_WEBHOOK_SECRET"] = (
+                    "unset while vapi.report.signature.enabled is true — every "
+                    "report will be rejected with 401. The gateway owns Vapi "
+                    "authenticity; txtv does not verify it.")
         return problems
 
     # ------------------------------------------------------------- lifecycle
@@ -288,6 +328,16 @@ def create_app(
             # dispatch_all, not a bare loop: it isolates a per-hand-off
             # exception so one bad decision cannot abandon the rest of the
             # batch undispatched.
+            # Reserve every eventId BEFORE dispatching. HubSpot's response
+            # budget is 5s; a slow agent means redeliveries land while the
+            # first hand-off is still in flight, and a store written only on
+            # success is empty when they check it — so the same lead goes to
+            # the agent several times. Reserving up front closes that window.
+            # Failures are released again below, so a retry still gets a real
+            # second attempt.
+            for decision in result.decisions:
+                router.dedupe.remember(decision.event_id)
+
             outcomes = dispatcher.dispatch_all(result.decisions, run_id)
             dispatched: List[Dict[str, Any]] = []
             ok_count = failed_count = 0
@@ -295,13 +345,13 @@ def create_app(
                 dispatched.append(outcome.as_dict())
                 if outcome.ok:
                     ok_count += 1
-                    # The ONLY thing that ever enters the dedupe store: a
-                    # hand-off that actually landed. A redelivery of this event
-                    # is a duplicate from here on; a failure is not remembered,
-                    # so its redelivery gets a real second attempt.
-                    router.dedupe.remember(decision.event_id)
+                    # Reservation stands: a redelivery of this event is a
+                    # duplicate from here on.
                 else:
                     failed_count += 1
+                    # Release it, so HubSpot's redelivery gets a real second
+                    # attempt instead of being deduped away.
+                    router.dedupe.forget(decision.event_id)
 
             summary = gateway_audit.record_run_summary(
                 run_id, result, ok_count, failed_count,
@@ -344,6 +394,57 @@ def create_app(
             status, body = await run_in_threadpool(
                 _process, raw_body, method, uri, headers, source_ip, run_id)
         return JSONResponse(status_code=status, content=body)
+
+    # --------------------------------------------- vapi end-of-call report
+    def _relay_report(raw_body: bytes, headers: Dict[str, str],
+                      source_ip: Optional[str], run_id: str) -> Tuple[int, bytes, str]:
+        """Authenticate, audit, forward. Blocking, so it runs off the loop.
+
+        Note what is absent: no router, no dedupe, no A2A envelope, no payload
+        guard. This is a proxy for one route, not a trigger hand-off. txtv
+        performs Step 7/8 (classification, HubSpot writes) itself.
+        """
+        started = time.perf_counter()
+        try:
+            payload = json.loads(raw_body or b"{}")
+        except json.JSONDecodeError:
+            payload = None  # not fatal: correlation ids are best-effort
+
+        ids = extract_correlation(payload)
+        try:
+            status, body, content_type = report_relay.forward(raw_body, headers)
+        except ReportRelayError as exc:
+            gateway_audit.record_call_report_rejected(
+                run_id, reason=str(exc), status_code=exc.status_code,
+                source_ip=source_ip, endpoint=report_path)
+            return exc.status_code, json.dumps(
+                {"run_id": run_id, "error": str(exc)}).encode(), "application/json"
+
+        gateway_audit.record_call_report(
+            run_id, source_ip=source_ip, endpoint=report_path,
+            payload_bytes=len(raw_body), call_id=ids["call_id"],
+            hubspot_contact_id=ids["hubspot_contact_id"],
+            secret_verified=report_verify_secret)
+        gateway_audit.record_call_report_relayed(
+            run_id, target=report_relay.target_url, status_code=status,
+            latency_ms=(time.perf_counter() - started) * 1000,
+            authenticated=bool(report_relay.target_url))
+        return status, body, content_type
+
+    if report_enabled:
+        @app.post(report_path)
+        async def vapi_call_report(request: Request) -> Response:
+            run_id = gateway_audit.new_run_id()
+            raw_body = await request.body()
+            headers = {k.lower(): v for k, v in request.headers.items()}
+            source_ip = request.client.host if request.client else None
+
+            async with admission:
+                status, body, content_type = await run_in_threadpool(
+                    _relay_report, raw_body, headers, source_ip, run_id)
+            # txtv's response is returned verbatim so Vapi sees the real
+            # outcome and its retry logic works against the truth.
+            return Response(content=body, status_code=status, media_type=content_type)
 
     @app.on_event("shutdown")
     def _shutdown() -> None:

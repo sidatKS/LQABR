@@ -113,7 +113,7 @@ class A2AClient:
         metadata = A2AClient._guard_metadata(dict(metadata or {}))
         if not trigger_id:
             raise PayloadGuardError("a dispatch must carry a trigger_id")
-        return {
+        envelope = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
             "method": "message/send",
@@ -126,6 +126,24 @@ class A2AClient:
                 "metadata": {**metadata, "trigger_id": trigger_id},
             },
         }
+
+        # Compat shim (temporary). The email and voice agents are plain REST,
+        # not A2A, and read the ids from the top level of the body rather than
+        # from params.metadata -- they reject with 400 "payload carries no
+        # objectId/object_id" otherwise. Mirror the same ids at the top level.
+        #
+        # No new data crosses the gateway: these are the values already inside
+        # metadata, which _guard_metadata has just checked against
+        # ALLOWED_METADATA_KEYS. The trigger-only guarantee is untouched.
+        #
+        # Remove this block once the agents read params.metadata.object_id.
+        envelope["trigger_id"] = trigger_id
+        object_id = metadata.get("object_id")
+        if object_id is not None:
+            envelope["object_id"] = object_id
+            envelope["objectId"] = object_id
+
+        return envelope
 
     # -------------------------------------------------------------- sending
     def send_trigger(

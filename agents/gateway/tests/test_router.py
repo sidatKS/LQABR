@@ -52,19 +52,17 @@ class TestHubSpotEvent:
 class TestAgentRegistry:
     def test_the_shipped_registry_loads_and_validates(self, registry):
         """The real agents_registry.yaml is a deliverable — read it here first."""
-        assert set(registry.agents) == {"email", "voice", "scheduling"}
+        assert set(registry.agents) == {"email", "voice"}
         assert [r.id for r in registry.routes] == [
-            "R1-contact-created", "R2-decision-maker",
-            "R3-email-opened", "R4-voice-completed",
+            "R1-contact-created", "R2-decision-maker", "R3-email-opened",
         ]
 
-    def test_the_four_documented_mappings_resolve(self, registry):
+    def test_the_three_documented_mappings_resolve(self, registry):
         """Rev 3 page 1: decision-maker -> email, opened -> voice,
-        completed -> scheduling, plus Created -> email."""
+        plus Created -> email."""
         cases = [
             (make_event("decision_maker", "true"), "email", "R2-decision-maker"),
             (make_event("lqabr_email_status", "OPENED"), "voice", "R3-email-opened"),
-            (make_event("lqabr_voice_status", "COMPLETED"), "scheduling", "R4-voice-completed"),
             (make_event(None, None, subscription_type="contact.creation"),
              "email", "R1-contact-created"),
         ]
@@ -114,11 +112,11 @@ class TestAgentRegistry:
 
     def test_health_reports_per_agent_readiness(self, registry_document, agent_env):
         partial = dict(agent_env)
-        partial.pop("LQABR_SCHEDULING_AGENT_URL")
+        partial.pop("LQABR_TEXT_VOICE_AGENT_URL")
         registry = gw_router.AgentRegistry.from_document(registry_document, environ=partial)
         health = registry.health()
         assert health["email"]["ready"] is True
-        assert health["scheduling"]["ready"] is False
+        assert health["voice"]["ready"] is False
 
 
 # ================================================================== trigger id
@@ -361,16 +359,17 @@ class TestRoutingErrors:
     def test_one_broken_agent_does_not_take_the_batch_down(
             self, registry_document, agent_env):
         partial = dict(agent_env)
-        partial.pop("LQABR_SCHEDULING_AGENT_URL")
+        partial.pop("LQABR_TEXT_VOICE_AGENT_URL")
         registry = gw_router.AgentRegistry.from_document(registry_document, environ=partial)
         router = gw_router.Router(registry=registry)
         result = router.route_batch([
-            make_event("lqabr_voice_status", "COMPLETED", event_id="evt-sched"),
             make_event("lqabr_email_status", "OPENED", event_id="evt-voice"),
             make_event("decision_maker", "true", event_id="evt-email"),
+            make_event(None, None, subscription_type="contact.creation",
+                       event_id="evt-created"),
         ])
         assert len(result.errors) == 1
-        assert {d.agent for d in result.decisions} == {"voice", "email"}
+        assert {d.agent for d in result.decisions} == {"email"}
 
 
 # ======================================================================= batches

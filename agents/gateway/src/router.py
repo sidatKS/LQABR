@@ -363,8 +363,14 @@ class DedupeStore:
     Rev 3 Step 2: *De-duplicate using eventId where attemptNumber > 0.* So a
     first delivery is never checked against the store — only a redelivery is.
 
-    An id is remembered **only after a hand-off succeeds** — nothing else goes
-    in. Two consequences, both deliberate:
+    An id is reserved **before** the hand-off and released again if the
+    hand-off fails (see ``forget``). Reserving after success instead left a
+    window as wide as the dispatch: HubSpot gives up at 5s and redelivers,
+    and every redelivery arriving before the first hand-off returned found an
+    empty store and dispatched again. Observed live 05-Aug-2026 —
+    ``peak_in_flight: 4`` on a 30s dispatch.
+
+    Nothing but a dispatched event goes in. Two consequences, both deliberate:
 
     * Failures (routing error, dispatch failure) are not remembered, so
       HubSpot's next redelivery gets a real second attempt instead of being
@@ -416,6 +422,20 @@ class DedupeStore:
             self._seen[event_id] = now
             self._seen.move_to_end(event_id)
             self._purge(now)
+
+    def forget(self, event_id: Optional[str]) -> None:
+        """Release a reservation made before a hand-off that then failed.
+
+        The caller reserves an eventId *before* dispatching so that a HubSpot
+        redelivery arriving while the first hand-off is still in flight is
+        deduped rather than dispatched a second time. If the hand-off then
+        fails, the reservation must come back out, or HubSpot's retry would be
+        deduped into oblivion and the lead never contacted.
+        """
+        if not event_id:
+            return
+        with self._lock:
+            self._seen.pop(event_id, None)
 
     def __len__(self) -> int:  # pragma: no cover - introspection
         with self._lock:

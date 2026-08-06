@@ -12,6 +12,11 @@ uvicorn>=0.30
 requests>=2.31
 PyYAML>=6.0
 
+# Local development only: lets `uvicorn server:app` pick up config/.env.
+# Deployed environments inject real env vars, so this is never load-bearing —
+# server.py degrades silently if it is absent.
+python-dotenv>=1.0
+
 # Test-only
 # pytest>=8
 # responses>=0.25

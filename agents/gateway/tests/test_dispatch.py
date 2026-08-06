@@ -216,16 +216,14 @@ class TestBatchDispatch:
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
             make_event("decision_maker", "true", event_id="e2"),
-            make_event("lqabr_voice_status", "COMPLETED", event_id="e3"),
         ])
         session = fake_session_factory()
         outcomes = gw_dispatch.Dispatcher(_client(session), audit).dispatch_all(
             result.decisions, "run-1")
-        assert len(outcomes) == 3 and all(o.ok for o in outcomes)
+        assert len(outcomes) == 2 and all(o.ok for o in outcomes)
         assert {c["url"] for c in session.calls} == {
             "https://voice-agent.example.test/a2a",
             "https://email-agent.example.test/a2a",
-            "https://scheduling-agent.example.test/a2a",
         }
 
     def test_one_failure_does_not_stop_the_others(

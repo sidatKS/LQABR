@@ -47,13 +47,6 @@ binds:
             backends:
               - host: "${LQABR_TEXT_VOICE_AGENT_URL}"
 
-          - name: scheduling-agent
-            matches:
-              - path:
-                  pathPrefix: /a2a/scheduling
-            backends:
-              - host: "${LQABR_SCHEDULING_AGENT_URL}"
-
           # ------------------------------------------------------------
           # MCP — agent -> HubSpot (Rev 3 Step 6).
           # This path is for the AGENTS, not for the gateway: Step 6 is direct

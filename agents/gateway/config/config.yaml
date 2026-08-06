@@ -43,6 +43,37 @@ gateway:
       # HubSpot rejects/replays outside 5 minutes; match it.
       max_age_seconds: 300
 
+# ---------------------------------------------------------------------
+# Vapi end-of-call report relay — the gateway's SECOND inbound path.
+#
+# Not a trigger. When a Vapi call ends, Vapi POSTs the full report (transcript,
+# recording URL, ended reason) to the gateway, which forwards it UNCHANGED to
+# the Text/Voice agent. It bypasses the router, the dedupe store and the A2A
+# payload guard on purpose — see src/call_report.py for why.
+#
+# The gateway is in this path because lqabr-dev-txtv is deployed private and
+# Vapi cannot present a Google identity token. The gateway is the public front
+# door, and it owns provider authenticity: txtv's /call-report handler performs
+# NO secret verification of its own.
+#
+# Target: LQABR_VOICE_REPORT_URL   Secret: LQABR_VAPI_WEBHOOK_SECRET
+# ---------------------------------------------------------------------
+vapi:
+  report:
+    enabled: true
+    # Must match the assistant's Server URL in the Vapi dashboard, which is
+    # {GATEWAY_BASE_URL}/call-report. Confirmed against txtv's OpenAPI
+    # (POST /lead, POST /call-report, GET /healthz) on 2026-08-04.
+    path: /call-report
+    # txtv classifies and writes to HubSpot inside this call, so allow more
+    # than a trigger hand-off would need.
+    timeout_seconds: 30
+    signature:
+      # Verified HERE, not downstream. Set false only for local testing
+      # against a stub — with it off, this endpoint is genuinely open.
+      enabled: true
+      header: x-vapi-secret
+
 # Protocols handled by the co-located runtime (lib/soloai over agentgateway).
 protocols:
   a2a:
