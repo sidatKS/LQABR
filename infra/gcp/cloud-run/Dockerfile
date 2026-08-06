@@ -30,6 +30,12 @@ RUN pip install --no-cache-dir -r agents/${AGENT_DIR}/requirements.txt
 RUN mkdir -p "agents/${AGENT_DIR}/src/.adk" \
  && chown -R 65534:65534 "agents/${AGENT_DIR}"
 
+# lead_profile reads its 3 CSVs from LQABR_INCOMING_DIR (default: data/incoming).
+# Bake the synthetic seed set in so the container has input data at runtime.
+COPY data/seeds/b2b/employees_with_company_sample.csv data/incoming/employees_with_company_sample.csv
+COPY data/seeds/b2b/employee_contacts_5234.csv data/incoming/employee_contacts_5234.csv
+COPY data/seeds/b2b/companies_clean_734.csv data/incoming/companies_clean_734.csv
+
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 # Normalize possible CRLF line endings (repo is edited on a Windows filesystem)
 # so the `#!/bin/sh` shebang resolves, then make the script executable.

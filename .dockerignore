@@ -21,4 +21,8 @@ __pycache__/
 docs/
 evals/
 data/
+# ...but bake in the 3 synthetic lead_profile seed CSVs the agent reads at runtime
+!data/seeds/b2b/employees_with_company_sample.csv
+!data/seeds/b2b/employee_contacts_5234.csv
+!data/seeds/b2b/companies_clean_734.csv
 _to_delete/

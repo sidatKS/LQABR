@@ -168,7 +168,7 @@ the work queue. This is the compliance guarantee; without it the flag is cosmeti
 2. `packages/lqabr_core/lqabr_core/probability.py` — `SUPPRESSION_EVENTS`,
    `is_suppression`, extend `EVENT_COUNTERS`
 3. `infra/gcp/04_hubspot_properties.py` — 5 counters + 3 (or 4) flag properties
-4. `packages/lqabr_core/lqabr_core/crm/hubspot.py` — suppression writeback in
+4. `packages/lqabr_core/lqabr_core/crm/` — suppression writeback in
    `record_event`; `_PROPERTIES` already derives counters from `EVENT_COUNTERS`
    but add the new flag props to the read list
 5. `agents/email/src/webhook_app.py` — extend `EVENT_MAP` + `failed` severity branch

@@ -192,6 +192,7 @@ def build_profiles(feed: RawFeed) -> BuildResult:
                 job_title=clean_optional(contact.get("Job_Title")),
                 email=clean_optional(contact.get("Email")),
                 phone=clean_optional(contact.get("Phone")),
+                contact_name=clean_optional(contact.get("Name")),
                 industry=normalise_industry(clean_optional(company.get("Industry"))),
                 annual_revenue_m=clean_optional(company.get("Annual_Revenue (M)")),
                 frequency_of_purchase=clean_optional(company.get("Frequency_of_Purchase")),

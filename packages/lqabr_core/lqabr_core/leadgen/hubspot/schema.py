@@ -80,6 +80,7 @@ class LeadProfile:
     job_title: str | None = None
     email: str | None = None
     phone: str | None = None
+    contact_name: str | None = None
     industry: str | None = None
     annual_revenue_m: str | None = None
     frequency_of_purchase: str | None = None
@@ -107,6 +108,12 @@ class LeadProfile:
             props["email_id"] = self.email  # CUSTOM property, not standard "email"
         if self.phone is not None:
             props["phone"] = self.phone
+        if self.contact_name is not None:
+            first, _, last = self.contact_name.strip().partition(" ")
+            if first:
+                props["firstname"] = first
+            if last:
+                props["lastname"] = last
         return props
 
     def to_company_properties(self) -> dict[str, Any]:
