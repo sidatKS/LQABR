@@ -55,11 +55,12 @@ from lqabr_core.types import EngagementEvent, EventType, LeadProfile, LeadStage
 BASE_URL = "https://api.hubapi.com"
 
 # Contact properties we read/write.
-# The confirmed contact schema: no firstname/lastname and no company NAME.
-# A contact is identified by employee_id; the company is reached by
-# association, and company_id comes from the Company object.
+# firstname/lastname are STANDARD HubSpot contact properties — the email
+# greets the lead by first name. employee_id remains the stable internal
+# identifier; the company is reached by association, and company_id comes
+# from the Company object (no contact company NAME on this schema).
 _PROPERTIES = [
-    "jobtitle", "email_id", "phone",
+    "firstname", "lastname", "jobtitle", "email_id", "phone",
     "employee_id", "lqabr_email_status", "probability",
     *dict.fromkeys(EVENT_COUNTERS.values()),
 ]

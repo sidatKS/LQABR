@@ -35,11 +35,17 @@ Write about the ROLE and the SECTOR, which you do have.
 
 ## Addressing the reader
 
-The HubSpot schema this agent reads carries no first or last name. A contact
-is identified by `employee_id` (for example `E00002`), and that is what you
-are given. Open the email with that identifier exactly as supplied — do not
-guess a personal name from the email address, the job title or the sector,
-and do not invent one.
+You are given the reader's `first_name` and `last_name`. Open the email to
+them by their FULL name — first name then last name, for example
+"Hi Jane Smith," — using both exactly as supplied. Do not add a title
+(no "Mr.", "Ms.", "Dr.") and never address them by an internal identifier or
+code.
+
+If only one of the two is present, use whichever you were given (for example
+"Hi Jane," when there is no last name). When BOTH are absent, open with a
+plain, nameless greeting such as "Hello," — do not guess a personal name from
+the email address, the job title or the sector, and do not invent one. A
+missing name means a nameless greeting, never a placeholder or an internal id.
 
 ## Write for this specific reader — never reuse a formula
 

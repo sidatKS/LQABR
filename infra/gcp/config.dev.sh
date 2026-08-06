@@ -80,9 +80,9 @@ export TOPIC_ENGAGEMENT="lqabr-engagement-events"
 # deleted, so it cannot be rebuilt by a stray build arg.
 #
 # Because Mailgun must be able to POST to it, that service is deployed
-# --allow-unauthenticated and each entry proves itself instead: the Mailgun
-# HMAC on /mailgun/events, and LQABR_EMAIL_GATEWAY_TOKEN on the gateway
-# entries. SET THAT TOKEN before deploying — see 05_deploy_agents.sh.
+# --allow-unauthenticated. /mailgun/events proves itself via the Mailgun
+# HMAC. /hubspot/campaign and /engagement/sync are currently
+# UNAUTHENTICATED — the gateway-token check was removed 2026-08-05.
 export SERVICE_AGENTS=(email)
 export ADK_AGENTS=(ingestion lead_profile text_voice scheduling orchestrator)
 export WEBHOOK_AGENTS=(text_voice scheduling)
@@ -95,12 +95,6 @@ export SERVICE_NAME_OVERRIDES=("email:service=lqabr-email-agent")
 # Route groups the email service exposes. `all` is the deployed shape: one
 # service serving the gateway entry AND the Mailgun push.
 export LQABR_EMAIL_ROUTES="all"
-
-# Shared secret the gateway must present as X-LQABR-Gateway-Token on
-# /hubspot/campaign and /engagement/sync. Required because the service is
-# reachable without an IAM token (Mailgun has to reach it). Leave empty only
-# for local work — the agent logs loudly on startup when it is unset.
-export LQABR_EMAIL_GATEWAY_TOKEN="${LQABR_EMAIL_GATEWAY_TOKEN:-}"
 
 # ── Credential source ────────────────────────────────────────
 # secret_manager = ignore the environment, always read the Secret Manager

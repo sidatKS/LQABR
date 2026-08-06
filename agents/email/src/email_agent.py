@@ -260,8 +260,8 @@ def get_lead_profile(object_id: str) -> Dict[str, Any]:
     # profile (probability, email_status, phone, location, linkedin_url,
     # company_size_revenue, missing_pointers, ...) is deliberately omitted.
     full = profile.to_dict()
-    fields = ("object_id", "email_id", "employee_id", "job_title",
-              "industry", "company_id")
+    fields = ("object_id", "email_id", "first_name", "last_name", "employee_id",
+              "job_title", "industry", "company_id")
     return {k: full.get(k) for k in fields}
 
 

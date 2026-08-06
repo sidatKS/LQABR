@@ -1,5 +1,7 @@
 """Test doubles for the Email Agent suite."""
 
+from lqabr_core.crm import CRMError
+
 
 class FakeCRM:
     """Stands in for mcp.hubspot.crm.HubSpotCRM."""
@@ -14,7 +16,13 @@ class FakeCRM:
         return self.leads[:limit]
 
     def get_lead_profile(self, object_id):
-        return self.profiles[str(object_id)]
+        # Real HubSpot answers an unknown contact id with a 404, which
+        # run_campaign relies on to fall back to the trigger-batch search.
+        try:
+            return self.profiles[str(object_id)]
+        except KeyError:
+            raise CRMError(
+                f"HubSpot GET /crm/v3/objects/contacts/{object_id} failed: HTTP 404")
 
     def patch_object(self, object_id, properties):
         if self.raise_on_patch is not None:
@@ -23,7 +31,10 @@ class FakeCRM:
         return {"id": str(object_id)}
 
     def mark_sent(self, object_id):
-        return self.patch_object(object_id, {"lqabr_email_status": "SENT"})
+        import time
+        props = {"lqabr_email_status": "SENT",
+                 "last_modified_email": int(time.time() * 1000)}
+        return self.patch_object(object_id, props)
 
     def mark_campaign_complete(self, object_id):
         return self.patch_object(object_id, {"email_campaign_complete": True})

@@ -333,13 +333,10 @@ token and Swaroop's design has it pushing to this same service. Each entry
 proves itself instead:
 
 - `/mailgun/events` — the Mailgun HMAC on every event, no bypass flag;
-- `/hubspot/campaign` and `/engagement/sync` — `LQABR_EMAIL_GATEWAY_TOKEN`
-  compared constant-time against `X-LQABR-Gateway-Token`. Rev 3's scoped
-  JWTs replace this when the gateway track defines them.
-
-That token goes in `.env` for the MVP and into Secret Manager next sprint
-with everything else (`docs/EMAIL_AGENT_ENV_VARS.md`); the deploy script
-warns rather than blocking, so nobody is held up waiting on it.
+- `/hubspot/campaign` and `/engagement/sync` — currently UNAUTHENTICATED.
+  The `LQABR_EMAIL_GATEWAY_TOKEN` / `X-LQABR-Gateway-Token` check was
+  removed 2026-08-05 (the gateway wasn't sending the header). Rev 3's
+  scoped JWTs are the intended fix once the gateway track defines them.
 
 ## 3c. Triggers, container initiation and health (added 2026-08-04)
 

@@ -48,6 +48,7 @@ then goes back to zero instances.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -75,6 +76,7 @@ if str(_REPO_ROOT) not in sys.path:
 from mcp.hubspot.schema import (  # noqa: E402
     SchemaValidationError,
     campaign_complete_property,
+    last_modified_email_property,
 )
 from mcp.hubspot.server import MCPSession, build_session  # noqa: E402
 
@@ -198,6 +200,14 @@ def _write_back(ctx: Optional[obs.RunContext], object_id: str, winner: MailgunEv
 
     properties: Dict[str, Any] = {"lqabr_email_status": HUBSPOT_EMAIL_STATUS[winner]}
 
+    # Record when this event landed — HubSpot "Last Modified Email" column.
+    # Written on every status change so the portal always reflects the most
+    # recent email activity. An empty property name disables the write (same
+    # opt-out contract as campaign_complete_property).
+    lm_prop = last_modified_email_property()
+    if lm_prop:
+        properties[lm_prop] = int(time.time() * 1000)
+
     # Probability moves only on real engagement, and only by the increments
     # lqabr_core.probability defines — never redefined here.
     new_probability = current_probability
@@ -226,8 +236,6 @@ def _write_back(ctx: Optional[obs.RunContext], object_id: str, winner: MailgunEv
     complete_property = campaign_complete_property()
     complete = bool(complete_property and email_status == "OPENED"
                     and (record is None or not record.campaign_complete))
-    if complete:
-        properties[complete_property] = True
 
     try:
         mcp_session.crm.patch_object(object_id, properties)
@@ -236,6 +244,31 @@ def _write_back(ctx: Optional[obs.RunContext], object_id: str, winner: MailgunEv
                     error=str(exc), detail="event not recorded — retry expected")
         return {"status": "unresolved", "reason": f"crm-error: {exc}",
                 "object_id": object_id, "event": winner.value}
+
+    # The hand-off column is written as A SEPARATE PATCH, deliberately never
+    # bundled into the properties dict above.
+    #
+    # CONFIRMED LIVE 2026-08-05: bundling it broke the opt-out contract this
+    # docstring already promised. HubSpot validates a PATCH's property bag
+    # ATOMICALLY — one bad property fails the WHOLE request. With
+    # `email_campaign_complete` still an unconfirmed placeholder name (see
+    # schema.py) that does not exist in this portal, every `clicked`/`opened`
+    # event 400'd with PROPERTY_DOESNT_EXIST and took lqabr_email_status and
+    # probability down with it, even though both were perfectly valid. The
+    # status write above must never depend on this column's write succeeding.
+    if complete:
+        try:
+            mcp_session.crm.patch_object(object_id, {complete_property: True})
+        except (CRMError, SchemaValidationError) as exc:
+            complete = False
+            obs.process(
+                ctx, step=10, event="campaign_complete_write_failed", object_id=object_id,
+                error=str(exc),
+                detail=(f"'{complete_property}' could not be written — confirm the real "
+                        "property name against the HubSpot schema and set "
+                        "LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY (or clear it to disable "
+                        "this column). lqabr_email_status and probability were still "
+                        "written successfully above."))
 
     if record is not None:
         if complete:

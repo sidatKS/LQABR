@@ -73,15 +73,18 @@ SCORED_AS: Dict[MailgunEvent, EventType] = {
 
 #: `lqabr_email_status` is a confirmed HubSpot enumeration accepting exactly
 #: PENDING / SENT / DELIVERED / OPENED / FAILED / BOUNCED. There is no
-#: CLICKED option, so a click records as OPENED (a click implies an open),
-#: and the three opt-out style terminals record as FAILED — the only value
-#: the enumeration has for "this address is not workable".
+#: CLICKED option, so a click records as OPENED (a click implies an open).
+#: Every unworkable-address terminal — a hard bounce, a spam complaint, an
+#: unsubscribe, or a send Mailgun refused — records as FAILED. The internal
+#: MailgunEvent still distinguishes BOUNCED (permanent) from FAILED
+#: (transient) for suppression and precedence; only the HubSpot column
+#: collapses them to the single "not workable" value FAILED.
 HUBSPOT_EMAIL_STATUS: Dict[MailgunEvent, str] = {
     MailgunEvent.DELIVERED: "DELIVERED",
     MailgunEvent.OPENED: "OPENED",
     MailgunEvent.CLICKED: "OPENED",
     MailgunEvent.FAILED: "FAILED",
-    MailgunEvent.BOUNCED: "BOUNCED",
+    MailgunEvent.BOUNCED: "FAILED",
     MailgunEvent.COMPLAINED: "FAILED",
     MailgunEvent.UNSUBSCRIBED: "FAILED",
     MailgunEvent.STOPPED: "FAILED",

@@ -14,7 +14,8 @@ from mcp.hubspot.schema import (
 
 
 def lead(**overrides):
-    base = dict(external_employee_id="E00002", job_title="VP Engineering", company="Acme",
+    base = dict(full_name="Jane Smith",
+                external_employee_id="E00002", job_title="VP Engineering", company="Acme",
                 email="jane@acme.example", phone="+15551234567", industry="Software",
                 company_size_revenue="5000000", location="Austin, TX",
                 linkedin_url="https://linkedin.example/in/jane",
@@ -32,12 +33,14 @@ def test_a_complete_profile_validates_and_carries_the_employee_id():
 
 
 def test_the_named_construction_fields_are_carried_through():
-    """The confirmed contact schema has no name properties — a lead is
-    identified by employee_id, which is what construction addresses."""
+    """The email greets by first name; the standard firstname/lastname
+    properties are split off full_name and carried into construction."""
     validated = validate_profile(lead())
+    assert validated.first_name == "Jane"
+    assert validated.last_name == "Smith"
     assert validated.company_id == "C-1"
     assert validated.industry == "Software"
-    assert validated.employee_id and validated.email_id
+    assert validated.email_id
 
 
 def test_a_lead_with_no_email_is_rejected_with_a_reason_not_dropped():
@@ -69,21 +72,25 @@ def test_a_missing_employee_id_is_a_named_gap_not_an_invented_value():
     assert "external_employee_id" in validated.missing_pointers
 
 
-def test_the_render_context_offers_no_identifier_it_does_not_have():
-    """An absent employee_id must not become a placeholder. It is simply
-    not offered, and DRAFTING_RULES tells the model to write around it."""
-    context = validate_profile(lead(external_employee_id=None)).as_context()
-    assert context["employee_id"] == ""
+def test_an_absent_name_is_left_empty_not_placeholdered():
+    """A lead with no name must not become a placeholder. first_name is
+    simply empty, and DRAFTING_RULES tells the model to open with a plain
+    nameless greeting rather than invent one or fall back to an id."""
+    context = validate_profile(lead(full_name=None)).as_context()
+    assert context["first_name"] == ""
+    assert context["last_name"] == ""
     assert context["job_title"] == "VP Engineering"
 
 
-def test_the_context_offers_only_the_five_named_construction_fields():
-    """The model must not be handed a field the confirmed HubSpot schema
-    does not carry — no contact company NAME, no location — or it writes a
-    blank or invents one. email_id addresses the message, it is not body
-    content."""
+def test_the_internal_employee_id_is_never_offered_to_construction():
+    """The greeting is the first name; employee_id is an internal identifier
+    and must never reach the prose. The model must not be handed a field the
+    schema does not carry (no company NAME, no location) either."""
     context = validate_profile(lead()).as_context()
-    assert set(context) == {"employee_id", "company_id", "job_title", "industry"}
+    assert set(context) == {"first_name", "last_name", "company_id",
+                            "job_title", "industry"}
+    assert "employee_id" not in context
+    assert context["first_name"] == "Jane"
 
 
 # --------------------------------------------------------------- write side

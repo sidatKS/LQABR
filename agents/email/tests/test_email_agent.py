@@ -13,7 +13,7 @@ from mcp.hubspot.schema import ValidatedProfile
 
 def profile(object_id="42"):
     return ValidatedProfile(object_id=object_id, email_id="jane@acme.example",
-                            employee_id="E00002",
+                            first_name="Jane", last_name="Smith", employee_id="E00002",
                             job_title="VP Engineering", company_id="C-1",
                             industry="Software", probability=10)
 
@@ -84,14 +84,15 @@ def test_send_to_a_named_lead_uses_the_full_step_4_to_7_path(wired):
     assert mailgun.sends[0]["to"] == "jane@acme.example"
 
 
-def test_get_lead_profile_surfaces_only_the_six_fields(wired):
+def test_get_lead_profile_surfaces_only_the_named_fields(wired):
     _, mailgun = wired
     result = email_agent.get_lead_profile("42")
-    # Exactly these six keys, nothing else.
-    assert set(result) == {"object_id", "email_id", "employee_id",
-                           "job_title", "industry", "company_id"}
+    # Exactly these keys, nothing else.
+    assert set(result) == {"object_id", "email_id", "first_name", "last_name",
+                           "employee_id", "job_title", "industry", "company_id"}
     assert result["object_id"] == "42"
     assert result["email_id"] == "jane@acme.example"
+    assert result["first_name"] == "Jane" and result["last_name"] == "Smith"
     # Excluded fields must never leak — especially missing_pointers.
     for absent in ("probability", "email_status", "missing_pointers", "phone",
                    "location", "linkedin_url", "company_size_revenue"):

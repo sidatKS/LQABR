@@ -46,7 +46,11 @@ the original defect.
 | `lqabr-anthropic-api-key` | `ANTHROPIC_API_KEY` | Step-6 model call when `LQABR_EMAIL_MODEL` is `anthropic/*` | yes (dev) |
 | `lqabr-google-api-key` | `GOOGLE_API_KEY` | Step-6 model call for `gemini-*` **on AI Studio**. Not needed on Vertex (`GOOGLE_GENAI_USE_ENTERPRISE=1` → ADC). | yes (prod) |
 | `lqabr-hubspot-client-secret` | `LQABR_HUBSPOT_CLIENT_SECRET` | Only when `LQABR_HUBSPOT_AUTH_MODE=oauth2` | not needed today |
-| `lqabr-email-gateway-token` | `LQABR_EMAIL_GATEWAY_TOKEN` | Shared secret the gateway sends as `X-LQABR-Gateway-Token` | **NOT YET CREATED** — the one secret this agent still needs |
+
+**REMOVED 2026-08-05:** `LQABR_EMAIL_GATEWAY_TOKEN` / `lqabr-email-gateway-token`.
+The gateway wasn't sending the header, so the check was dropped from
+`service_app.py`. `/hubspot/campaign` and `/engagement/sync` are currently
+unauthenticated; nothing replaces it yet.
 
 > **Model keys are the subtle one.** litellm and google-genai read their key
 > from the *environment* and know nothing about Secret Manager, so a literal

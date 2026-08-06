@@ -81,7 +81,6 @@ run_local: starting on http://127.0.0.1:${PORT}
   routes      curl -s localhost:${PORT}/
   DRY RUN     curl -s -X POST localhost:${PORT}/hubspot/campaign \\
                 -H 'Content-Type: application/json' \\
-                -H "X-LQABR-Gateway-Token: \${LQABR_EMAIL_GATEWAY_TOKEN:-}" \\
                 -d '{"object_id":"<id>","limit":1,"dry_run":true}'
 
   A REAL SEND is the same call with "dry_run": false. Do the dry run first.

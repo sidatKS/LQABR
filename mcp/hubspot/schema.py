@@ -51,19 +51,18 @@ PROFILE_POINTERS = (
     "industry", "company_size_revenue", "location", "linkedin_url",
 )
 
-#: Named for email construction. CHANGED: the HubSpot schema identifies a
-#: contact by `employee_id`, not by first/last name — there are no name
-#: properties on the confirmed contact schema, so construction addresses the
-#: lead by employee ID. Of these only the email ID is fatal on its own — a
-#: lead with no address cannot be emailed.
-NAMED_FOR_CONSTRUCTION = ("company_id", "email_id", "industry", "job_title", "employee_id")
+#: Named for email construction. The email greets the lead by `first_name`
+#: (firstname/lastname are standard HubSpot properties); `employee_id` stays
+#: an internal identifier and is never written into the prose. Of these only
+#: the email ID is fatal on its own — a lead with no address cannot be emailed.
+NAMED_FOR_CONSTRUCTION = ("first_name", "last_name", "company_id", "email_id",
+                          "industry", "job_title")
 REQUIRED_TO_SEND = ("email_id",)
 
 #: Contact properties this MCP is allowed to write.
-#: firstname/lastname stay writable: they are STANDARD HubSpot properties
-#: that exist on every portal, and the lead-profile agent writes them. They
-#: are simply unpopulated in this dataset, which is why the email agent
-#: identifies a lead by employee_id instead of reading them.
+#: firstname/lastname are STANDARD HubSpot properties that exist on every
+#: portal; the lead-profile agent writes them and the email agent reads them
+#: to greet the lead by first name.
 WRITABLE_CONTACT_PROPERTIES = frozenset({
     "firstname", "lastname", "jobtitle", "company_id", "email_id", "phone",
     "employee_id", "lqabr_email_status", "probability",
@@ -88,6 +87,18 @@ def object_id_property() -> str:
     return os.environ.get("LQABR_HUBSPOT_OBJECT_ID_PROPERTY", "object_id")
 
 
+def last_modified_email_property() -> str:
+    """The HubSpot datetime property that records when the last email event
+    landed (SENT, DELIVERED, OPENED, BOUNCED, etc.).
+
+    Shown in the portal as "Last Modified Email" (Date and time picker,
+    Contact information group). The internal API name defaults to
+    ``last_modified_email``; override with
+    ``LQABR_HUBSPOT_LAST_MODIFIED_EMAIL_PROPERTY`` if the real name differs
+    — it is a config change, never a code edit."""
+    return os.environ.get("LQABR_HUBSPOT_LAST_MODIFIED_EMAIL_PROPERTY", "last_modified_email")
+
+
 class SchemaValidationError(ValueError):
     """A profile or property bag that does not satisfy the HubSpot schema.
     Always carries a reason — bad records are flagged, never dropped."""
@@ -103,6 +114,8 @@ class ValidatedProfile:
 
     object_id: str
     email_id: str
+    first_name: str = ""
+    last_name: str = ""
     employee_id: str = ""
     job_title: str = ""
     company: str = ""
@@ -119,15 +132,22 @@ class ValidatedProfile:
     def as_context(self) -> Dict[str, str]:
         """The substitution context an email skill is rendered against.
 
-        EXACTLY the fields named for construction, and nothing else. The
-        confirmed HubSpot schema carries no contact company NAME and no
+        The greeting addresses the lead by `first_name` (with `last_name`
+        offered for a fuller salutation); when neither is populated they are
+        empty and DRAFTING_RULES tells the model to open with a plain,
+        nameless greeting rather than invent one. The internal `employee_id`
+        is deliberately NOT here — it is an internal identifier and must
+        never appear in the prose.
+
+        The confirmed HubSpot schema carries no contact company NAME and no
         location, so neither is offered — a model handed a field the CRM
         does not populate would either write a blank or invent one.
 
         `email_id` is deliberately absent: it is how the message is
         addressed at step 7, not something to write into the body."""
         return {
-            "employee_id": self.employee_id,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
             "company_id": self.company_id,
             "job_title": self.job_title or "your role",
             "industry": self.industry or "",
@@ -136,6 +156,7 @@ class ValidatedProfile:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "object_id": self.object_id, "email_id": self.email_id,
+            "first_name": self.first_name, "last_name": self.last_name,
             "employee_id": self.employee_id,
             "job_title": self.job_title,
             "industry": self.industry, "company_id": self.company_id,
@@ -167,9 +188,18 @@ def validate_profile(profile: LeadProfile) -> ValidatedProfile:
         raise SchemaValidationError(
             f"bad-data: object {profile.object_id} probability {probability} out of range")
 
+    first_name, last_name = "", ""
+    if profile.full_name:
+        parts = profile.full_name.strip().split()
+        if parts:
+            first_name = parts[0]
+            last_name = " ".join(parts[1:])
+
     return ValidatedProfile(
         object_id=str(profile.object_id),
         email_id=profile.email,   # LeadProfile.email <- HubSpot column email_id
+        first_name=first_name,
+        last_name=last_name,
         employee_id=profile.external_employee_id or "",
         job_title=profile.job_title or "",
         company=profile.company or "",
@@ -195,7 +225,7 @@ def validate_writeback(properties: Dict[str, Any]) -> Dict[str, str]:
     if not properties:
         raise SchemaValidationError("bad-data: empty property bag — nothing to write")
 
-    allowed = set(WRITABLE_CONTACT_PROPERTIES) | {campaign_complete_property()}
+    allowed = set(WRITABLE_CONTACT_PROPERTIES) | {campaign_complete_property()} | {last_modified_email_property()}
     validated: Dict[str, str] = {}
 
     for name, value in properties.items():
@@ -225,6 +255,17 @@ def validate_writeback(properties: Dict[str, Any]) -> Dict[str, str]:
         elif name == campaign_complete_property():
             # Boolean-typed in HubSpot; the REST API takes "true"/"false".
             validated[name] = "true" if value in (True, "true", "True", 1, "1") else "false"
+        elif name == last_modified_email_property():
+            # Datetime-typed in HubSpot ("Date and time picker"). The REST API
+            # v3 expects a Unix epoch millisecond integer. Pass as a numeric
+            # string — the PATCH body is JSON so HubSpot accepts either, but
+            # validate_writeback always produces strings for consistency.
+            try:
+                ts = int(value)
+            except (TypeError, ValueError) as exc:
+                raise SchemaValidationError(
+                    f"schema-error: {name}={value!r} is not an integer ms timestamp") from exc
+            validated[name] = str(ts)
         else:
             validated[name] = str(value)
 
