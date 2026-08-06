@@ -50,7 +50,8 @@ def fake_model_fn():
     reserved markers in place so tests can still assert that code, not the
     model, substitutes them."""
     def model_fn(prompt_body, facts):
-        who = facts.get("employee_id", "")
+        who = " ".join(p for p in (facts.get("first_name", ""),
+                                   facts.get("last_name", "")) if p) or "there"
         company = facts.get("company_id", "")
         return (f"A note for {company}".strip(),
                 f'<p>Hi {who},</p><p>Drafted for {company}. '

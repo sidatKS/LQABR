@@ -49,10 +49,12 @@ Adding a skill: `mkdir <name>/` with a `SKILL.md` carrying `name`,
 `description` and `industries` frontmatter. No code change —
 `load_skills()` discovers it.
 
-Lead facts available to the instructions: employee_id, company, job_title,
-industry, location. The confirmed HubSpot contact schema carries no first or
-last name — a lead is identified by `employee_id` (e.g. E00002), and that is
-what the email addresses.
+Lead facts available to the instructions: first_name, last_name, company,
+job_title, industry, location. The email greets the lead by their full name
+(`first_name` + `last_name`), falling back to whichever part is present, and
+to a plain "Hello," when no name is on record (see DRAFTING_RULES). The
+internal `employee_id` is never given to construction and never appears in
+the prose.
 """
 
 from __future__ import annotations

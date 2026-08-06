@@ -25,7 +25,8 @@ class StubHubSpotClient:
     """Stands in for lqabr_core.crm.HubSpotClient — the read path the MCP
     deliberately reuses rather than forking."""
 
-    lead = LeadProfile(external_employee_id="E00002", email="jane@acme.example", company="Acme",
+    lead = LeadProfile(full_name="Jane Smith", external_employee_id="E00002",
+                       email="jane@acme.example", company="Acme",
                        job_title="VP Engineering", industry="Software",
                        external_company_id="C-1", probability=10, hubspot_contact_id="42")
 
@@ -53,6 +54,7 @@ def test_get_lead_profile_validates_and_logs_the_validation():
     obs = RecordingObs()
     profile = crm(obs=obs).get_lead_profile("42")
     assert profile.object_id == "42" and profile.employee_id == "E00002"
+    assert profile.first_name == "Jane" and profile.last_name == "Smith"
     assert obs.processes[0]["event"] == "schema_validated"
     assert obs.processes[0]["step"] == 5
 
@@ -74,12 +76,14 @@ def test_leads_for_trigger_searches_on_the_trigger_property():
     obs = RecordingObs()
     session = FakeSession([FakeResponse(200, {"results": [
         {"id": "42", "properties": {"employee_id": "E00002",
+                                    "firstname": "Jane", "lastname": "Smith",
                                     "email_id": "jane@acme.example", "probability": "10"}}]})])
     client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
                         client_factory=StubHubSpotClient, backoff_seconds=0)
 
     leads = client.leads_for_trigger("trg-1", limit=25)
     assert [lead.hubspot_contact_id for lead in leads] == ["42"]
+    assert leads[0].full_name == "Jane Smith"
     body = session.calls[0]["json"]
     assert body["filterGroups"][0]["filters"][0]["value"] == "trg-1"
     assert obs.processes[-1]["event"] == "trigger_batch_loaded"
@@ -116,8 +120,10 @@ def test_the_queue_fallback_is_available_but_only_on_explicit_opt_in(monkeypatch
 # ------------------------------------------------------------------ step 9
 def test_patch_validates_before_the_hop_and_audits_it():
     obs = RecordingObs()
-    client = crm([FakeResponse(200, {"id": "42"})], obs=obs)
-    client.patch_object("42", {"lqabr_email_status": "opened", "probability": 17})
+    client = crm([FakeResponse(200, {"id": "42", "properties": {
+        "lqabr_email_status": "OPENED", "probability": "17"}})], obs=obs)
+    client.patch_object("42", {"lqabr_email_status": "opened", "probability": 17},
+                        verify_after_seconds=0)
 
     audit = [a for a in obs.audits if a["step"] == 9][0]
     assert audit["method"] == "PATCH" and audit["status_code"] == 200
@@ -134,11 +140,56 @@ def test_an_invalid_property_never_reaches_hubspot():
     assert session.calls == []
 
 
-def test_mark_campaign_complete_writes_the_single_handoff_column():
+# def test_mark_campaign_complete_writes_the_single_handoff_column():
+#     obs = RecordingObs()
+#     crm([FakeResponse(200, {"id": "42", "properties": {
+#         campaign_complete_property(): "true"}})], obs=obs
+#         ).mark_campaign_complete("42", verify_after_seconds=0)
+#     written = [p for p in obs.processes if p["event"] == "writeback_applied"][0]["written"]
+#     assert written == {campaign_complete_property(): "true"}
+
+
+def test_writeback_verification_catches_a_property_the_patch_response_never_echoed():
+    """HubSpot can return HTTP 200 while silently refusing one property —
+    e.g. a workflow-controlled or write-restricted field. The PATCH
+    response itself won't carry it, and that must be caught without a
+    second hop."""
     obs = RecordingObs()
-    crm([FakeResponse(200, {"id": "42"})], obs=obs).mark_campaign_complete("42")
-    written = [p for p in obs.processes if p["event"] == "writeback_applied"][0]["written"]
-    assert written == {campaign_complete_property(): "true"}
+    session = FakeSession([FakeResponse(200, {"id": "42", "properties": {
+        "probability": "17"}})])   # lqabr_email_status silently absent
+    client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
+                        client_factory=StubHubSpotClient, backoff_seconds=0)
+
+    client.patch_object("42", {"lqabr_email_status": "OPENED", "probability": 17},
+                        verify_after_seconds=0)
+
+    failure = [p for p in obs.processes if p["event"] == "writeback_verification_failed"][0]
+    assert "lqabr_email_status" in failure["mismatched"]
+    assert len(session.calls) == 1   # caught from the PATCH response alone — no reread needed
+
+
+def test_a_workflow_reverting_the_property_after_success_is_caught_on_reread(monkeypatch):
+    """The PATCH response can echo success correctly and a HubSpot workflow
+    can still silently revert the property moments later — invisible to the
+    PATCH response no matter how carefully it's checked. Only a later read
+    catches it."""
+    import mcp.hubspot.crm as crm_module
+    monkeypatch.setattr(crm_module.time, "sleep", lambda seconds: None)
+
+    obs = RecordingObs()
+    session = FakeSession([
+        FakeResponse(200, {"id": "42", "properties": {"lqabr_email_status": "OPENED"}}),
+        FakeResponse(200, {"id": "42", "properties": {"lqabr_email_status": "SENT"}}),
+    ])
+    client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
+                        client_factory=StubHubSpotClient, backoff_seconds=0)
+
+    client.patch_object("42", {"lqabr_email_status": "OPENED"}, verify_after_seconds=2.0)
+
+    reverted = [p for p in obs.processes if p["event"] == "writeback_reverted_after_success"][0]
+    assert reverted["reverted"]["lqabr_email_status"] == {
+        "we_set": "OPENED", "hubspot_now_holds": "SENT"}
+    assert session.calls[1]["method"] == "GET"
 
 
 # --------------------------------------------------------------- transport
@@ -146,9 +197,10 @@ def test_a_401_invalidates_the_bearer_and_retries():
     tokens = StubTokens()
     client = HubSpotCRM(tokens=tokens, obs=RecordingObs(),
                         session=FakeSession([FakeResponse(401, text="expired"),
-                                             FakeResponse(200, {"id": "42"})]),
+                                             FakeResponse(200, {"id": "42",
+                                                                "properties": {"probability": "12"}})]),
                         client_factory=StubHubSpotClient, backoff_seconds=0)
-    client.patch_object("42", {"probability": 12})
+    client.patch_object("42", {"probability": 12}, verify_after_seconds=0)
     assert tokens.invalidations == 1
 
 
@@ -170,10 +222,10 @@ def test_a_4xx_is_not_retried():
 
 
 def test_every_hop_carries_the_bearer_header():
-    session = FakeSession([FakeResponse(200, {"id": "42"})])
+    session = FakeSession([FakeResponse(200, {"id": "42", "properties": {"probability": "12"}})])
     HubSpotCRM(tokens=StubTokens("tok-abc"), obs=RecordingObs(), session=session,
                client_factory=StubHubSpotClient, backoff_seconds=0
-               ).patch_object("42", {"probability": 12})
+               ).patch_object("42", {"probability": 12}, verify_after_seconds=0)
     assert session.calls[0]["headers"]["Authorization"] == "Bearer tok-abc"
 
 

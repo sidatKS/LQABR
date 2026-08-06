@@ -8,13 +8,17 @@ that also didn't match. Confirmed live against the real account
 (2026-07-23, ldqfingsrv-dev) that everything the Email Agent needs
 ALREADY EXISTS — there is nothing left to create:
 
-    employee_id        (string/text)      — pre-existing
-    email_id            (string/text)      — standard HubSpot property
-    probability         (number/number)    — pre-existing
-    lqabr_email_status  (enumeration)      — pre-existing; allowed values
-                        are PENDING, SENT, DELIVERED, OPENED, FAILED,
-                        BOUNCED (an email delivery-status field, not a
-                        pipeline stage — see lqabr_core/crm/hubspot.py)
+    employee_id          (string/text)      — pre-existing
+    email_id             (string/text)      — standard HubSpot property
+    probability          (number/number)    — pre-existing
+    lqabr_email_status   (enumeration)      — pre-existing; allowed values
+                         are PENDING, SENT, DELIVERED, OPENED, FAILED,
+                         BOUNCED (an email delivery-status field, not a
+                         pipeline stage — see lqabr_core/crm/hubspot.py)
+    last_modified_email  (date_time)        — pre-existing ("Last Modified
+                         Email", Date and time picker, Contact information
+                         group); written on every email event to record
+                         when the last outreach activity landed
 
 This script is now a read-only verification check, not a creator —
 running it confirms the properties above are still present with the
@@ -39,7 +43,10 @@ from lqabr_core.secrets import get_secret
 BASE = "https://api.hubapi.com"
 
 EXPECTED_EMAIL_STATUS_OPTIONS = {"PENDING", "SENT", "DELIVERED", "OPENED", "FAILED", "BOUNCED"}
-REQUIRED_PROPERTIES = ["employee_id", "email_id", "company_id", "probability", "lqabr_email_status"]
+REQUIRED_PROPERTIES = [
+    "employee_id", "email_id", "company_id", "probability",
+    "lqabr_email_status", "last_modified_email",
+]
 
 
 def main() -> int:

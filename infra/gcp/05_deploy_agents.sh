@@ -61,7 +61,6 @@ ENV_FLAGS+=",LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY=${LQABR_HUBSPOT_CAMPAIGN_C
 # Explicit rather than implied: the image provisions this path and chowns
 # it to `nobody`. Without a writable state dir every campaign 503s at step 3.
 ENV_FLAGS+=",LQABR_EMAIL_RUNSTATE_DIR=${LQABR_EMAIL_RUNSTATE_DIR:-/var/lib/lqabr/email/runstate}"
-[[ -n "${LQABR_EMAIL_GATEWAY_TOKEN:-}" ]] && ENV_FLAGS+=",LQABR_EMAIL_GATEWAY_TOKEN=${LQABR_EMAIL_GATEWAY_TOKEN}"
 
 # Cloud Run service name for an <agent>:<kind>, honouring SERVICE_NAME_OVERRIDES.
 service_name() {  # <agent_dir> <kind>
@@ -99,22 +98,10 @@ build_and_deploy() {  # <agent_dir> <kind> <extra deploy flags...>
 #    has to send back the event triggers back to the SAME agent").
 #
 #    Deployed --allow-unauthenticated because Mailgun cannot present a Google
-#    ID token. Each entry proves itself instead: the Mailgun HMAC on
-#    /mailgun/events, and LQABR_EMAIL_GATEWAY_TOKEN on /hubspot/campaign and
-#    /engagement/sync.
-#
-#    WARNS rather than blocks when that token is unset. Swaroop was explicit
-#    (2026-08-04, 1:29 / 4:18) that .env is the MVP path and nobody should be
-#    held up waiting on Secret Manager — so set it in .env today and move,
-#    and add lqabr-email-gateway-token to Secret Manager next sprint with the
-#    rest (docs/EMAIL_AGENT_ENV_VARS.md).
-if [[ ${#SERVICE_AGENTS[@]:-0} -gt 0 && -z "${LQABR_EMAIL_GATEWAY_TOKEN:-}" ]]; then
-  echo "05: WARNING — LQABR_EMAIL_GATEWAY_TOKEN is empty." >&2
-  echo "    The email service is public (Mailgun has to reach it), so the" >&2
-  echo "    gateway entries /hubspot/campaign and /engagement/sync will accept" >&2
-  echo "    any caller. Fine for a dev smoke test; set the token before this" >&2
-  echo "    URL is shared or real leads are loaded." >&2
-fi
+#    ID token. /mailgun/events proves itself via the Mailgun HMAC.
+#    /hubspot/campaign and /engagement/sync are currently UNAUTHENTICATED —
+#    the LQABR_EMAIL_GATEWAY_TOKEN check was removed 2026-08-05 (the gateway
+#    wasn't sending the header); nothing replaces it yet.
 for agent in "${SERVICE_AGENTS[@]:-}"; do
   [[ -n "${agent}" ]] || continue
   build_and_deploy "${agent}" service --allow-unauthenticated
@@ -159,7 +146,6 @@ echo "           {\"object_id\": \"<trigger id>\"}      # trigger_id also accept
 echo "      GET  $(url_of "$(service_name email service)")/health   (also /healthz)"
 echo "      POST $(url_of "$(service_name email service)")/engagement/sync"
 echo "           {\"object_id\": \"...\", \"run_id\": \"...\"}   # Mailgun track-ID tool call"
-echo "      Both gateway entries need header: X-LQABR-Gateway-Token"
 echo "    Configure provider webhooks to:"
 echo "      Mailgun (delivered/opened/clicked): $(url_of "$(service_name email service)")/mailgun/events"
 echo "        ^ the SAME service the gateway calls. There is no email webhook service."

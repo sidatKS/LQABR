@@ -42,8 +42,7 @@ def campaign(monkeypatch):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.delenv("LQABR_EMAIL_GATEWAY_TOKEN", raising=False)
+def client():
     return TestClient(service_app.create_app(routes="all"))
 
 
@@ -129,35 +128,20 @@ def test_a_run_state_failure_never_reads_as_success(monkeypatch, client):
 
 
 # ---------------------------------------------------------------- gateway auth
-def test_no_token_configured_means_the_route_is_open_to_cloud_run_iam(client, campaign):
+def test_the_campaign_route_has_no_auth_gate(client, campaign):
+    """Gateway-token auth was removed 2026-08-05 — the gateway wasn't
+    sending it, and nothing replaces it yet. This pins that fact so a
+    future auth mechanism is an explicit, tested change, not a silent
+    behavior shift."""
     assert client.post("/hubspot/campaign", json={"object_id": "trg-1"}).status_code == 200
 
 
-def test_a_configured_token_is_required(monkeypatch, campaign):
-    monkeypatch.setenv("LQABR_EMAIL_GATEWAY_TOKEN", "s3cret")
-    guarded = TestClient(service_app.create_app(routes="all"))
-
-    assert guarded.post("/hubspot/campaign", json={"object_id": "t"}).status_code == 401
-    assert guarded.post("/hubspot/campaign", json={"object_id": "t"},
-                        headers={"X-LQABR-Gateway-Token": "wrong"}).status_code == 401
-    assert campaign.calls == []
-
-    ok = guarded.post("/hubspot/campaign", json={"object_id": "t"},
-                      headers={"X-LQABR-Gateway-Token": "s3cret"})
-    assert ok.status_code == 200
-    assert len(campaign.calls) == 1
-
-
-def test_the_mailgun_route_is_not_behind_the_gateway_token(monkeypatch):
-    """Mailgun cannot send our header. Its boundary is the HMAC, and adding
-    a second one would just drop every real event."""
+def test_the_mailgun_route_rejects_a_forged_signature(monkeypatch):
+    """The Mailgun route's only boundary is the HMAC."""
     from lqabr_core.secrets import get_secret
     get_secret.cache_clear()
     monkeypatch.setenv("LQABR_MAILGUN_WEBHOOK_SIGNING_KEY", "test-signing-key")
-    monkeypatch.setenv("LQABR_EMAIL_GATEWAY_TOKEN", "s3cret")
     guarded = TestClient(service_app.create_app(routes="all"))
-    # No gateway token, bad signature -> 401 from the HMAC check, not the
-    # header check; either way it is rejected, but by the right guard.
     resp = guarded.post("/mailgun/events",
                         json={"signature": {"timestamp": "1", "token": "t",
                                             "signature": "forged"},
@@ -266,7 +250,6 @@ def signed_client(monkeypatch):
 
     get_secret.cache_clear()
     monkeypatch.setenv("LQABR_MAILGUN_WEBHOOK_SIGNING_KEY", SIGNING_KEY)
-    monkeypatch.delenv("LQABR_EMAIL_GATEWAY_TOKEN", raising=False)
 
     def payload(event="opened", variables=None):
         timestamp, token = "100", "tok"
@@ -349,13 +332,6 @@ def test_the_sync_route_needs_a_run_id(client, monkeypatch):
     monkeypatch.setattr(service_app.events_module, "sync_run_engagement",
                         lambda *a, **k: {})
     assert client.post("/engagement/sync", json={"object_id": "trg-1"}).status_code == 400
-
-
-def test_the_sync_route_is_behind_the_gateway_token(monkeypatch):
-    monkeypatch.setenv("LQABR_EMAIL_GATEWAY_TOKEN", "s3cret")
-    guarded = TestClient(service_app.create_app(routes="all"))
-    resp = guarded.post("/engagement/sync", json={"object_id": "t", "run_id": "r"})
-    assert resp.status_code == 401
 
 
 # ------------------------------------------- credentials that cannot resolve

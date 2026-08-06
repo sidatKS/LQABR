@@ -12,14 +12,16 @@ from mcp.hubspot.schema import ValidatedProfile
 
 
 def profile(object_id="42", email="jane@acme.example", industry="Software"):
-    return ValidatedProfile(object_id=object_id, email_id=email, employee_id="E00002",
+    return ValidatedProfile(object_id=object_id, email_id=email,
+                            first_name="Jane", last_name="Smith", employee_id="E00002",
                             job_title="VP Engineering", company="Acme",
                             industry=industry, company_id="C-1", probability=10)
 
 
 def lead(object_id="42", email="jane@acme.example"):
-    return LeadProfile(external_employee_id="E00002", email=email, company="Acme",
-                       job_title="VP Engineering", hubspot_contact_id=object_id)
+    return LeadProfile(full_name="Jane Smith", external_employee_id="E00002", email=email,
+                       company="Acme", job_title="VP Engineering",
+                       hubspot_contact_id=object_id)
 
 
 # ------------------------------------------------------------ steps 3 and 4
@@ -38,7 +40,7 @@ def test_construct_email_selects_by_industry_and_fills_real_fields(run_ctx, fake
                                                     cta_url="https://x.example/go")
     assert skill == "technology"
     assert "C-1" in subject
-    assert "E00002" in body and "{employee_id}" not in body
+    assert "Hi Jane Smith," in body and "{first_name}" not in body
     assert "https://x.example/go" in body
 
 
@@ -86,12 +88,12 @@ def test_the_lead_facts_reach_the_model_as_labelled_data(run_ctx, monkeypatch):
 
 def test_model_output_is_parsed_and_used(run_ctx, monkeypatch):
     monkeypatch.setattr(outreach, "_call_model", lambda name, prompt: (
-        '{"subject": "Hi {company_id}", "html_body": "<p>Hey {employee_id}</p>"}',
+        '{"subject": "Hi {company_id}", "html_body": "<p>Hey {first_name}</p>"}',
         {"input_tokens": 100, "output_tokens": 40}))  # noqa: E501
     model_fn = outreach.build_model_fn(run_ctx, "gemini-2.0-flash")
     subject, body, _ = outreach.construct_email(run_ctx, profile(), model_fn=model_fn)
     assert subject == "Hi C-1"
-    assert "Hey E00002" in body
+    assert "Hey Jane" in body
 
 
 def test_fenced_json_from_a_chatty_model_still_parses():
@@ -184,7 +186,7 @@ def test_an_unworkable_lead_is_flagged_with_a_reason_and_the_run_continues(store
         def get_lead_profile(self, object_id):
             if str(object_id) == "43":
                 raise SchemaValidationError("bad-data: contact 43 has no email ID listed")
-            return self.profiles[str(object_id)]
+            return super().get_lead_profile(object_id)
 
     crm = PickyCRM(profiles={"42": profile("42")}, leads=[lead("42"), lead("43", "x@y.z")])
     mailgun = FakeMailgun()
@@ -194,6 +196,9 @@ def test_an_unworkable_lead_is_flagged_with_a_reason_and_the_run_continues(store
     assert len(mailgun.sends) == 1
     assert result["unresolved"] == [{"object_id": "43",
                                      "reason": "bad-data: contact 43 has no email ID listed"}]
+    # the unworkable lead is stamped FAILED in HubSpot, not left at PENDING
+    assert any(oid == "43" and props.get("lqabr_email_status") == "FAILED"
+               for oid, props in crm.patches)
 
 
 def test_a_crm_error_on_one_lead_does_not_drop_the_rest(store, fake_model_fn):
@@ -201,7 +206,7 @@ def test_a_crm_error_on_one_lead_does_not_drop_the_rest(store, fake_model_fn):
         def get_lead_profile(self, object_id):
             if str(object_id) == "42":
                 raise CRMError("HubSpot 503")
-            return self.profiles[str(object_id)]
+            return super().get_lead_profile(object_id)
 
     crm = FlakyCRM(profiles={"43": profile("43", "bob@acme.example")},
                    leads=[lead("42"), lead("43", "bob@acme.example")])
@@ -209,6 +214,9 @@ def test_a_crm_error_on_one_lead_does_not_drop_the_rest(store, fake_model_fn):
                                    mailgun=FakeMailgun(), store=store, model_fn=fake_model_fn)
     assert result["unresolved"][0]["reason"].startswith("crm-error")
     assert len(result["results"]) == 1
+    # even a lead we could not read is stamped FAILED, best-effort
+    assert any(oid == "42" and props.get("lqabr_email_status") == "FAILED"
+               for oid, props in crm.patches)
 
 
 def test_an_uncovered_lead_does_not_stop_the_rest_of_the_campaign(store, fake_model_fn):
@@ -226,6 +234,9 @@ def test_an_uncovered_lead_does_not_stop_the_rest_of_the_campaign(store, fake_mo
                                    model_fn=fake_model_fn)
     assert len(result["results"]) == 2
     assert [u["object_id"] for u in result["unresolved"]] == ["43"]
+    # the lead no skill could draft is stamped FAILED, not left at PENDING
+    assert any(oid == "43" and props.get("lqabr_email_status") == "FAILED"
+               for oid, props in crm.patches)
 
 
 def test_the_no_skill_error_names_the_skills_that_do_exist(run_ctx, fake_model_fn):

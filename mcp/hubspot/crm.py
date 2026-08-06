@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -29,6 +29,7 @@ from mcp.hubspot.auth import RunTokenCache
 from mcp.hubspot.schema import (
     ValidatedProfile,
     campaign_complete_property,
+    last_modified_email_property,
     object_id_property,
     validate_profile,
     validate_writeback,
@@ -127,11 +128,12 @@ class HubSpotCRM:
         body: Dict[str, Any] = {
             "filterGroups": [{"filters": [
                 {"propertyName": prop, "operator": "EQ", "value": str(object_id)}]}],
-            # No firstname/lastname: the confirmed contact schema identifies a
-            # lead by employee_id. Asking for absent properties is harmless but
-            # misleading to the next reader.
-            "properties": ["email_id", "jobtitle", "phone", "employee_id",
-                           "lqabr_email_status", "probability", prop],
+            # firstname/lastname are standard HubSpot contact properties; the
+            # email greets the lead by first name. employee_id stays the
+            # internal identifier and is never written into the prose.
+            "properties": ["firstname", "lastname", "email_id", "jobtitle",
+                           "phone", "employee_id", "lqabr_email_status",
+                           "probability", prop],
             "limit": min(limit, _SEARCH_PAGE_MAX),
         }
 
@@ -191,11 +193,28 @@ class HubSpotCRM:
         return leads
 
     # ---------------------------------------------------------- step 9 write
-    def patch_object(self, object_id: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+    def patch_object(self, object_id: str, properties: Dict[str, Any],
+                     verify_after_seconds: float = 2.0) -> Dict[str, Any]:
         """Validate against the same schema used for the read, then PATCH.
 
         This is the single write path: `lqabr_email_status`, `probability`
-        and the campaign-complete column all land through here."""
+        and the campaign-complete column all land through here.
+
+        HTTP 200 from HubSpot is NOT proof the property actually persisted,
+        and there are two distinct ways it can lie:
+
+        1. The PATCH response itself never echoes the field — a
+           write-restricted property rejected inline. Caught immediately
+           below by comparing the response body to what was sent.
+        2. The PATCH response echoes success correctly, but a HubSpot
+           WORKFLOW enrolled on this object/property fires immediately
+           after and reverts it — seconds later, after the 200 has already
+           gone out. That is invisible to the PATCH response no matter how
+           carefully it's checked; the only way to catch it is to look
+           again. So this re-reads the object `verify_after_seconds` after
+           the write and compares THAT against what was sent too. Pass 0 to
+           skip the re-read (tests; anywhere a synchronous delay is
+           unwanted)."""
         validated = validate_writeback(properties)
         self._obs.process(step=9, event="writeback_validated", object_id=str(object_id),
                           properties=sorted(validated.keys()))
@@ -203,17 +222,72 @@ class HubSpotCRM:
                                step=9, json={"properties": validated})
         self._obs.process(step=9, event="writeback_applied", object_id=str(object_id),
                           written=validated)
+
+        # Check 1 — does the PATCH response itself echo what was sent?
+        echoed = (result or {}).get("properties") or {}
+        mismatched = {name: {"sent": value, "hubspot_returned": echoed.get(name)}
+                      for name, value in validated.items()
+                      if str(echoed.get(name, "")) != str(value)}
+        if mismatched:
+            self._obs.process(
+                step=9, event="writeback_verification_failed", object_id=str(object_id),
+                mismatched=mismatched,
+                detail=("HubSpot returned HTTP 200 but its own response body does not "
+                        "reflect one or more written properties — likely a workflow or "
+                        "a write-restricted property silently overriding/rejecting the "
+                        "value. Check the property's automation/permissions in HubSpot."))
+            return result
+
+        # Check 2 — re-read after a short delay. The PATCH response can only
+        # ever prove what HubSpot accepted AT THAT INSTANT; a workflow acting
+        # on the change afterward is a second write this module never made
+        # and never sees unless it looks again.
+        if verify_after_seconds > 0:
+            time.sleep(verify_after_seconds)
+            try:
+                refetched = self._request(
+                    "GET", f"/crm/v3/objects/contacts/{object_id}", step=9,
+                    params={"properties": ",".join(sorted(validated.keys()))})
+            except CRMError as exc:
+                self._obs.process(step=9, event="writeback_reread_failed",
+                                  object_id=str(object_id), error=str(exc))
+                return result
+
+            current = (refetched or {}).get("properties") or {}
+            reverted = {name: {"we_set": value, "hubspot_now_holds": current.get(name)}
+                        for name, value in validated.items()
+                        if str(current.get(name, "")) != str(value)}
+            if reverted:
+                self._obs.process(
+                    step=9, event="writeback_reverted_after_success", object_id=str(object_id),
+                    reverted=reverted,
+                    detail=(f"the PATCH echoed success and {verify_after_seconds}s later a "
+                            "re-read shows one or more properties no longer hold what was "
+                            "written. HubSpot did not reject the write — something changed "
+                            "it back afterward. Check Automation > Workflows on the contacts "
+                            "object for anything enrolled on this property, and check for a "
+                            "duplicate-contact merge (a merge can replay an older value over "
+                            "a newer one)."))
         return result
 
-    def mark_sent(self, object_id: str) -> Dict[str, Any]:
-        """Step 7 run-state mirror on the CRM: PENDING -> SENT."""
-        return self.patch_object(object_id, {"lqabr_email_status": "SENT"})
+    def mark_sent(self, object_id: str, verify_after_seconds: float = 2.0) -> Dict[str, Any]:
+        """Step 7 run-state mirror on the CRM: PENDING -> SENT.
 
-    def mark_campaign_complete(self, object_id: str) -> Dict[str, Any]:
+        Also stamps ``last_modified_email`` so the portal column reflects the
+        exact moment the email left Mailgun."""
+        props: Dict[str, Any] = {"lqabr_email_status": "SENT"}
+        lm_prop = last_modified_email_property()
+        if lm_prop:
+            props[lm_prop] = int(time.time() * 1000)
+        return self.patch_object(object_id, props,
+                                 verify_after_seconds=verify_after_seconds)
+
+    def mark_campaign_complete(self, object_id: str, verify_after_seconds: float = 2.0) -> Dict[str, Any]:
         """Step 10's hand-off condition: the single column the voice campaign
         reads. Set when a delivered email is clicked — not by a probability
         threshold."""
-        return self.patch_object(object_id, {campaign_complete_property(): True})
+        return self.patch_object(object_id, {campaign_complete_property(): True},
+                                 verify_after_seconds=verify_after_seconds)
 
 
 def _queue_fallback_allowed() -> bool:
@@ -228,7 +302,10 @@ def _row_to_profile(contact: Dict[str, Any]) -> LeadProfile:
     company association per lead would be N+1 calls on a list). Company
     fields are filled in by `get_lead_profile` when the lead is worked."""
     props = contact.get("properties", {}) or {}
+    full_name = " ".join(
+        x for x in (props.get("firstname"), props.get("lastname")) if x) or None
     lead = LeadProfile(
+        full_name=full_name,
         job_title=props.get("jobtitle"),
         company=props.get("company"),
         email=props.get("email_id"),

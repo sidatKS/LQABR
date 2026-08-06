@@ -16,7 +16,7 @@ polling and the keep-alive that were wrong. So:
     GET  /                     identity + route index (never a bare 404)
     GET  /health               }  identical payloads, so nothing downstream
     GET  /healthz              }  has to know which spelling we chose
-    POST /hubspot/campaign     STEP 2 — the gateway's entry point
+    POST /email/campaign       STEP 2 — the gateway's entry point
     POST /mailgun/events       STEP 8 — Mailgun pushes engagement here
     POST /engagement/sync      STEP 8 via the Mailgun tool call: "give me the
                                status of these track IDs"
@@ -48,18 +48,17 @@ IAM token and each entry proves itself:
 
   * `/mailgun/events` — the Mailgun HMAC on every event. Not optional, no
     bypass flag.
-  * `/hubspot/campaign` and `/engagement/sync` — `LQABR_EMAIL_GATEWAY_TOKEN`,
-    compared constant-time against an `X-LQABR-Gateway-Token` header. If it
-    is unset the check is skipped and startup says so on system_log rather
-    than leaving the posture implicit. Rev 3's short-lived scoped JWTs
-    replace this when the gateway track defines them.
+  * `/email/campaign` and `/engagement/sync` — currently UNAUTHENTICATED.
+    The LQABR_EMAIL_GATEWAY_TOKEN / X-LQABR-Gateway-Token check was removed
+    2026-08-05 (the gateway wasn't sending the header); nothing replaces it
+    yet. Rev 3's short-lived scoped JWTs are the intended fix once the
+    gateway track defines them.
 
 Run locally:  uvicorn service_app:app --port 8080   (from agents/email/src)
 """
 
 from __future__ import annotations
 
-import hmac
 import logging
 import os
 import sys
@@ -89,7 +88,7 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from fastapi import FastAPI, Header, HTTPException, Request  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from pydantic import BaseModel
 
 import events as events_module
@@ -110,9 +109,8 @@ from mcp.hubspot.auth import TokenError  # noqa: E402
 logger = logging.getLogger("lqabr.email.service")
 
 SERVICE_NAME = "email_agent"
-GATEWAY_TOKEN_HEADER = "X-LQABR-Gateway-Token"
 
-CAMPAIGN_ROUTE = "/hubspot/campaign"
+CAMPAIGN_ROUTE = "/email/campaign"
 MAILGUN_ROUTE = "/mailgun/events"
 SYNC_ROUTE = "/engagement/sync"
 
@@ -123,10 +121,6 @@ def routes_mode() -> str:
         raise RuntimeError(
             f"LQABR_EMAIL_ROUTES={mode!r} is not one of all|campaign|webhook")
     return mode
-
-
-def gateway_token() -> str:
-    return os.environ.get("LQABR_EMAIL_GATEWAY_TOKEN", "")
 
 
 # --------------------------------------------------------------------- models
@@ -205,16 +199,6 @@ def dispatch_mailgun(payload: Dict[str, Any], handler, endpoint: str = MAILGUN_R
     return result
 
 
-def _check_gateway_token(supplied: Optional[str]) -> None:
-    expected = gateway_token()
-    if not expected:
-        return
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        obs.audit(None, step=2, direction="inbound", endpoint=CAMPAIGN_ROUTE,
-                  method="POST", status_code=401, error="gateway token rejected")
-        raise HTTPException(status_code=401, detail="gateway token missing or invalid")
-
-
 # ----------------------------------------------------------------- app factory
 def create_app(routes: Optional[str] = None) -> FastAPI:
     mode = routes or routes_mode()
@@ -226,13 +210,7 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
         """system_log — container activity, the one stream that is meaningful
         when no run is in flight."""
         obs.configure_logging()
-        obs.system(event="container_started", component=SERVICE_NAME, routes=mode,
-                   gateway_token_required=bool(gateway_token()))
-        if serves_campaign and not gateway_token():
-            # Say it out loud rather than leaving the posture implicit.
-            obs.system(event="gateway_auth_notice", component=SERVICE_NAME,
-                       detail=("no LQABR_EMAIL_GATEWAY_TOKEN set — the campaign route's "
-                               "only boundary is Cloud Run IAM"))
+        obs.system(event="container_started", component=SERVICE_NAME, routes=mode)
         yield
         obs.system(event="container_stopped", component=SERVICE_NAME)
 
@@ -265,10 +243,7 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
     if serves_campaign:
 
         @app.post(CAMPAIGN_ROUTE)
-        def hubspot_campaign(
-            body: CampaignRequest,
-            x_lqabr_gateway_token: Optional[str] = Header(default=None),
-        ) -> Dict[str, Any]:
+        def hubspot_campaign(body: CampaignRequest) -> Dict[str, Any]:
             """STEP 2 → STEPS 3-7. The gateway's entry point.
 
             Synchronous by design. Cloud Run throttles CPU to near zero once
@@ -280,8 +255,10 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
 
             Defined with `def`, not `async def`, so FastAPI runs this
             blocking work in a threadpool and the event loop stays free to
-            answer health probes while a campaign is in flight."""
-            _check_gateway_token(x_lqabr_gateway_token)
+            answer health probes while a campaign is in flight.
+
+            UNAUTHENTICATED as of 2026-08-05 — the gateway-token check was
+            removed (gateway wasn't sending it). No boundary here yet."""
             object_id = body.resolved_id()
 
             obs.audit(None, step=2, direction="inbound", endpoint=CAMPAIGN_ROUTE,
@@ -311,24 +288,18 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
                 raise HTTPException(status_code=502, detail=f"crm-error: {exc}") from exc
 
         @app.post(SYNC_ROUTE)
-        def engagement_sync(
-            body: CampaignRequest,
-            x_lqabr_gateway_token: Optional[str] = Header(default=None),
-        ) -> Dict[str, Any]:
+        def engagement_sync(body: CampaignRequest) -> Dict[str, Any]:
             """STEP 8 via the Mailgun TOOL CALL.
-
-            Swaroop, 20:27: "you fetch one pull saying that these are the IDs,
-            track IDs, give me the status of those track IDs that I got a
-            trigger from. You are going to fetch it, and then if there is
-            anything update, you are going to put it."
 
             One call. It reads the run's own message ids from run state, asks
             Mailgun for their events through the local mailgun_tool, and writes back
             whatever moved. It does not loop and it does not schedule itself
             — this runs inside a container a trigger already brought up.
 
-            `run_id` is required here: a track-ID pull is scoped to one run."""
-            _check_gateway_token(x_lqabr_gateway_token)
+            `run_id` is required here: a track-ID pull is scoped to one run.
+
+            UNAUTHENTICATED as of 2026-08-05 — the gateway-token check was
+            removed (gateway wasn't sending it). No boundary here yet."""
             object_id = body.resolved_id()
             if not body.run_id:
                 raise HTTPException(status_code=400,

@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -35,16 +36,25 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from mcp.hubspot.schema import SchemaValidationError, ValidatedProfile  # noqa: E402
+from mcp.hubspot.schema import (  # noqa: E402
+    SchemaValidationError,
+    ValidatedProfile,
+    last_modified_email_property,
+)
 from mcp.hubspot.server import MCPSession, build_session  # noqa: E402
 
 MODEL = os.environ.get("LQABR_EMAIL_MODEL", "gemini-2.0-flash")
 DEFAULT_BATCH_LIMIT = int(os.environ.get("LQABR_EMAIL_BATCH_LIMIT", "25"))
+# Idempotency guard (step 5): if the gateway redelivers the same trigger —
+# retries during an outage, duplicate webhook delivery, HubSpot workflow
+# re-fires — a lead already at one of these statuses has already been
+# outreached. Skip re-sending rather than emailing the same contact twice.
+ALREADY_SENT_STATUSES = frozenset({"SENT", "DELIVERED", "OPENED"})
 # Construction sampling temperature. Nudged above the flat default so that two
 # leads sharing a skill do not converge on identical copy; the "never invent"
 # guardrails constrain content, this only loosens wording. Config-driven so it
 # can be tuned or pinned without a code edit.
-CONSTRUCTION_TEMPERATURE = float(os.environ.get("LQABR_EMAIL_TEMPERATURE", "1.1"))
+CONSTRUCTION_TEMPERATURE = float(os.environ.get("LQABR_EMAIL_TEMPERATURE", "1.0"))
 
 
 # --------------------------------------------------------------- skills load
@@ -360,15 +370,50 @@ def _write_terminal_status(ctx: obs.RunContext, mcp_session: MCPSession,
                            object_id: str, terminal: MailgunEvent) -> None:
     from enums import HUBSPOT_EMAIL_STATUS
 
+    props: Dict[str, Any] = {"lqabr_email_status": HUBSPOT_EMAIL_STATUS[terminal]}
+    lm_prop = last_modified_email_property()
+    if lm_prop:
+        props[lm_prop] = int(time.time() * 1000)
+
     try:
-        mcp_session.crm.patch_object(
-            object_id, {"lqabr_email_status": HUBSPOT_EMAIL_STATUS[terminal]})
+        mcp_session.crm.patch_object(object_id, props)
     except (CRMError, SchemaValidationError) as exc:
         obs.process(ctx, step=9, event="terminal_writeback_failed",
                     object_id=object_id, terminal_status=terminal.value, error=str(exc))
         return
     obs.process(ctx, step=9, event="run_ended", object_id=object_id,
                 reason=f"terminal status {terminal.value} at send", handoff=False)
+
+
+def _mark_unresolved_failed(ctx: obs.RunContext, mcp_session: MCPSession,
+                            object_id: str, dry_run: bool) -> None:
+    """Best-effort: stamp a lead we could NOT email as FAILED in HubSpot.
+
+    Any lead that does not send — bad data, no draftable copy, a CRM read
+    error — records FAILED so the portal shows a single, unambiguous
+    "not sent" state instead of leaving it at PENDING. The lead is still in
+    the run's `unresolved` list with its reason.
+
+    Skipped on a dry run (which writes nothing) and when there is no id to
+    write to. Best-effort: a failed write is logged, never raised — and
+    FAILED is retryable (not an already-sent status), so a later campaign
+    can still pick the lead up again."""
+    if dry_run or not object_id:
+        return
+    from enums import HUBSPOT_EMAIL_STATUS, MailgunEvent
+
+    props: Dict[str, Any] = {
+        "lqabr_email_status": HUBSPOT_EMAIL_STATUS[MailgunEvent.FAILED]}
+    lm_prop = last_modified_email_property()
+    if lm_prop:
+        props[lm_prop] = int(time.time() * 1000)
+    try:
+        mcp_session.crm.patch_object(object_id, props)
+    except (CRMError, SchemaValidationError) as exc:
+        obs.process(ctx, step=7, event="unresolved_failed_writeback_failed",
+                    object_id=object_id, error=str(exc))
+        return
+    obs.process(ctx, step=7, event="unresolved_marked_failed", object_id=object_id)
 
 
 # ------------------------------------------------------------- orchestration
@@ -414,6 +459,7 @@ def run_campaign(object_id: str, limit: int = 0, dry_run: bool = False,
         unresolved.append({"object_id": object_id, "reason": str(exc)})
         obs.process(ctx, step=5, event="lead_unresolved",
                     object_id=object_id, reason=str(exc))
+        _mark_unresolved_failed(ctx, mcp_session, object_id, dry_run)
     except CRMError as exc:
         if "HTTP 404" not in str(exc):
             raise
@@ -430,17 +476,29 @@ def run_campaign(object_id: str, limit: int = 0, dry_run: bool = False,
             unresolved.append({"object_id": lead_id, "reason": str(exc)})
             obs.process(ctx, step=5, event="lead_unresolved",
                         object_id=lead_id, reason=str(exc))
+            _mark_unresolved_failed(ctx, mcp_session, lead_id, dry_run)
             continue
         except CRMError as exc:
             unresolved.append({"object_id": lead_id, "reason": f"crm-error: {exc}"})
             obs.process(ctx, step=5, event="lead_unresolved",
                         object_id=lead_id, reason=f"crm-error: {exc}")
+            _mark_unresolved_failed(ctx, mcp_session, lead_id, dry_run)
+            continue
+
+        if profile.email_status in ALREADY_SENT_STATUSES:
+            obs.process(ctx, step=7, event="send_skipped_already_sent",
+                        object_id=lead_id, email_status=profile.email_status)
+            sent.append({"status": "skipped-already-sent", "object_id": lead_id,
+                        "email_status": profile.email_status})
             continue
 
         try:
             subject, html_body, skill_name = construct_email(ctx, profile, model_fn)
         except skills.SkillError as exc:
             unresolved.append({"object_id": lead_id, "reason": f"construction: {exc}"})
+            obs.process(ctx, step=6, event="lead_unresolved",
+                        object_id=lead_id, reason=f"construction: {exc}")
+            _mark_unresolved_failed(ctx, mcp_session, lead_id, dry_run)
             continue
 
         result = send_one(ctx, mcp_session, profile, subject, html_body, skill_name,
@@ -450,6 +508,8 @@ def run_campaign(object_id: str, limit: int = 0, dry_run: bool = False,
     obs.process(ctx, step=7, event="batch_complete", lead_count=len(lead_ids),
                 sent=sum(1 for r in sent if r.get("status") in ("sent", "dry-run")),
                 rejected=sum(1 for r in sent if r.get("status") == "rejected"),
+                skipped_already_sent=sum(1 for r in sent
+                                         if r.get("status") == "skipped-already-sent"),
                 unresolved=len(unresolved))
 
     return {

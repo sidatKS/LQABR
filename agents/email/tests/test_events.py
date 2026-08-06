@@ -154,13 +154,16 @@ def test_campaign_complete_is_written_once_not_on_every_later_event(sent):
     assert "email_campaign_complete" not in session.crm.patches[0][1]
 
 
-def test_a_permanent_failure_records_as_bounced_and_ends_the_run(sent):
+def test_a_permanent_failure_records_as_failed_and_ends_the_run(sent):
     session = session_with(12)
     result = events.handle_event(event_data("failed", severity="permanent"),
                                  session=session, store=sent)
+    # Internally still classified as a permanent bounce (drives suppression
+    # and precedence), but the HubSpot column records the single "not
+    # workable" value FAILED rather than BOUNCED.
     assert result["event"] == "bounced"
     assert result["terminal"] is True
-    assert session.crm.patches[0][1]["lqabr_email_status"] == "BOUNCED"
+    assert session.crm.patches[0][1]["lqabr_email_status"] == "FAILED"
     assert "probability" not in session.crm.patches[0][1]   # terminals do not score
 
 
@@ -192,3 +195,41 @@ def test_probability_is_read_back_from_hubspot_not_assumed(sent):
     session = session_with(probability=44)
     result = events.handle_event(event_data("delivered"), session=session, store=sent)
     assert result["probability"] == 46
+
+
+# ------------------------------------------------ last_modified_email column
+def test_last_modified_email_is_written_on_delivered(sent):
+    """Every email event must stamp the 'Last Modified Email' datetime
+    column so the portal reflects when activity actually landed."""
+    session = session_with(probability=10)
+    events.handle_event(event_data("delivered"), session=session, store=sent)
+    patch_props = session.crm.patches[0][1]
+    assert "last_modified_email" in patch_props
+    ts = patch_props["last_modified_email"]
+    assert isinstance(ts, int) and ts > 0
+
+
+def test_last_modified_email_is_written_on_opened(sent):
+    session = session_with(probability=10)
+    events.handle_event(event_data("opened"), session=session, store=sent)
+    assert "last_modified_email" in session.crm.patches[0][1]
+
+
+def test_last_modified_email_is_written_on_terminal_status(sent):
+    """Terminal events (BOUNCED, FAILED) also stamp the column — the send
+    attempt itself is email activity worth recording."""
+    session = session_with(probability=10)
+    events.handle_event(event_data("failed", severity="permanent"),
+                        session=session, store=sent)
+    assert "last_modified_email" in session.crm.patches[0][1]
+
+
+def test_last_modified_email_not_written_on_superseded_event(sent):
+    """A weaker status that loses the resolution race does not write back
+    at all — no patch means no timestamp column either."""
+    events.handle_event(event_data("clicked"), session=session_with(17), store=sent)
+    session = session_with(27)
+    result = events.handle_event(event_data("delivered"), session=session, store=sent)
+    # superseded → patch_object is never called for this second event
+    assert result["status"] == "superseded"
+    assert session.crm.patches == []
