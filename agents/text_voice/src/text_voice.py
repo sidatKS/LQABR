@@ -43,6 +43,7 @@ from urllib.parse import quote
 from lqabr_core import observability as obs
 from lqabr_core.crm import hubspot as _hubspot
 from lqabr_core.crm.base import CRMError
+from lqabr_core.model import ensure_provider_key
 from lqabr_core.probability import SCHEDULING_THRESHOLD, TEXT_VOICE_THRESHOLD
 from lqabr_core.types import (EngagementEvent, EventType, LeadStage, VoiceLead,
                               VoiceOutcome)
@@ -643,21 +644,16 @@ def _model_classify(ended_reason: str, transcript: str) -> Dict[str, Any]:
 
     model = _litellm_model_name(MODEL)
 
-    # Provider keys are ENV-ONLY by decision (2026-07-31), same policy as the
-    # Vapi key — no Secret Manager lookup on the model path. But litellm reads
-    # each provider's OWN standard env var (ANTHROPIC_API_KEY for Anthropic),
-    # while ops mounts keys under the lqabr-* convention (LQABR_ANTHROPIC_API_KEY,
-    # same name as the Secret Manager entry). model.py.build_model() bridges that
-    # gap, but ONLY on the `adk web`/`adk run` path; this webhook path calls
-    # litellm directly, so without the bridge here a key mounted as LQABR_* is
-    # never seen and Step 7 silently falls back to the deterministic outcome.
-    _provider = model.split("/", 1)[0]
-    _std_key = {"anthropic": "ANTHROPIC_API_KEY",
-                "openai": "OPENAI_API_KEY"}.get(_provider)
-    if _std_key and not os.environ.get(_std_key):
-        _mounted = os.environ.get(f"LQABR_{_std_key}")
-        if _mounted:
-            os.environ[_std_key] = _mounted
+    # Provider keys now go through Secret Manager on this path too (2026-08-07,
+    # user request) — supersedes the 2026-07-31 "ENV-ONLY, same policy as the
+    # Vapi key" decision. litellm reads each provider's OWN standard env var
+    # (ANTHROPIC_API_KEY for Anthropic), while ops mounts/stores keys under the
+    # lqabr-* convention (LQABR_ANTHROPIC_API_KEY / Secret Manager's
+    # lqabr-anthropic-api-key). ensure_provider_key() is the single place that
+    # knows that mapping (shared with model.py's build_model(), the
+    # `adk web`/`adk run` path) — env var wins if already set, else it checks
+    # LQABR_ANTHROPIC_API_KEY, else it fetches from Secret Manager.
+    ensure_provider_key(model)
 
     prompt = (f"endedReason: {ended_reason or 'unknown'}\n\n"
               f"Transcript:\n{transcript}")

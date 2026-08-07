@@ -134,13 +134,8 @@ def test_fresh_report_processed_when_in_flight(monkeypatch):
     assert fake.recorded and fake.recorded[0][0] == "C1"
 
 
-# -------------------------------------------------- Anthropic env bridge
-def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
-    monkeypatch.setenv("LQABR_ANTHROPIC_API_KEY", "sk-test-123")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    captured = {}
-
+# ---------------------------------------- Anthropic key bridge / Secret Manager
+def _fake_litellm(captured):
     class _Msg:  # minimal litellm response shape
         content = '{"outcome": "answered_and_engaged", "summary": "ok"}'
 
@@ -160,8 +155,40 @@ def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
         captured["ran"] = True
         return _Resp2()
     fake_litellm.completion = _completion
-    monkeypatch.setitem(__import__("sys").modules, "litellm", fake_litellm)
+    return fake_litellm
+
+
+def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
+    """LQABR_ANTHROPIC_API_KEY (e.g. Cloud Run --set-secrets) still wins
+    without ever touching Secret Manager."""
+    from lqabr_core.secrets import get_secret
+    get_secret.cache_clear()  # avoid lru_cache bleed from other tests
+
+    monkeypatch.setenv("LQABR_ANTHROPIC_API_KEY", "sk-test-123")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    captured = {}
+    monkeypatch.setitem(__import__("sys").modules, "litellm", _fake_litellm(captured))
 
     text_voice._model_classify("assistant-ended-call", "hi there yes yes")
     assert captured.get("ran")
     assert __import__("os").environ["ANTHROPIC_API_KEY"] == "sk-test-123"
+    get_secret.cache_clear()
+
+
+def test_anthropic_key_falls_back_to_secret_manager(monkeypatch):
+    """2026-08-07: with no ANTHROPIC_API_KEY and no LQABR_ANTHROPIC_API_KEY
+    env var set, Step 7's classification path now reaches Secret Manager via
+    lqabr_core.model.ensure_provider_key() — this used to be env-only and
+    silently skip the model call instead."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LQABR_ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("lqabr_core.model.get_secret",
+                         lambda name: "sk-from-secret-manager")
+
+    captured = {}
+    monkeypatch.setitem(__import__("sys").modules, "litellm", _fake_litellm(captured))
+
+    text_voice._model_classify("assistant-ended-call", "hi there yes yes")
+    assert captured.get("ran")
+    assert __import__("os").environ["ANTHROPIC_API_KEY"] == "sk-from-secret-manager"
