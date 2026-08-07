@@ -15,12 +15,18 @@
 #
 # Secrets are injected at RUNTIME from agents/text_voice/.env
 # (git-ignored AND docker-ignored — they never enter the image).
+#
+# 2026-08-07: builds from agents/text_voice/Dockerfile (co-located with the
+# agent) instead of the shared infra/gcp/cloud-run/Dockerfile — user request
+# to keep text_voice's own image definition inside its own agent folder.
+# Build context stays the repo root either way (the Dockerfile still needs
+# packages/lqabr_core from outside agents/text_voice/).
 # ============================================================
 
 services:
   # The production service — the text_voice agent itself.
   # FastAPI (tools:app) behind the Agent Gateway.
-  # Routes: POST /lead, POST /call-report, GET /healthz
+  # Routes: POST /voice_agent/lead, POST /voice_agent/vapi_report, GET /healthz
   #
   # Named txtv (TeXT-Voice, 4-letter style like gtwy): text_voice has NO
   # separate webhook service — this one container IS the agent; its HTTP
@@ -28,10 +34,9 @@ services:
   # entrypoint's process selector (uvicorn vs adk api_server), not a name.
   txtv:
     build:
-      context: .                              # repo root — Dockerfile copies packages/ + agents/
-      dockerfile: infra/gcp/cloud-run/Dockerfile
+      context: .                              # repo root — Dockerfile copies packages/ + agents/text_voice
+      dockerfile: agents/text_voice/Dockerfile
       args:
-        AGENT_DIR: text_voice
         SERVICE_KIND: webhook
         APP_MODULE: tools:app   # baked into the image — bare deploys boot correctly
       tags:
@@ -57,9 +62,8 @@ services:
     profiles: ["adk"]
     build:
       context: .
-      dockerfile: infra/gcp/cloud-run/Dockerfile
+      dockerfile: agents/text_voice/Dockerfile
       args:
-        AGENT_DIR: text_voice
         SERVICE_KIND: agent
     image: lqabr-text-voice-agent:local
     env_file:
