@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="#2a78d6,#eb6834,#1baf7a,#4a3aa7,#008300">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Gateway — Flow Map &amp; Detail Tree (Rev 3, MVP)</title>
+<style>
+  .viz-root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7;
+    --ink:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
+    --grid:#e1e0d9; --rule:#c3c2b7;
+    --border:rgba(11,11,11,0.10);
+    --hubspot:#008300;      /* system of record */
+    --gateway:#2a78d6;      /* the gateway's own steps */
+    --agent:#4a3aa7;        /* downstream agents */
+    --observe:#eb6834;      /* observability overlay */
+    --mcp:#1baf7a;          /* agent -> CRM, bypasses gateway */
+    --warning:#fab219; --critical:#d03b3b; --good:#0ca30c;
+    --wash:rgba(42,120,214,0.06);
+    --wash-warn:rgba(250,178,25,0.10);
+    --wash-crit:rgba(208,59,59,0.08);
+    --wash-good:rgba(0,131,0,0.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d;
+      --ink:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
+      --grid:#2c2c2a; --rule:#383835;
+      --border:rgba(255,255,255,0.10);
+      --hubspot:#008300; --gateway:#3987e5; --agent:#9085e9;
+      --observe:#d95926; --mcp:#199e70;
+      --wash:rgba(57,135,229,0.10);
+      --wash-warn:rgba(250,178,25,0.12);
+      --wash-crit:rgba(208,59,59,0.14);
+      --wash-good:rgba(0,131,0,0.12);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+  .viz-root{max-width:1120px;margin:0 auto;padding:32px 24px 72px}
+
+  header.head{border-bottom:2px solid var(--rule);padding-bottom:20px;margin-bottom:28px}
+  .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted);font-weight:600}
+  h1{font-size:30px;line-height:1.15;margin:8px 0 6px;letter-spacing:-.02em}
+  .lede{color:var(--ink-2);max-width:74ch;margin:0}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .chip{font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-1);color:var(--ink-2)}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.ok{border-color:var(--good);color:var(--ink)}
+
+  h2{font-size:20px;margin:44px 0 4px;letter-spacing:-.01em}
+  h2 .num{color:var(--ink-muted);font-weight:600;margin-right:8px}
+  .sub{color:var(--ink-2);margin:0 0 18px;max-width:78ch;font-size:14px}
+  h3{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-muted);margin:28px 0 10px}
+
+  /* ---------- flow map ---------- */
+  .flow{display:flex;flex-direction:column;align-items:stretch}
+  .node{background:var(--surface-1);border:1px solid var(--border);border-left:3px solid var(--rule);border-radius:8px;padding:14px 16px}
+  .node.hubspot{border-left-color:var(--hubspot)}
+  .node.agentn{border-left-color:var(--agent)}
+  .node .step{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;font-size:12px;font-weight:700;color:#fff;background:var(--rule);margin-right:8px;vertical-align:2px}
+  .node.hubspot .step{background:var(--hubspot)}
+  .node.agentn .step{background:var(--agent)}
+  .node.gw .step{background:var(--gateway)}
+  .node h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+  .node .who{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted);font-weight:600;margin-left:8px}
+  .node p{margin:4px 0 0;font-size:13.5px;color:var(--ink-2)}
+  .node code,code.i{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--wash);padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+  .arrow{display:flex;flex-direction:column;align-items:center;color:var(--ink-muted);font-size:12px;padding:6px 0}
+  .arrow .line{width:2px;height:16px;background:var(--rule)}
+  .arrow .lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;padding:2px 0}
+  .arrow .head{line-height:1;font-size:14px;color:var(--rule)}
+
+  .gwbox{border:2px dashed var(--gateway);border-radius:12px;padding:16px;background:var(--wash);margin:2px 0}
+  .gwbox .gwtitle{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gateway);font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .gwbox .gwtitle .badge{background:var(--gateway);color:#fff;padding:2px 7px;border-radius:4px;letter-spacing:.06em}
+  .gwgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .gwgrid .node{border-left-color:var(--gateway)}
+  .runtime{margin-top:12px;border:1px solid var(--border);border-left:3px solid var(--observe);border-radius:8px;padding:12px 14px;background:var(--surface-1)}
+  .runtime .rt{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--observe);font-weight:700}
+
+  /* ---------- decision cascade ---------- */
+  .tree{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.75;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:18px 20px;overflow-x:auto;white-space:pre;color:var(--ink)}
+  .tree .c{color:var(--ink-muted)}
+  .tree .k{color:var(--gateway);font-weight:600}
+  .tree .d{color:var(--ink-2)}
+  .tree .warn{color:var(--critical);font-weight:600}
+  .tree .ok{color:var(--good);font-weight:600}
+  .tree .f{font-weight:600}
+
+  .outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:14px}
+  .oc{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surface-1)}
+  .oc.pass{border-left:3px solid var(--good);background:var(--wash-good)}
+  .oc.disc{border-left:3px solid var(--warning);background:var(--wash-warn)}
+  .oc.err{border-left:3px solid var(--critical);background:var(--wash-crit)}
+  .oc .t{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px}
+  .oc .t .ico{font-size:13px}
+  .oc .http{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--ink-2);margin-left:auto;border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+  .oc p{margin:6px 0 0;font-size:12.5px;color:var(--ink-2)}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted);padding:9px 12px;border-bottom:1px solid var(--rule);font-weight:600;background:var(--plane)}
+  td{padding:9px 12px;border-bottom:1px solid var(--grid);vertical-align:top;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td.f,th.f{color:var(--ink);font-weight:600}
+  td code{font-family:ui-monospace,monospace;font-size:12px;color:var(--ink)}
+  .yes{color:var(--good);font-weight:700}
+  .na{color:var(--ink-muted)}
+  .em{color:var(--observe);font-weight:700}
+  .wrap{overflow-x:auto}
+
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:8px 0 16px;font-size:12.5px;color:var(--ink-2)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block;border:1px solid var(--border)}
+
+  .callout{border:1px solid var(--border);border-left:3px solid var(--observe);border-radius:8px;padding:14px 16px;background:var(--surface-1);margin:16px 0;font-size:13.5px;color:var(--ink-2)}
+  .callout b{color:var(--ink)}
+  .dev{border:1px solid var(--border);border-radius:8px;padding:14px 16px;background:var(--surface-1);margin-bottom:12px}
+  .dev .id{font-family:ui-monospace,monospace;font-weight:700;color:var(--ink);font-size:12.5px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-right:8px}
+  .dev .st{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:auto}
+  .dev .st.done{background:var(--wash-good);color:var(--ink)}
+  .dev .st.open{background:var(--wash-warn);color:var(--ink)}
+  .dev .h{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-weight:600;color:var(--ink);font-size:14px}
+  .dev p{margin:8px 0 0;font-size:13px;color:var(--ink-2)}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--ink-muted)}
+</style>
+</head>
+<body>
+<div class="viz-root">
+
+<header class="head">
+  <div class="eyebrow">System Architecture · Rev 3 · MVP build</div>
+  <h1>Agent Gateway — Flow Map &amp; Detail Tree</h1>
+  <p class="lede">A HubSpot property change becomes a routing decision, a log record, and a
+  trigger id handed to one agent. <b>No lead-profile data crosses this service</b> — the agent
+  resolves the profile itself, direct from HubSpot over MCP.</p>
+  <div class="meta">
+    <span class="chip"><b>SP-1</b> Agent Gateway — gateway routing service</span>
+    <span class="chip">branch <b>leadq-dev-SN</b></span>
+    <span class="chip">portal <b>246777241</b> · Contact object</span>
+    <span class="chip">D-05 <b>object_id on the wire</b></span>
+    <span class="chip ok"><b>154 tests</b> passing</span>
+    <span class="chip"><b>25 files</b> · 3,800 lines</span>
+    <span class="chip">30-Jul-2026</span>
+  </div>
+</header>
+
+<h2><span class="num">1</span>End-to-end flow</h2>
+<p class="sub">Steps as numbered in Rev 3. The dashed box is one process and one deploy: everything
+inside it is the gateway. Note what the arrows carry — the payload never grows.</p>
+
+<div class="legend">
+  <span><i style="background:var(--hubspot)"></i>HubSpot — system of record</span>
+  <span><i style="background:var(--gateway)"></i>Gateway (Steps 2–4)</span>
+  <span><i style="background:var(--agent)"></i>Downstream agent</span>
+  <span><i style="background:var(--observe)"></i>Runtime / observability</span>
+</div>
+
+<div class="flow">
+
+  <div class="node hubspot">
+    <h4><span class="step">1</span>Emit a routing trigger<span class="who">Data source · HubSpot webhook subscription</span></h4>
+    <p>Four private-app webhook subscriptions on the Contact object fire over HTTPS:
+    <code>Created</code>, <code>decision_maker</code>, <code>lqabr_email_status</code>,
+    <code>lqabr_voice_status</code>. HubSpot performs <b>no</b> value filtering and attaches
+    <b>no</b> agent identifier — the free tier has no custom trigger (D-01).</p>
+    <p>Emits a JSON <b>array of up to 100 events</b>, each carrying <code>objectId</code>,
+    <code>propertyName</code>, <code>propertyValue</code>, <code>eventId</code>,
+    <code>attemptNumber</code>, <code>changeSource</code>. There is no trigger id in the payload.</p>
+  </div>
+
+  <div class="arrow">
+    <div class="line"></div>
+    <div class="lbl">HTTPS POST · JSON array ≤ 100 events · no trigger_id yet</div>
+    <div class="head">▼</div>
+  </div>
+
+  <div class="gwbox">
+    <div class="gwtitle"><span class="badge">Agent Gateway</span> single process · HTTP ingress only · the only entry point for HubSpot events</div>
+
+    <div class="node gw" style="margin-bottom:12px">
+      <h4><span class="step" style="font-size:11px">▸</span>HTTP ingress<span class="who">src/server.py · part of Step 2</span></h4>
+      <p>Verify the HubSpot v3 signature (added — the ingress is public and can start outreach) ·
+      validate the envelope · bound concurrency at <b>10</b>, HubSpot's throttle. Rejects
+      <code>401</code> / <code>400</code> / <code>413</code> before any routing happens.</p>
+    </div>
+
+    <div class="gwgrid">
+      <div class="node gw">
+        <h4><span class="step">2</span>Route<span class="who">router.py</span></h4>
+        <p>Filter on <code>propertyValue</code> · de-duplicate on <code>eventId</code> where
+        <code>attemptNumber&nbsp;&gt;&nbsp;0</code> · loop guard · match
+        <code>agents_registry.yaml</code> · <b>mint the trigger_id</b> · validate the endpoint
+        exists and is enabled.</p>
+      </div>
+      <div class="node gw">
+        <h4><span class="step">3</span>Audit<span class="who">audit.py</span></h4>
+        <p>Log <code>run_id</code> + <code>trigger_id</code> for every request, and the routing
+        decision <b>together with the property and value it was based on</b>. Metrics for the
+        HubSpot→agent handoff. Append-only. No lead data.</p>
+      </div>
+      <div class="node gw">
+        <h4><span class="step">4</span>Forward<span class="who">dispatch.py</span></h4>
+        <p>A2A <code>message/send</code> to the resolved endpoint. Carries the
+        <b>trigger_id and the contact record id</b> (D-05), nothing else. HTTPS is converted to agent protocol here. Status,
+        latency and retry count recorded either way.</p>
+      </div>
+    </div>
+
+    <div class="runtime">
+      <div class="rt">Orchestrator runtime · Solo.io agentgateway</div>
+      <p style="margin:6px 0 0;font-size:13px;color:var(--ink-2)">Sidecar <b>inside this container</b> —
+      one deploy, no hop off-box. Handles HTTP / MCP / A2A and emits access logs, Prometheus metrics
+      and OTel spans. <code>lib/soloai</code> is the Python adapter over it. It is a Rust process, not
+      an importable library — <b>deviation D-02</b>. It cannot decide which agent owns a trigger; that
+      stays in <code>router.py</code>.</p>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="line"></div>
+    <div class="lbl">A2A message/send · trigger_id + object_id · payload &lt; 1 KB</div>
+    <div class="head">▼</div>
+  </div>
+
+  <div class="node agentn">
+    <h4><span class="step">5</span>Execute the agent task<span class="who">Email / Voice / Scheduling agent</span></h4>
+    <p>Receives a <code>trigger_id</code> and an <code>object_id</code>, nothing else. Agents are async, independent, and never
+    talk to each other. Performs its channel action, then writes status back to HubSpot — which may
+    itself become the next trigger (<code>email opened → Voice</code>,
+    <code>voice completed → Scheduling</code>).</p>
+  </div>
+
+  <div class="arrow">
+    <div class="line"></div>
+    <div class="lbl" style="color:var(--mcp);font-weight:600">GET /crm/v3/objects/contacts/&lt;object_id&gt; · direct · bypasses the gateway</div>
+    <div class="head">▼</div>
+  </div>
+
+  <div class="node hubspot">
+    <h4><span class="step">6</span>Resolve trigger to profile<span class="who">System of record · HubSpot CRM</span></h4>
+    <p>The agent scopes its own request by criteria and receives a chunked lead-profile payload
+    (~5 profiles, bounding agent memory). <b>Full profile data flows here only</b> — never through
+    the gateway. Observability for this hop is recorded agent-side.</p>
+  </div>
+</div>
+
+<h2><span class="num">2</span>Router decision cascade <span class="num" style="font-weight:400">— Step 2 in detail</span></h2>
+<p class="sub">Order matters: the cheap rejections come first, and the trigger id is minted only
+after an event has survived every filter. Every branch is logged with its reason.</p>
+
+<div class="tree">
+<span class="c">route_batch(events)  ── for each of ≤ 100 events, in order</span>
+│
+├─ <span class="k">1. filter on propertyValue</span>  <span class="c">match agents_registry.yaml, first route wins</span>
+│     ├─ property watched, value <span class="f">is</span> the routing condition   <span class="ok">→ continue</span>
+│     ├─ property watched, value is <span class="f">not</span> the condition       <span class="c">→</span> <span class="warn">discard</span> <span class="d">not_routing_condition</span>
+│     │     <span class="c">the expected case, and the high-volume one: a subscription</span>
+│     │     <span class="c">fires on EVERY value (D-01). Filtering FIRST is what keeps</span>
+│     │     <span class="c">this stream out of the dedupe store.</span>
+│     └─ no route watches this property                        <span class="c">→</span> <span class="warn">discard</span> <span class="d">no_matching_route</span>
+│           <span class="c">unexpected — someone added a subscription nobody routed</span>
+│
+├─ <span class="k">2. de-duplicate</span>  <span class="c">attemptNumber &gt; 0 and eventId already dispatched?</span>
+│     <span class="c">first deliveries are never checked — only redeliveries.</span>
+│     <span class="c">plus a per-batch set, for the same eventId twice in one array</span>
+│                                                        <span class="c">yes →</span> <span class="warn">discard</span> <span class="d">duplicate_event</span>
+│
+├─ <span class="k">3. loop guard</span>  <span class="c">mode: self_trigger (default)</span>
+│     <span class="c">└─ does the owning agent write this property itself?</span>  <span class="c">yes →</span> <span class="warn">discard</span> <span class="d">self_trigger_loop</span>
+│     <span class="c">   mode: all_api → drops every changeSource=API instead (D-03)</span>
+│
+├─ <span class="k">4. mint trigger_id</span>   <span class="c">uuid5(namespace, portalId + eventId) → "trg-…"</span>
+│     <span class="c">deterministic — a redelivery of the same event mints the same id,</span>
+│     <span class="c">so the audit trail joins and agents can be idempotent. Derived</span>
+│     <span class="c">from the event's own content when HubSpot sends no eventId.</span>
+│
+└─ <span class="k">5. resolve endpoint</span>  <span class="c">from the agent's endpoint_env</span>
+      ├─ present, enabled, http(s)                             <span class="ok">→ RoutingDecision</span>
+      └─ missing / disabled / not a URL                        <span class="c">→</span> <span class="warn">ROUTING ERROR</span>
+            <span class="c">matched but undeliverable — and it carries the trigger_id, so</span>
+            <span class="c">the failure traces by the same id a success would. Never</span>
+            <span class="c">remembered, so HubSpot's redelivery is a real second attempt.</span>
+
+<span class="c">Only a hand-off that LANDS is written to the dedupe store. Not discards</span>
+<span class="c">(they would evict real dispatch records from a bounded LRU — and an evicted</span>
+<span class="c">record means a second call to a lead already contacted), and not failures</span>
+<span class="c">(their redelivery must be a real retry).</span>
+</div>
+
+<div class="outcomes">
+  <div class="oc pass">
+    <div class="t"><span class="ico">✔</span>Routed<span class="http">200</span></div>
+    <p>Trigger id dispatched to the owning agent. The event id is remembered, so a redelivery
+    de-duplicates and the agent is never woken twice.</p>
+  </div>
+  <div class="oc disc">
+    <div class="t"><span class="ico">◐</span>Discarded<span class="http">200</span></div>
+    <p><b>A normal outcome, not an error.</b> Most events are simply not the value we act on.
+    Logged with a reason and counted; HubSpot must not retry it.</p>
+  </div>
+  <div class="oc err">
+    <div class="t"><span class="ico">✖</span>Routing error<span class="http">503</span></div>
+    <p>Matched but undeliverable, or dispatch failed after retries. Returns 503 so HubSpot
+    redelivers — this is how <b>"a lead is never silently dropped"</b> holds at the HTTP layer.</p>
+  </div>
+</div>
+
+<h2><span class="num">3</span>File detail tree</h2>
+<p class="sub">What each file is for, and which Rev 3 step it answers. Rev 3 draws this as
+<code class="i">agent_gateway/</code> at the repo root; it ships at <code class="i">agents/gateway/</code> to match
+the convention every other agent in this repo follows. Same files, one directory level different.</p>
+
+<div class="tree">
+<span class="f">agents/gateway/</span>
+│
+├─ <span class="f">src/</span>                          <span class="c">business logic — Steps 2–4</span>
+│   ├─ <span class="k">server.py</span>          <span class="d">HTTP ingress, entry point. Signature, envelope, concurrency,</span>
+│   │                     <span class="d">order of operations, and the status code contract with HubSpot.</span>
+│   ├─ <span class="k">router.py</span>          <span class="d">Step 2. The only real decision in the service. Filter, dedupe,</span>
+│   │                     <span class="d">loop guard, registry match, mint trigger_id, validate endpoint.</span>
+│   ├─ <span class="k">audit.py</span>           <span class="d">Steps 3 &amp; 7. run_id + trigger_id + the property and value</span>
+│   │                     <span class="d">behind every decision. Handoff metrics. Append-only.</span>
+│   └─ <span class="k">dispatch.py</span>        <span class="d">Step 4. A2A hand-off, trigger_id only, retries, latency.</span>
+│
+├─ <span class="f">lib/soloai/</span>                   <span class="c">co-located runtime adapter over agentgateway (D-02)</span>
+│   ├─ <span class="k">config.py</span>          <span class="d">YAML + ${ENV} loading. No logic — behaviour is tuned by file.</span>
+│   ├─ <span class="k">audit_hooks.py</span>     <span class="d">the four FR-7 streams; RAISES rather than log profile data.</span>
+│   └─ <span class="f">protocols/</span>
+│       ├─ <span class="k">http.py</span>        <span class="d">v3 signature, batch envelope, concurrency guard.</span>
+│       ├─ <span class="k">a2a.py</span>         <span class="d">JSON-RPC message/send + the payload allow-list guard.</span>
+│       └─ <span class="k">mcp.py</span>         <span class="d">publishes the endpoint + chunk hint; REFUSES to proxy profiles.</span>
+│
+├─ <span class="f">config/</span>                       <span class="c">everything tunable, so behaviour changes without code</span>
+│   ├─ <span class="k">config.yaml</span>        <span class="d">protocols on/off, audit level, chunk-size hint, timeouts,</span>
+│   │                     <span class="d">batch limit 100, concurrency 10, dedupe TTL, loop-guard mode.</span>
+│   ├─ <span class="k">agents_registry.yaml</span> <span class="d">property + value → owning agent. Onboarding a fifth agent</span>
+│   │                     <span class="d">is an edit here, never a code change.</span>
+│   ├─ <span class="k">agentgateway.yaml</span>  <span class="d">sidecar static config: A2A backends, MCP target, telemetry.</span>
+│   └─ <span class="k">.env.example</span>       <span class="d">private-app token, app secret, agent URLs. Never committed.</span>
+│
+├─ <span class="f">tests/</span>                        <span class="c">154 tests — they read the real config files, not fixtures</span>
+│   ├─ <span class="k">test_router.py</span>     <span class="d">54 · the four documented mappings, value filtering, dedupe,</span>
+│   │                     <span class="d">loop guard, routing errors, a full 100-event batch.</span>
+│   ├─ <span class="k">test_audit.py</span>      <span class="d">39 · four streams, decision+property+value, token/model N/A,</span>
+│   │                     <span class="d">and the profile-leak guard on seven lead fields.</span>
+│   ├─ <span class="k">test_dispatch.py</span>   <span class="d">25 · trigger-only payload proven on the wire, retry policy.</span>
+│   └─ <span class="k">test_server.py</span>     <span class="d">36 · signature accept/reject/replay, 100 &amp; 101 batches,</span>
+│                         <span class="d">the 200/401/413/503 contract, redelivery behaviour.</span>
+│
+├─ <span class="k">Dockerfile</span>             <span class="d">gateway + agentgateway sidecar in ONE image ("one deploy").</span>
+├─ <span class="k">docker-entrypoint.sh</span>   <span class="d">sidecar first, then gateway; degrades to direct dispatch if</span>
+│                         <span class="d">the sidecar cannot start. Routing late beats not routing.</span>
+├─ <span class="k">requirements.txt</span>       <span class="d">fastapi, uvicorn, requests, PyYAML. Deliberately short —</span>
+│                         <span class="d">no lqabr_core, so the gateway CANNOT hold a LeadProfile.</span>
+└─ <span class="k">README.md</span>              <span class="d">flow, routing table, run steps, deviations, known limits.</span>
+</div>
+
+<h2><span class="num">4</span>Observability — the four streams (FR-7)</h2>
+<p class="sub">Rev 3 makes observability a functional requirement, so it is tested like one.
+Every record carries <code>run_id</code> and <code>trigger_id</code>, which is what makes one lead's
+path reconstructible from log search alone.</p>
+
+<div class="wrap">
+<table>
+  <thead><tr><th class="f">Step</th><th>Audit <span style="font-weight:400;text-transform:none;letter-spacing:0">— network</span></th><th>Process <span style="font-weight:400;text-transform:none;letter-spacing:0">— gateway</span></th><th>System <span style="font-weight:400;text-transform:none;letter-spacing:0">— container</span></th><th>Token / model</th></tr></thead>
+  <tbody>
+    <tr><td class="f">1 · HubSpot trigger</td><td>HubSpot Logs tab</td><td class="na">n/a</td><td class="na">n/a</td><td class="na">n/a</td></tr>
+    <tr><td class="f">2 · Route</td><td>source, receipt time, ingress endpoint</td><td class="em">the decision + propertyName/propertyValue, discards and why</td><td>ingress concurrency vs the limit of 10</td><td class="na">n/a</td></tr>
+    <tr><td class="f">3 · Audit</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="na">n/a</td></tr>
+    <tr><td class="f">4 · Forward</td><td>destination, status, latency, retry count</td><td>protocol conversion, payload size</td><td>memory during dispatch</td><td class="na">n/a</td></tr>
+    <tr><td class="f">5 · Agent task</td><td>agent-side</td><td>agent-side</td><td>agent-side</td><td class="yes">yes (agent)</td></tr>
+    <tr><td class="f">6 · Resolve profile</td><td>agent-side</td><td>agent-side</td><td>agent-side</td><td class="na">n/a</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <b>Token/model is an explicit exclusion, not an omission.</b> The gateway makes no model calls —
+  routing is a config lookup. That fact is written to the system stream once at startup
+  (<code>token_model_stream_not_applicable</code>) so the absence is a recorded decision rather
+  than something a reviewer has to infer.
+</div>
+
+<div class="callout" style="border-left-color:var(--critical)">
+  <b>The trigger-only guarantee is enforced, not promised.</b> Three guards, all tested. The audit
+  writer <b>raises</b> rather than write a record containing any of the nine lead parameters — a log
+  line is the easiest way for profile data to escape a service that swore it carried none. The A2A
+  client <b>raises</b> if anything outside a small allow-list of correlation ids is attached to a
+  dispatch. And because a property <i>value</i> is config-controlled — subscribe to a profile
+  property in the portal and <code>propertyValue</code> arrives holding an email address, under a key
+  FR-7 requires us to log — email- and phone-shaped values are <b>redacted</b> on the way into the
+  log, visibly, rather than raising and taking the ingress down over a portal misconfiguration.
+</div>
+
+<div class="callout" style="border-left-color:var(--good)">
+  <b>Hardened after an adversarial review.</b> The working version was reviewed line-by-line against
+  the spec before this was called done — 18 findings, 10 of which changed behaviour, each now with a
+  regression test. The two that mattered most: the ingress handler was <code>async def</code> but
+  called blocking I/O, so ten concurrent HubSpot deliveries <b>serialised</b> (30s measured for work
+  that takes 3s, with <code>/healthz</code> starved past the container's own 3s health check); and
+  discards were written to the dedupe store, so the high-volume "not the routing condition" stream
+  <b>evicted real dispatch records</b> from a bounded LRU — a second outreach to a lead already
+  contacted. Both are in the README's full list.
+</div>
+
+<h2><span class="num">5</span>Requirement traceability</h2>
+<p class="sub">Each Rev 3 functional requirement, the code that answers it, and the test that
+holds it in place.</p>
+
+<div class="wrap">
+<table>
+  <thead><tr><th class="f">Rev 3 requirement</th><th>Implemented in</th><th>Held by</th></tr></thead>
+  <tbody>
+    <tr><td class="f">Single ingress; no agent-to-agent traffic</td><td><code>server.py</code> — one POST route</td><td><code>test_server.py</code> · probes + envelope</td></tr>
+    <tr><td class="f">Trigger-only payload; no profile data crosses</td><td><code>a2a.py</code> allow-list · <code>audit_hooks.py</code> leak guard</td><td><code>test_dispatch.py</code> · 5 params<br><code>test_audit.py</code> · 7 fields</td></tr>
+    <tr><td class="f">Batch of up to 100 events</td><td><code>http.parse_batch</code></td><td>100 accepted, 101 → <code>413</code></td></tr>
+    <tr><td class="f">Filter on propertyValue (D-01)</td><td><code>router.Route.matches_value</code></td><td>5 non-matching values discarded</td></tr>
+    <tr><td class="f">De-duplicate eventId where attemptNumber &gt; 0</td><td><code>router.DedupeStore</code></td><td>first delivery never deduped; TTL + LRU</td></tr>
+    <tr><td class="f">Ignore agent write-backs (loop guard)</td><td><code>router</code> · <code>self_trigger</code> / <code>all_api</code></td><td>both modes tested (see D-03)</td></tr>
+    <tr><td class="f">Mint the trigger_id in the gateway</td><td><code>router.mint_trigger_id</code></td><td>absent from payload; stable per event</td></tr>
+    <tr><td class="f">Validate the endpoint exists and is enabled</td><td><code>registry.endpoint_for</code></td><td>missing / disabled / non-URL all raise</td></tr>
+    <tr><td class="f">Routing error — never a silent drop</td><td><code>RoutingError</code> → <code>503</code></td><td>503 asserted; failed ids not remembered</td></tr>
+    <tr><td class="f">Log run id + trigger id every request</td><td><code>audit.record_ingress</code> / <code>record_decision</code></td><td>every record carries both</td></tr>
+    <tr><td class="f">Log the decision with its property and value</td><td><code>audit.record_decision</code></td><td>asserted field by field</td></tr>
+    <tr><td class="f">Handoff metrics</td><td><code>audit.HandoffMetrics</code> · <code>/metrics</code></td><td>counters, retries, mean latency</td></tr>
+    <tr><td class="f">Absorb 10 concurrent requests</td><td><code>http.ConcurrencyGuard</code></td><td>recorded against the limit on the system stream</td></tr>
+    <tr><td class="f">Four log streams; token/model N/A</td><td><code>audit_hooks</code></td><td>stream switches + explicit exclusion record</td></tr>
+    <tr><td class="f">Config-driven, not code-driven</td><td><code>config.yaml</code> · <code>agents_registry.yaml</code></td><td>tests read the shipped files</td></tr>
+    <tr><td class="f">Chunk-size hint served to agents (~5)</td><td><code>mcp.MCPEndpoint</code></td><td>published; proxying refused at startup</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">6</span>Deviation register</h2>
+<p class="sub">D-01 is from Rev 3. D-02 and D-03 were found during the build and need sign-off.</p>
+
+<div class="dev">
+  <div class="h"><span class="id">D-01</span>No custom trigger on the free tier<span class="st done">as designed</span></div>
+  <p>HubSpot's free tier cannot filter by value, choose which fields are sent, or set records per
+  trigger. <b>Consequence:</b> value filtering moved into <code>router.py</code>, profile chunking
+  into the agent. Implemented exactly as specified.</p>
+</div>
+
+<div class="dev">
+  <div class="h"><span class="id">D-02</span>"Solo AI" is a process, not an in-process library<span class="st open">needs sign-off</span></div>
+  <p>Rev 3 describes a co-located orchestration <b>library</b>, imported in-process from
+  <code>lib/soloai</code>, ~500 MB. The product — Solo.io <b>agentgateway</b>, now Linux Foundation —
+  is a <b>Rust data plane</b>: <code>agentgateway -f config.yaml</code>, static YAML, MCP/A2A
+  backends, Prometheus + OTel, UI on :15000. There is no Python library to import.</p>
+  <p><b>Built instead:</b> the sidecar runs inside this gateway's own container — one image, one
+  deploy, no hop off-box — and <code>lib/soloai</code> is the Python adapter over it, keeping exactly
+  the module tree Rev 3 specifies. Single ingress, trigger-only payload, HubSpot as system of record
+  and the four streams are all unchanged. Because the business logic depends only on
+  <code>lib/soloai</code> interfaces, swapping in a real library later is a change inside that
+  package alone.</p>
+</div>
+
+<div class="dev">
+  <div class="h"><span class="id">D-05</span>The contact record id travels with the trigger<span class="st open">needs sign-off</span></div>
+  <p>Neither the <code>trigger_id</code> nor HubSpot's <code>eventId</code> is stored anywhere in the
+  CRM, so an agent holding one cannot reach the lead that fired the trigger — Rev 3 concedes this in
+  D-01. Rejected: stamping a trigger id onto contacts (needs write scope, and the lookup is an
+  eventually-consistent search returning zero for seconds after the write), and buffering to five in
+  the gateway (leads sit unworked at low volume, and an in-memory buffer loses them on restart).</p>
+  <p><b>Built:</b> <code>objectId</code> — already in every webhook payload — travels in the A2A
+  metadata, and the agent does a direct <code>GET /crm/v3/objects/contacts/&lt;id&gt;</code>. Exact,
+  immediate, no new property, no write scope. A matched event with no objectId is now a routing
+  error, not a discard.</p>
+</div>
+
+<div class="dev">
+  <div class="h"><span class="id">D-03</span>A global "ignore changeSource=API" would disable three of the four routes<span class="st open">needs a decision</span></div>
+  <p>Step 2 says to ignore events whose <code>changeSource</code> is an agent write-back
+  (<code>API</code>). Taken literally that removes <b>R1</b> (the Contact is created by the
+  lead-profile agent via the API), <b>R3</b> (<code>lqabr_email_status=OPENED</code> is written by the
+  Email agent) and <b>R4</b> (<code>lqabr_voice_status=COMPLETED</code> is written by the Voice
+  agent) — leaving only a human setting <code>decision_maker</code>. The pipeline would stop after
+  the first hop.</p>
+  <p>Rev 3 also states the guard's <i>purpose</i>: so the system does not trigger itself.
+  <b>Built:</b> <code>loop_guard.mode: self_trigger</code> — an event is dropped only when the agent
+  owning the matched route is the agent that writes that property (declared per agent as
+  <code>writes:</code> in the registry). That prevents self-triggering without severing the three
+  agent-driven hops. <code>mode: all_api</code> keeps the literal reading one config line away.</p>
+</div>
+
+<h2><span class="num">7</span>Task breakdown</h2>
+<p class="sub">The development tasks behind this build, as recorded on the SP-1 Planner card.</p>
+
+<div class="wrap">
+<table>
+  <thead><tr><th class="f">#</th><th class="f">Task</th><th>Output</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="f">Scaffold agents/gateway per Rev 3</td><td>src / lib / config / tests, requirements, README</td><td class="yes">done</td></tr>
+    <tr><td>2</td><td class="f">Config layer</td><td><code>config.yaml</code>, <code>agents_registry.yaml</code>, <code>.env.example</code>, loader</td><td class="yes">done</td></tr>
+    <tr><td>3</td><td class="f">lib/soloai adapter over agentgateway</td><td>protocols http / a2a / mcp, audit hooks, sidecar YAML</td><td class="yes">done</td></tr>
+    <tr><td>4</td><td class="f">router.py — Step 2</td><td>filter, dedupe, loop guard, mint, validate</td><td class="yes">done</td></tr>
+    <tr><td>5</td><td class="f">audit.py — Steps 3 &amp; 7</td><td>four streams, decision records, handoff metrics</td><td class="yes">done</td></tr>
+    <tr><td>6</td><td class="f">dispatch.py — Step 4</td><td>A2A trigger-only hand-off, retries, latency</td><td class="yes">done</td></tr>
+    <tr><td>7</td><td class="f">server.py — HTTP ingress</td><td>signature, envelope, concurrency, status contract</td><td class="yes">done</td></tr>
+    <tr><td>8</td><td class="f">Unit tests</td><td>154 passing across four suites</td><td class="yes">done</td></tr>
+    <tr><td>9</td><td class="f">Container — gateway + sidecar, one deploy</td><td>Dockerfile, entrypoint with direct-dispatch fallback</td><td class="yes">done</td></tr>
+    <tr><td>10</td><td class="f">Flow map &amp; detail tree</td><td>this document</td><td class="yes">done</td></tr>
+    <tr><td>10b</td><td class="f">Adversarial review + hardening</td><td>18 findings; 10 behaviour fixes, each with a regression test</td><td class="yes">done</td></tr>
+    <tr><td>11</td><td class="f">Resolve D-02 / D-03 with the design owner</td><td>sign-off, or config flip for D-03</td><td>open</td></tr>
+    <tr><td>12</td><td class="f">Integration test against a live agent</td><td>contract test with <code>agents/text_voice</code> (SP-1, Rao)</td><td>open</td></tr>
+    <tr><td>13</td><td class="f">Deploy to Cloud Run + point the subscriptions at it</td><td>replace the capture endpoint; set the four agent URLs</td><td>open</td></tr>
+    <tr><td>14</td><td class="f">Shared dedupe store</td><td>only needed once instances scale past one</td><td>open</td></tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Agent Gateway MVP · built to <b>Agent_Gateway_Rev3.pdf</b> (approved 30-Jul-2026) ·
+  branch <code>leadq-dev-SN</code> · 30 files, ~4,270 lines, 154 tests passing ·
+  local commits only, nothing pushed.
+</footer>
+
+</div>
+</body>
+</html>

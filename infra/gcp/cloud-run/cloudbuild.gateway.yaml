@@ -1,0 +1,47 @@
+# =====================================================================
+# Agent Gateway — remote build & push via Cloud Build.
+# ---------------------------------------------------------------------
+# Builds the image on Google's infrastructure and pushes both tags to
+# Artifact Registry. Nothing is built on the developer's machine, so no
+# Docker daemon is required locally.
+#
+# Run from the REPO ROOT:
+#
+#   gcloud builds submit . \
+#     --config infra/gcp/cloud-run/cloudbuild.gateway.yaml \
+#     --substitutions _IMAGE=us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-gtwy,_VERSION=0.1.0 \
+#     --project ldqfingsrv-dev
+#
+# Separate from cloud-run/cloudbuild.yaml because the gateway uses its own
+# Dockerfile (installs the agentgateway binary, runs docker-entrypoint.sh)
+# rather than the parametrised agent/webhook image.
+#
+# Substitutions:
+#   _IMAGE    full image path, no tag
+#   _VERSION  version tag, e.g. 0.1.0 (matches agents/gateway/VERSION)
+# =====================================================================
+
+steps:
+  # Build once, apply both tags. Two -t flags produce two tags from a
+  # single build — no rebuild, and the digests are guaranteed identical.
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -f
+      - agents/gateway/Dockerfile
+      - -t
+      - "${_IMAGE}:${_VERSION}"
+      - -t
+      - "${_IMAGE}:latest"
+      - .
+
+# Both tags are pushed after a successful build. Listing them here rather
+# than adding push steps means Cloud Build reports each one in the build
+# summary, so a partial push is visible instead of silent.
+images:
+  - "${_IMAGE}:${_VERSION}"
+  - "${_IMAGE}:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
