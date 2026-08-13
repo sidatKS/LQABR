@@ -17,7 +17,7 @@ Answers, against the REAL services, the questions that unit tests cannot:
 Run it from the repo root, inside WSL, with the venv active:
 
     source .venv/bin/activate
-    python agents/email/preflight.py
+    python agents/email/tools/preflight.py
 
 Exit status is 0 only if every REQUIRED check passed.
 """
@@ -30,8 +30,9 @@ import sys
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SRC = Path(__file__).resolve().parent / "src"
+AGENT_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = AGENT_DIR.parents[1]
+SRC = AGENT_DIR / "src"
 for _p in (str(REPO_ROOT), str(SRC)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -40,7 +41,7 @@ for _p in (str(REPO_ROOT), str(SRC)):
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+    load_dotenv(AGENT_DIR / ".env", override=False)
 except ImportError:
     pass
 

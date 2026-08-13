@@ -44,7 +44,7 @@ agents/gateway/
 Rev 3 draws this tree as `agent_gateway/` at the repo root with
 `gateway/*.py`. It lives at `agents/gateway/` with `src/*.py` instead, to match
 the convention every other agent in this repo already follows
-(`READ_PRJSTRC_ME.md`). Same files, same responsibilities, one directory level
+(`docs/READ_PRJSTRC_ME.md`). Same files, same responsibilities, one directory level
 different.
 
 ---
@@ -114,7 +114,7 @@ For local runs without a HubSpot signature, set
 
 ```bash
 # tests
-python -m pytest agents/gateway/tests -q
+python -m pytest -c tests/pytest.ini agents/gateway/tests -q
 
 # container (gateway + agentgateway sidecar, one image)
 docker build -f agents/gateway/Dockerfile -t lqabr-agent-gateway .

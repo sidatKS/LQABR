@@ -20,10 +20,11 @@ Gmail ignores everything after '+', so mail still arrives, but HubSpot
 treats each as a separate contact. Good for testing the load; swap in real
 addresses before any actual outreach.
 
-Usage:
+Usage (from the repo root; the seed JSON stays under data/):
     set HUBSPOT_TOKEN=pat-na1-...
-    python push_leads.py lead_profiles_decision_makers.json --limit 2 --dry-run
-    python push_leads.py lead_profiles_decision_makers.json --limit 2
+    SEED=data/seeds/b2b/output/lead_profiles_decision_makers.json
+    python agents/ingestion/tools/push_leads.py "$SEED" --limit 2 --dry-run
+    python agents/ingestion/tools/push_leads.py "$SEED" --limit 2
 """
 
 import argparse

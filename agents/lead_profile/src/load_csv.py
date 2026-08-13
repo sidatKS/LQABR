@@ -142,7 +142,7 @@ def load_csvs(
 ) -> RawFeed:
     """Read the three CSVs into memory.
 
-    Paths are overridable per file so the future BigQuery ``fct_lead`` source
+    Paths are overridable per file so a future alternate lead source
     can be swapped in without touching Step 3.
     """
     obs = get_obs()

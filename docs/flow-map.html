@@ -297,7 +297,7 @@ one agentic run, CSVs → HubSpot CRM</p>
 <tr><td class="f">container_definition.py</td><td>read, not executed</td>
   <td class="why">Machine-readable architecture: in-process MCP dependency, required env, secret names, orchestrator default. Asserted by tests, so the declared design can’t drift from reality.</td></tr>
 <tr><td class="f">src/load_csv.py</td><td>Step 1+2</td>
-  <td class="why">The feed boundary: fail loudly on structural problems <em>before</em> any processing, name file+column exactly, alias unit-suffixed headers deterministically. Per-file path overrides are the future BigQuery swap point.</td></tr>
+  <td class="why">The feed boundary: fail loudly on structural problems <em>before</em> any processing, name file+column exactly, alias unit-suffixed headers deterministically. Per-file path overrides are the future data-source swap point.</td></tr>
 <tr><td class="f">src/build_profile.py</td><td>Step 3</td>
   <td class="why">The join+filter that produces the in-memory lead list — the FR’s “no JSON artifact” rule lives here. Reports (never hides) duplicates and unresolved rows; counts must reconcile.</td></tr>
 <tr><td class="f">src/call_mcp.py</td><td>Step 4</td>

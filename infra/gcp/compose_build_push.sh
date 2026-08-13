@@ -33,6 +33,10 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# The compose file lives in infra/ (build contexts inside it are `..`, i.e.
+# the repo root), so every compose call must name it explicitly.
+COMPOSE_FILE="infra/docker-compose.yml"
+
 export VERSION="${VERSION:-0.1.0}"
 export IMAGE_BASE="${IMAGE_BASE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr}"
 export IMAGE_PREFIX="${IMAGE_PREFIX:-lqabr-dev}"
@@ -45,9 +49,9 @@ echo "== push     : $([ "${PUSH}" = "1" ] && echo 'YES' || echo 'no (build only 
 echo
 
 echo "== building"
-docker compose build "$@"
+docker compose -f "${COMPOSE_FILE}" build "$@"
 
-images="$(docker compose config --images "$@")"
+images="$(docker compose -f "${COMPOSE_FILE}" config --images "$@")"
 
 if [ "${PUSH}" != "1" ]; then
   echo

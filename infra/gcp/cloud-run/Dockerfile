@@ -1,6 +1,6 @@
 # Parametrized image for every LQABR service (ADK agent or webhook app).
 # Built from the REPO ROOT by infra/gcp/05_deploy_agents.sh via cloudbuild.yaml,
-# or by docker-compose.yml at the repo root (see docs/IMAGE_BUILD_SPEC.md):
+# or by infra/docker-compose.yml (contexts are `..`) (see docs/IMAGE_BUILD_SPEC.md):
 #
 #   AGENT_DIR    agents/<name> directory to bake in (e.g. email)
 #   SERVICE_KIND "service" -> uvicorn src/service_app.py — the agent's OWN

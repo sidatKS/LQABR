@@ -175,7 +175,7 @@ Create `VERSION` in each component directory, one line, e.g. `0.1.0`.
 
 ## Stage 2 — Define the service
 
-One `docker-compose.yml` at the **repo root**, one service block per component.
+One `infra/docker-compose.yml`, one service block per component.
 Compose is used here purely as a build-and-push tool — no ports, no networks, no
 `depends_on`. The stack is not run from it.
 
@@ -183,7 +183,7 @@ Build context is the repo root for every service, because each image copies
 `packages/lqabr_core` as well as its own directory.
 
 ```yaml
-# docker-compose.yml (repo root) — build & push only
+# infra/docker-compose.yml — build & push only
 services:
 
   # --- 1. Agent Gateway: its own Dockerfile ---
@@ -325,7 +325,7 @@ Both tags must appear. **Output:** the registry paths reported back to Swaroop.
 
 **On approval:**
 
-1. Co-leads create the root `docker-compose.yml` and `.env`
+1. Co-leads create `infra/docker-compose.yml` and `.env`
 2. Each owner adds a `VERSION` file and their service block
 3. **`gtwy` is built and pushed first** as the reference implementation, confirming
    the Stage 5 two-tag behaviour

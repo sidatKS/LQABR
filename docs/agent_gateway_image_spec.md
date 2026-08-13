@@ -39,7 +39,7 @@ Version comes from `agents/gateway/config/config.yaml` (`gateway.version: 0.1.0`
 
 ## 4. The compose file
 
-`docker-compose.yml` at the repo root:
+`infra/docker-compose.yml` (build contexts are `..`, i.e. the repo root):
 
 ```yaml
 services:
@@ -58,8 +58,8 @@ services:
 ```bash
 gcloud auth configure-docker us-central1-docker.pkg.dev
 
-docker compose build gtwy
-docker compose push gtwy
+docker compose -f infra/docker-compose.yml build gtwy
+docker compose -f infra/docker-compose.yml push gtwy
 ```
 
 Verify:

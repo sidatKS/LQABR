@@ -115,3 +115,6 @@ logs/
 *_log.jsonl
 # Scratch / to-delete artifacts
 _to_delete/
+
+# Claude Code local settings
+.claude/

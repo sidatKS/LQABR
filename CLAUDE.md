@@ -42,17 +42,24 @@ Node/npm toolchain anywhere. What exists and runs today:
   `leadgen.secrets`, and `leadgen.server` (the MCP front door). It coexists
   with the 9-pointer `types`/`crm` model rather than replacing it.
 - `agents/{ingestion, lead_profile, email, text_voice, scheduling,
-  orchestrator}/` — six ADK agents, each with `src/` + `tests/`,
+  orchestrator}/` — six core ADK agents, each with `src/` + `tests/`,
   `requirements.txt`, `.env.example`. Email/text_voice/scheduling also ship
   a FastAPI `webhook_app.py` receiving Mailgun/Twilio/Zoom events.
+- `agents/enrichment/` — the Lead Profile tool (`build_lead_profiles`)
+  re-exposed as a standalone MCP server; a thin ADK agent alongside its
+  MCP entry point, deterministic (no model call).
+- `agents/gateway/` — the HubSpot-event ingress/routing service (not an
+  ADK agent): a single ingress that decides which agent owns a trigger and
+  hands off only a trigger id + the contact's record id.
 - `infra/gcp/` — idempotent scripts `00`–`06`: APIs, runtime SA/IAM,
   Secret Manager (11 secrets), Pub/Sub, HubSpot property bootstrap,
   Cloud Run build+deploy, Cloud Scheduler.
 - `data/seeds/b2b/` — CSV seeds, the manual ingestion source.
-- 64 pytest tests, all mockable offline (`python3 -m pytest -q` from root).
+- 64 pytest tests, all mockable offline
+  (`python3 -m pytest -c tests/pytest.ini -q` from root).
 
-The former BigLake/BigQuery data platform was retired — see
-`docs/adr/002-hubspot-central-crm.md` (supersedes ADR 001).
+HubSpot is the system of record for lead data — see
+`docs/adr/002-hubspot-central-crm.md`.
 
 ## 3. Tech Stack
 
@@ -85,9 +92,10 @@ The former BigLake/BigQuery data platform was retired — see
 
 ## 4. Repository Structure
 
-`READ_PRJSTRC_ME.md` has the full rationale; the short version:
+`docs/READ_PRJSTRC_ME.md` has the full rationale; the short version:
 
-- `agents/` — the six ADK agents (see §1). Unit tests co-located.
+- `agents/` — the six core ADK agents plus the `enrichment` MCP server and
+  the `gateway` routing service (see §1). Unit tests co-located.
 - `packages/lqabr_core/` — the only shared code path; agents never import
   from each other.
 - `infra/gcp/` — numbered provisioning/deploy scripts + `cloud-run/`
@@ -107,7 +115,8 @@ pip install -r agents/lead_profile/requirements.txt   # google-adk etc.
 pip install pytest fastapi httpx python-multipart
 
 # Tests (all external services mocked; no credentials needed)
-python3 -m pytest -q
+# Config lives in tests/pytest.ini, so -c is required from the root.
+python3 -m pytest -c tests/pytest.ini -q
 
 # Run any agent locally (copy .env.example -> .env first)
 adk web agents/<name>/src          # browser dev UI

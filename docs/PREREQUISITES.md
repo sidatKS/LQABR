@@ -39,7 +39,7 @@ pip install -r agents/lead_profile/requirements.txt   # google-adk + friends
 pip install pytest fastapi httpx python-multipart      # test/webhook extras
 ```
 
-**Verify:** `python3 -m pytest -q` from the repo root — all tests pass
+**Verify:** `python3 -m pytest -c tests/pytest.ini -q` from the repo root — all tests pass
 without any credentials (external services are mocked).
 
 ## 3. GCP authentication & project

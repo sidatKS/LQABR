@@ -17,15 +17,15 @@
 #
 # Manual equivalent:
 #   gcloud auth configure-docker us-central1-docker.pkg.dev
-#   docker compose build email-agent
-#   docker compose push email-agent
+#   docker compose -f infra/docker-compose.yml build email-agent
+#   docker compose -f infra/docker-compose.yml push email-agent
 #
 # Overridable at build time (defaults target the dev project):
 #   IMAGE_BASE    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr
 #   IMAGE_PREFIX  lqabr-dev          <project code>-<environment>
 #   VERSION       0.1.0              semantic version -> the immutable tag
 #
-#   VERSION=0.2.0 docker compose build email-agent
+#   VERSION=0.2.0 docker compose -f infra/docker-compose.yml build email-agent
 #
 # Naming: ${IMAGE_PREFIX}-<component>-<kind>:${VERSION}, plus :latest — e.g.
 # lqabr-dev-email-agent:0.1.0.
@@ -33,9 +33,11 @@
 
 name: lqabr
 
-# Repo root as context, the shared parameterised Dockerfile.
+# Repo root as context (`..` — this file lives in infra/), the shared
+# parameterised Dockerfile. `dockerfile:` is resolved against the context,
+# so those paths stay repo-root-relative.
 x-image-build: &image-build
-  context: .
+  context: ..
   dockerfile: infra/gcp/cloud-run/Dockerfile
 
 services:
@@ -83,8 +85,8 @@ services:
 # image and pushes it to Artifact Registry — no ports, no networks, no
 # volumes, no depends_on, on purpose.
 #
-#   docker compose build gtwy
-#   docker compose push  gtwy
+#   docker compose -f infra/docker-compose.yml build gtwy
+#   docker compose -f infra/docker-compose.yml push  gtwy
 #
 # Build context is the REPO ROOT for every service, because the Dockerfiles
 # reference agents/<component>/... paths. See .dockerignore for what is kept
@@ -103,7 +105,7 @@ services:
   # agents/gateway/config/config.yaml and agents/gateway/VERSION.
   gtwy:
     build:
-      context: .
+      context: ..
       dockerfile: agents/gateway/Dockerfile
       tags:
         - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-gtwy:0.1.0"
@@ -119,7 +121,7 @@ services:
 # IMAGE NAME = the LIVE Cloud Run service's image (verified 04 Aug 2026):
 #   service  lqabr-dev-ldpf
 #   image    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
-# `image:` below is that exact repo:tag, so `docker compose push ldpf` updates the
+# `image:` below is that exact repo:tag, so `docker compose -f infra/docker-compose.yml push ldpf` updates the
 # tag the running service resolves. The live platform convention is
 # lqabr-dev-<component> (email->lqabr-dev-email-agent, gtwy->lqabr-dev-gtwy,
 # txtv->lqabr-dev-txtv). NOTE: infra/gcp/05_deploy_agents.sh uses a DIFFERENT
@@ -131,13 +133,13 @@ services:
 #   gcloud run deploy lqabr-dev-ldpf --region us-central1 --project ldqfingsrv-dev \
 #     --image us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
 #
-#   docker compose build ldpf
-#   docker compose push ldpf     # pushes lqabr-dev-ldpf:latest (the live service's tag)
+#   docker compose -f infra/docker-compose.yml build ldpf
+#   docker compose -f infra/docker-compose.yml push ldpf     # pushes lqabr-dev-ldpf:latest (the live service's tag)
 
 services:
   ldpf:
     build:
-      context: .
+      context: ..
       dockerfile: infra/gcp/cloud-run/Dockerfile
       args:
         AGENT_DIR: lead_profile

@@ -58,7 +58,7 @@ _to_delete
 # =====================================================================
 # Build context exclusions.
 # ---------------------------------------------------------------------
-# The build context is the REPO ROOT (docker-compose.yml uses context: .),
+# The build context is the REPO ROOT (infra/docker-compose.yml uses context: ..),
 # because the Dockerfiles reference agents/<component>/... paths. Without
 # this file every build packages and uploads the entire repo — including
 # the virtualenv, git history, and data/, which holds real lead records.

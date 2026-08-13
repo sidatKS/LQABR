@@ -113,7 +113,7 @@ lqabr/
 ├── .claude/skills/mailgun-integration/
 │   └── SKILL.md                              NEW  Mailgun integration skill
 ├── docs/EMAIL_AGENT_V2_FLOW.md               NEW  this document
-├── pytest.ini                                CHG  + mcp/tests
+├── tests/pytest.ini                          CHG  + mcp/tests; moved from root
 └── .gitignore                                CHG  + .runstate/ .logs/ *_log.jsonl
 ```
 
@@ -526,7 +526,7 @@ pip install -r agents/email/requirements.txt
 cp agents/email/.env.example agents/email/.env      # then fill it in
 
 # tests — everything mocked, no credentials, no network
-python3 -m pytest -q
+python3 -m pytest -c tests/pytest.ini -q
 
 # the agent — local development only; Cloud Run runs service_app, not ADK
 adk web agents/email/src            # browser dev UI

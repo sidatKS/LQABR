@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GCP Cloud Run Architecture</title>
+<style>
+  :root{
+    /* GCP brand palette */
+    --g-blue:#4285F4; --g-red:#EA4335; --g-yellow:#FBBC04; --g-green:#34A853;
+    --g-blue-d:#1a73e8; --g-teal:#12b5cb; --g-purple:#a142f4; --g-grey:#5f6368;
+    --ink:#202124; --mut:#5f6368; --line:#dadce0; --line2:#e8eaed;
+    --bg:#f1f3f4; --card:#ffffff;
+    /* category = the architectural tier a component belongs to (drives the card accent) */
+    --compute:#4285F4;   /* serverless / compute (Cloud Run, Functions, GKE) */
+    --edge:#12b5cb;      /* edge / ingress / networking (LB, CDN, DNS, Armor, API GW) */
+    --data:#34A853;      /* data & storage (SQL, Firestore, BigQuery, Storage) */
+    --messaging:#FBBC04; /* async / eventing (Pub/Sub, Eventarc, Tasks, Scheduler) */
+    --ai:#a142f4;        /* AI / agentic (Vertex AI, Agent Builder, Gemini) */
+    --ops:#5f6368;       /* security & ops (IAM, Secret Mgr, logging, CI/CD) */
+    --client:#80868b;    /* external clients / users / third-party */
+    --shadow:0 1px 2px rgba(60,64,67,.16), 0 2px 8px rgba(60,64,67,.10);
+    --shadow-lg:0 4px 14px rgba(60,64,67,.22);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);background:var(--bg);
+    font-family:"Google Sans",Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+
+  /* ---------- header ---------- */
+  header{position:relative;z-index:30;padding:11px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+    background:rgba(255,255,255,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+  .brand{display:flex;align-items:center;gap:12px;min-width:230px;cursor:pointer}
+  .brand .glyph{width:34px;height:34px;border-radius:9px;flex:none;position:relative;overflow:hidden;
+    background:conic-gradient(from 90deg,#4285F4 0 90deg,#EA4335 90deg 180deg,#FBBC04 180deg 270deg,#34A853 270deg);
+    box-shadow:0 2px 8px rgba(66,133,244,.34)}
+  .brand .glyph::after{content:"";position:absolute;inset:8px;border-radius:50%;background:#fff}
+  .brand h1{font-size:15px;margin:0;letter-spacing:.1px;font-weight:700}
+  .brand p{margin:2px 0 0;font-size:10.5px;color:var(--mut);letter-spacing:.3px;text-transform:uppercase;font-weight:600}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--mut)}
+  .legrp{display:flex;gap:10px;align-items:center}
+  .legrp + .legrp{border-left:1px solid var(--line);padding-left:16px}
+  .legrp .cap{font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#9aa0a6;font-size:9px;margin-right:2px}
+  .lg{display:flex;align-items:center;gap:6px;font-weight:500}
+  .swatch{width:11px;height:11px;border-radius:3px;flex:none}
+  .sdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .hint{margin-left:auto;font-size:11px;color:var(--mut);display:flex;gap:10px;align-items:center}
+  .kbd{border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:10px;color:var(--ink);background:#fff}
+
+  /* ---------- stage ---------- */
+  main{position:absolute;inset:0;overflow:hidden;cursor:grab;
+    background:
+      radial-gradient(1100px 700px at 20% 6%,rgba(66,133,244,.05),transparent 60%),
+      radial-gradient(1000px 700px at 92% 96%,rgba(52,168,83,.05),transparent 60%),
+      #f5f7f9}
+  main::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(circle,#d3d8de 1px,transparent 1.4px);background-size:26px 26px;opacity:.5}
+  main.grabbing{cursor:grabbing}
+  #scene{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #scene.anim{transition:transform .6s cubic-bezier(.22,.61,.36,1)}
+  #wires{position:absolute;top:0;left:0;overflow:visible}
+  .wire{fill:none;stroke:#9aa0a6;stroke-width:2}
+  .wire.async{stroke-dasharray:7 5}
+  .wire.dep{stroke:#bdc1c6;stroke-width:1.6;stroke-dasharray:2 5;stroke-linecap:round}
+  .wire.hidden{display:none}
+  .wlabel{position:absolute;transform:translate(-50%,-50%);font-size:10.5px;font-weight:600;background:#fff;
+    border:1px solid var(--line);border-radius:14px;padding:2px 9px;white-space:nowrap;pointer-events:none;
+    box-shadow:0 1px 3px rgba(60,64,67,.14);color:#3c4043}
+  .wlabel.hidden{display:none}
+
+  /* ---------- group containers (the enterprise skeleton) ---------- */
+  .group{position:absolute;border-radius:16px;pointer-events:none;transition:opacity .3s}
+  .group.hidden{display:none}
+  .group .glabel{position:absolute;top:-11px;left:16px;display:flex;align-items:center;gap:7px;
+    font-size:11px;font-weight:700;letter-spacing:.2px;padding:3px 11px 3px 9px;border-radius:20px;background:#fff;
+    box-shadow:0 1px 3px rgba(60,64,67,.16)}
+  .group .glabel .gi{width:15px;height:15px;flex:none;display:flex}
+  .group .gsub{position:absolute;top:-11px;right:16px;font-size:9.5px;font-weight:600;letter-spacing:.3px;
+    color:#80868b;background:#fff;padding:3px 9px;border-radius:20px;box-shadow:0 1px 3px rgba(60,64,67,.12)}
+  /* group kinds */
+  .group.project{border:1.6px solid #cfd8e6;background:rgba(66,133,244,.045)}
+  .group.project>.glabel{color:#1a73e8}
+  .group.vpc{border:1.6px dashed #34A853;background:rgba(52,168,83,.05)}
+  .group.vpc>.glabel{color:#188038}
+  .group.region{border:1.5px dashed #9aa0a6;background:rgba(95,99,104,.035)}
+  .group.region>.glabel{color:#5f6368}
+  .group.tier{border:1.4px solid #e2e6ea;background:rgba(255,255,255,.55)}
+  .group.tier>.glabel{color:#5f6368;font-weight:600}
+  .group.external{border:1.5px dashed #bdc1c6;background:rgba(128,134,139,.05)}
+  .group.external>.glabel{color:#5f6368}
+  .group.ai{border:1.6px dashed #a142f4;background:rgba(161,66,244,.055)}
+  .group.ai>.glabel{color:#8430d6}
+
+  /* ---------- product cards ---------- */
+  .node{position:absolute;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+    background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);cursor:pointer;
+    border-left:4px solid var(--ac,#4285F4);
+    transition:transform .16s ease,box-shadow .16s ease,opacity .3s ease}
+  .node:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:color-mix(in srgb,var(--ac) 50%,var(--line))}
+  .node.sel{box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 30%,transparent),var(--shadow-lg)}
+  .node.hidden{display:none}
+  .node.svc,.node.ghost{animation:pop .34s cubic-bezier(.2,.8,.3,1.2) both}
+  @keyframes pop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+  .node .ico{width:38px;height:38px;flex:none;border-radius:9px;background:#fff;border:1px solid var(--line2);
+    display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6)}
+  .node .ico svg{width:24px;height:24px;display:block}
+  .node.big .ico{width:44px;height:44px}.node.big .ico svg{width:28px;height:28px}
+  .node .txt{min-width:0;display:flex;flex-direction:column;gap:1px}
+  .c-title{font-weight:600;font-size:12.5px;line-height:1.18;color:var(--ink);white-space:nowrap}
+  .node.big .c-title{font-size:14px;font-weight:700}
+  .c-sub{font-size:10.5px;color:var(--mut);line-height:1.2;white-space:nowrap;font-weight:500}
+  .c-pill{display:inline-flex;align-items:center;gap:4px;margin-top:4px;font-size:8px;font-weight:700;letter-spacing:.4px;
+    text-transform:uppercase;color:var(--sc);width:fit-content;
+    background:color-mix(in srgb,var(--sc) 12%,#fff);border:1px solid color-mix(in srgb,var(--sc) 28%,#fff);
+    padding:2px 7px;border-radius:12px}
+  .c-pill .sdot{width:5px;height:5px;background:var(--sc)}
+  .node.exp .txt::after{content:"⤢";position:absolute;top:7px;right:9px;font-size:12px;color:var(--ac);opacity:.7}
+  .node.exp{padding-right:24px}
+  /* ghost / external dependency card */
+  .node.ghost{border-style:dashed;border-left-style:solid;background:#fafbfc;opacity:.9;pointer-events:none;box-shadow:none}
+  .node.ghost .ico{opacity:.85}
+  .node.ghost .c-sub{font-style:italic}
+
+  /* ---------- controls / info / hero ---------- */
+  .ctrls{position:absolute;left:16px;bottom:16px;z-index:25;display:flex;flex-direction:column;gap:8px}
+  .btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:18px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  .btn:hover{background:#f1f3f4}
+  .btn.wide{width:auto;padding:0 15px;height:40px;font-size:12.5px;font-weight:600;gap:7px;border-radius:20px}
+
+  #info{position:absolute;right:14px;top:14px;bottom:14px;width:322px;z-index:26;background:#fff;border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow-lg);padding:20px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+  #info::-webkit-scrollbar{width:8px}#info::-webkit-scrollbar-thumb{background:#dadce0;border-radius:8px}
+  #info .crumb{font-size:10.5px;color:var(--mut);letter-spacing:.4px;font-weight:700;text-transform:uppercase}
+  #info .htitle{display:flex;align-items:center;gap:11px}
+  #info .htitle .ico{width:40px;height:40px;flex:none;border-radius:10px;background:#fff;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center}
+  #info .htitle .ico svg{width:26px;height:26px}
+  #info h2{font-size:18px;margin:0;line-height:1.18}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .pchip{font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;display:flex;align-items:center;gap:5px;
+    padding:4px 10px;border-radius:14px;border:1px solid var(--line)}
+  #info .desc{font-size:12.5px;line-height:1.55;color:#3c4043}
+  .mrow{display:flex;gap:10px;font-size:11.5px;align-items:flex-start}
+  .mrow b{color:var(--mut);font-weight:700;min-width:62px;flex:none}
+  .exec ul{margin:6px 0 0;padding-left:17px}
+  .exec li{font-size:12px;line-height:1.5;margin-bottom:7px;color:#3c4043}
+  .svcnote{font-size:11px;color:var(--mut);border-top:1px solid var(--line);padding-top:10px;line-height:1.5}
+  .footer{margin-top:auto;font-size:10px;color:#9aa0a6;border-top:1px solid var(--line);padding-top:10px;line-height:1.5}
+
+  #hero{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(900px 600px at 50% 40%,#ffffff,#eef1f4);transition:opacity .55s ease}
+  #hero.hide{opacity:0;pointer-events:none}
+  .hero-card{background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 70px rgba(60,64,67,.22);
+    padding:44px 54px;text-align:center;max-width:560px;position:relative;overflow:hidden}
+  .hero-card::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;
+    background:linear-gradient(90deg,#4285F4 0 25%,#EA4335 25% 50%,#FBBC04 50% 75%,#34A853 75%)}
+  .hero-kicker{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#9aa0a6}
+  .hero-card h1{font-size:29px;margin:12px 0 10px;line-height:1.14;font-weight:700;color:var(--ink)}
+  .hero-card p{font-size:13.5px;color:var(--mut);margin:0 auto;line-height:1.5;max-width:420px}
+  .hero-cta{margin-top:26px;display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;
+    color:#fff;background:#1a73e8;padding:11px 22px;border-radius:24px;box-shadow:0 8px 20px rgba(26,115,232,.34)}
+  .hero-cta:hover{background:#1765cc}
+  .hero-cta .arw{font-size:15px}
+  @media (max-width:900px){#info,.hint{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" id="brandBtn" title="Back to start">
+    <div class="glyph"></div>
+    <div><h1 id="brandName">GCP Cloud Run Architecture</h1><p id="brandSub">ENTERPRISE REFERENCE · GOOGLE CLOUD</p></div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="hint"><span><span class="kbd">Click</span> to expand</span><span><span class="kbd">Scroll</span> zoom</span><span><span class="kbd">Drag</span> pan</span><span><span class="kbd">Esc</span> back</span></div>
+</header>
+
+<main id="stage">
+  <div id="scene"><svg id="wires"></svg></div>
+  <div class="ctrls">
+    <button class="btn wide" id="reset">⤢ Overview</button>
+    <button class="btn" id="zin">+</button>
+    <button class="btn" id="zout">−</button>
+  </div>
+  <aside id="info"></aside>
+  <div id="hero">
+    <div class="hero-card">
+      <div class="hero-kicker" id="heroKicker">GOOGLE CLOUD · CLOUD RUN</div>
+      <h1 id="heroTitle">Cloud Run Enterprise Architecture</h1>
+      <p id="heroSub">A layered, interactive map of a production Cloud Run system — ingress, services, data, eventing and an agentic layer. Click any component to drill into its internals and dependencies.</p>
+      <div class="hero-cta" id="heroCta">Explore the architecture <span class="arw">→</span></div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* =====================================================================================
+   GCP ICON LIBRARY  —  simplified, recognizable product glyphs in the Google Cloud palette.
+   Each value is inner SVG for a 24×24 viewBox. Keys are referenced by NODES[].icon.
+   (These are original simplified glyphs styled after Google Cloud iconography, not the
+   official trademarked assets — swap in official SVGs from the GCP icon pack if licensed.)
+   ===================================================================================== */
+const B='#4285F4', R='#EA4335', Y='#FBBC04', G='#34A853', T='#12b5cb', P='#a142f4', K='#5f6368';
+const ICONS = {
+  /* --- compute / serverless --- */
+  cloudrun:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><path d="M8 8.5l4 3.5-4 3.5z" fill="#fff"/><circle cx="15.5" cy="12" r="1.5" fill="#fff"/>`,
+  runjobs:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><rect x="7" y="7.5" width="4" height="4" rx="1" fill="#fff"/><rect x="13" y="7.5" width="4" height="4" rx="1" fill="#fff" opacity=".7"/><rect x="7" y="13" width="10" height="3" rx="1.5" fill="#fff"/>`,
+  functions:`<path d="M12 2l8.5 5v10L12 22l-8.5-5V7z" fill="${B}"/><path d="M10 8.5h4M9.5 12h3.5M9 15.5l3-7" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/>`,
+  gke:`<path d="M12 2.4l8.3 4.8v9.6L12 21.6 3.7 16.8V7.2z" fill="${B}"/><circle cx="12" cy="12" r="2.3" fill="#fff"/><g stroke="#fff" stroke-width="1.3"><path d="M12 5v3M12 16v3M6 8.5l2.6 1.5M15.4 14l2.6 1.5M6 15.5l2.6-1.5M15.4 10l2.6-1.5"/></g>`,
+  gce:`<rect x="3.5" y="3.5" width="17" height="17" rx="3" fill="${B}"/><rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="#fff"/><g stroke="${B}" stroke-width="1.2"><path d="M9.5 5.5v2M12 5.5v2M14.5 5.5v2M9.5 16.5v2M12 16.5v2M14.5 16.5v2M5.5 9.5h2M5.5 12h2M5.5 14.5h2M16.5 9.5h2M16.5 12h2M16.5 14.5h2"/></g>`,
+  appengine:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><path d="M12 6.5l4.5 10h-2.4l-.8-2h-2.6l-.8 2H7.5z" fill="#fff"/><path d="M11.4 12.6h1.2L12 10.8z" fill="${B}"/>`,
+  /* --- edge / ingress / networking --- */
+  lb:`<circle cx="12" cy="5" r="2.6" fill="${T}"/><circle cx="5" cy="18" r="2.6" fill="${T}"/><circle cx="12" cy="18" r="2.6" fill="${T}"/><circle cx="19" cy="18" r="2.6" fill="${T}"/><path d="M12 7.5v3M12 10.5l-7 5M12 10.5l7 5M12 10.5v5" stroke="${T}" stroke-width="1.5" fill="none"/>`,
+  apigw:`<rect x="3.5" y="3.5" width="17" height="17" rx="3" fill="${T}"/><path d="M9 8l-2.5 4L9 16M15 8l2.5 4L15 16" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 7l-2 10" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>`,
+  apigee:`<circle cx="12" cy="12" r="9" fill="${T}"/><circle cx="12" cy="12" r="3.2" fill="#fff"/><g fill="#fff"><circle cx="12" cy="4.5" r="1.5"/><circle cx="19" cy="15" r="1.5"/><circle cx="5" cy="15" r="1.5"/></g><path d="M12 6v3M14 13.5l3.2 1.5M10 13.5l-3.2 1.5" stroke="#fff" stroke-width="1.2"/>`,
+  armor:`<path d="M12 2.5l7.5 3v6c0 4.5-3.2 8.3-7.5 10-4.3-1.7-7.5-5.5-7.5-10v-6z" fill="${R}"/><path d="M8.5 12l2.4 2.4 4.6-4.8" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  cdn:`<circle cx="12" cy="12" r="9" fill="${B}"/><ellipse cx="12" cy="12" rx="3.6" ry="9" fill="none" stroke="#fff" stroke-width="1.3"/><path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8" stroke="#fff" stroke-width="1.3"/>`,
+  dns:`<circle cx="12" cy="12" r="9" fill="${B}"/><path d="M3.5 10h17M3.5 14h17" stroke="#fff" stroke-width="1.3"/><ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="#fff" stroke-width="1.3"/><circle cx="12" cy="12" r="1.6" fill="#fff"/>`,
+  vpc:`<path d="M7 15a4 4 0 010-8 5 5 0 019.6-1.2A3.8 3.8 0 0117 15z" fill="${G}"/><g fill="#fff"><circle cx="9" cy="11.5" r="1.3"/><circle cx="15" cy="11.5" r="1.3"/><circle cx="12" cy="14" r="1.3"/></g><path d="M9 11.5l3 2.5 3-2.5" stroke="#fff" stroke-width="1"/>`,
+  nat:`<rect x="3.5" y="6" width="17" height="12" rx="3" fill="${K}"/><path d="M7 12h6m0 0l-2-2m2 2l-2 2" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16.5" cy="12" r="1.4" fill="#fff"/>`,
+  vpcconn:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${G}"/><path d="M8 12h3M13 12h3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><rect x="10" y="9.5" width="4" height="5" rx="1.2" fill="#fff"/>`,
+  /* --- data & storage --- */
+  cloudsql:`<ellipse cx="12" cy="6" rx="7" ry="2.8" fill="${B}"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6" fill="${B}"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8" fill="none" stroke="#fff" stroke-width="1.2"/><path d="M10 17.5l1.6 1.6L15 15.4" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  spanner:`<ellipse cx="12" cy="6" rx="7" ry="2.8" fill="${B}"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6" fill="${B}"/><path d="M14.5 10.5a2.2 2.2 0 10-2.7 3.4l-2 2 1.4 1.4 2-2a2.2 2.2 0 003.3-2.6l-1.3 1.3-1.4-1.4z" fill="#fff"/>`,
+  firestore:`<path d="M6 4h9l3 3v3H6z" fill="${Y}"/><path d="M6 10h12v4H6z" fill="#f9ab00"/><path d="M6 14h12l-6 6z" fill="${R}"/><circle cx="12" cy="12" r="1.4" fill="#fff"/>`,
+  bigtable:`<rect x="3.5" y="4" width="17" height="16" rx="2.5" fill="${B}"/><g stroke="#fff" stroke-width="1.2"><path d="M3.5 9h17M3.5 13.5h17M9 4v16M15 4v16"/></g><rect x="4" y="4.5" width="4.5" height="4" fill="#fff" opacity=".5"/>`,
+  memorystore:`<rect x="5" y="5" width="14" height="14" rx="2.5" fill="${R}"/><rect x="8" y="8" width="8" height="8" rx="1.5" fill="#fff"/><g stroke="${R}" stroke-width="1.2"><path d="M9.5 3v2M12 3v2M14.5 3v2M9.5 19v2M12 19v2M14.5 19v2M3 9.5h2M3 12h2M3 14.5h2M19 9.5h2M19 12h2M19 14.5h2"/></g>`,
+  storage:`<path d="M4 6h16l-1.4 13.2a1 1 0 01-1 .9H6.4a1 1 0 01-1-.9z" fill="${Y}"/><rect x="3.2" y="4" width="17.6" height="3.4" rx="1.2" fill="#f9ab00"/><circle cx="9" cy="12" r="1.3" fill="#fff"/><path d="M11.5 12h5" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>`,
+  bigquery:`<circle cx="10.5" cy="10.5" r="7" fill="${B}"/><circle cx="10.5" cy="10.5" r="3.6" fill="#fff"/><g fill="${B}"><rect x="8.7" y="9" width="1.2" height="3"/><rect x="10.3" y="7.8" width="1.2" height="4.2"/><rect x="11.9" y="9.8" width="1.2" height="2.2"/></g><path d="M15.5 15.5l4 4" stroke="${B}" stroke-width="2.2" stroke-linecap="round"/>`,
+  dataflow:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><path d="M7 9h6m0 0l-2-2m2 2l-2 2M17 15h-6m0 0l2-2m-2 2l2 2" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  /* --- messaging / eventing --- */
+  pubsub:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${Y}"/><path d="M6 9l6 4 6-4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="6" y="8" width="12" height="8" rx="1.5" fill="none" stroke="#fff" stroke-width="1.5"/>`,
+  eventarc:`<circle cx="12" cy="12" r="9" fill="${Y}"/><path d="M12 6.5l1.6 3.4 3.7.4-2.8 2.5.8 3.6L12 14.9 8.7 16.9l.8-3.6L6.7 10.7l3.7-.4z" fill="#fff"/>`,
+  tasks:`<rect x="4" y="3.5" width="16" height="17" rx="2.5" fill="${Y}"/><g stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 8l1.3 1.3L11 7M7.5 13l1.3 1.3L11 12"/></g><path d="M12.5 8h4M12.5 13h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>`,
+  scheduler:`<circle cx="12" cy="12" r="9" fill="${Y}"/><path d="M12 7v5l3.5 2" stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  workflows:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><g fill="#fff"><circle cx="8" cy="8" r="1.8"/><circle cx="16" cy="12" r="1.8"/><circle cx="8" cy="16" r="1.8"/></g><path d="M9.4 8.8L14.6 11M14.6 13L9.4 15.2" stroke="#fff" stroke-width="1.3"/>`,
+  /* --- AI / agentic --- */
+  vertexai:`<path d="M12 2.4l8.3 4.8v9.6L12 21.6 3.7 16.8V7.2z" fill="${P}"/><path d="M8 8l4 8 4-8" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="16" r="1.4" fill="#fff"/>`,
+  agentbuilder:`<rect x="4" y="6" width="16" height="12" rx="3" fill="${P}"/><circle cx="9" cy="12" r="1.5" fill="#fff"/><circle cx="15" cy="12" r="1.5" fill="#fff"/><path d="M12 3v3M9 18l-1.5 2.5M15 18l1.5 2.5" stroke="${P}" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3" r="1.3" fill="${P}"/>`,
+  agentengine:`<circle cx="12" cy="12" r="9" fill="${P}"/><path d="M12 6a4 4 0 00-4 4c0 1.2.5 2 .5 3 0 1 .8 2 1.5 2h4c.7 0 1.5-1 1.5-2 0-1 .5-1.8.5-3a4 4 0 00-4-4z" fill="#fff"/><path d="M10.5 17h3M11 19h2" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>`,
+  gemini:`<path d="M12 2c.6 5.2 2.8 7.4 8 8-5.2.6-7.4 2.8-8 8-.6-5.2-2.8-7.4-8-8 5.2-.6 7.4-2.8 8-8z" fill="${P}"/>`,
+  vectorsearch:`<circle cx="10.5" cy="10.5" r="7" fill="${P}"/><g fill="#fff"><circle cx="8" cy="8" r="1"/><circle cx="13" cy="8" r="1"/><circle cx="10.5" cy="11" r="1"/><circle cx="8" cy="13" r="1"/><circle cx="13" cy="13" r="1"/></g><path d="M15.5 15.5l4 4" stroke="${P}" stroke-width="2.2" stroke-linecap="round"/>`,
+  documentai:`<path d="M6 3h8l4 4v14H6z" fill="${P}"/><path d="M14 3v4h4" fill="#fff" opacity=".4"/><path d="M9 15.5c.5-2 1-2.5 3-3-2-.5-2.5-1-3-3-.5 2-1 2.5-3 3 2 .5 2.5 1 3 3z" fill="#fff"/>`,
+  /* --- security & ops --- */
+  iam:`<circle cx="12" cy="9" r="3.4" fill="${B}"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6z" fill="${B}"/><circle cx="17" cy="7" r="2.6" fill="${G}"/><path d="M17 6v2" stroke="#fff" stroke-width="1"/>`,
+  secret:`<rect x="5" y="10" width="14" height="10" rx="2.5" fill="${R}"/><path d="M8 10V7.5a4 4 0 018 0V10" fill="none" stroke="${R}" stroke-width="1.8"/><circle cx="12" cy="14.5" r="1.6" fill="#fff"/><path d="M12 15.8v2" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>`,
+  kms:`<circle cx="9" cy="9" r="4" fill="none" stroke="${K}" stroke-width="2"/><path d="M11.8 11.8L19 19M15 15l2-2M17 17l2-2" stroke="${K}" stroke-width="2" stroke-linecap="round"/>`,
+  identity:`<rect x="4.5" y="4.5" width="15" height="15" rx="4" fill="${B}"/><path d="M12 8.5a2.4 2.4 0 100 4.8 2.4 2.4 0 000-4.8z" fill="#fff"/><path d="M8 16.5c0-1.8 1.8-3 4-3s4 1.2 4 3" stroke="#fff" stroke-width="1.4" fill="none"/>`,
+  logging:`<rect x="4" y="3.5" width="16" height="17" rx="2.5" fill="${B}"/><g stroke="#fff" stroke-width="1.5" stroke-linecap="round"><path d="M7.5 8h9M7.5 11.5h9M7.5 15h5.5"/></g>`,
+  monitoring:`<rect x="3.5" y="3.5" width="17" height="17" rx="3" fill="${B}"/><path d="M6.5 15l3-3.5 2.5 2.5 4-5" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="9" r="1.3" fill="#fff"/>`,
+  trace:`<circle cx="6" cy="6" r="2.3" fill="${B}"/><circle cx="18" cy="10" r="2.3" fill="${B}"/><circle cx="9" cy="18" r="2.3" fill="${B}"/><path d="M7.8 7.2L16 9M16.5 11.8L10.5 16" stroke="${B}" stroke-width="1.5"/>`,
+  artifactregistry:`<path d="M4 7.5l8-4 8 4v9l-8 4-8-4z" fill="${B}"/><path d="M4 7.5l8 4 8-4M12 11.5V20" stroke="#fff" stroke-width="1.4" fill="none"/><path d="M8 5.5l8 4" stroke="#fff" stroke-width="1.2" opacity=".6"/>`,
+  build:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${G}"/><path d="M13.5 8a2.6 2.6 0 00-3.4 3.4l-3.6 3.6 1.5 1.5 3.6-3.6A2.6 2.6 0 0016 9.6l-1.6 1.6-1.4-1.4z" fill="#fff"/>`,
+  deploy:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><path d="M12 6c2.5 1.5 3.5 4 3 7l-3 2-3-2c-.5-3 .5-5.5 3-7z" fill="#fff"/><circle cx="12" cy="11" r="1.3" fill="${B}"/><path d="M10 16l-1 2M14 16l1 2" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>`,
+  sourcerepo:`<rect x="3" y="3" width="18" height="18" rx="5" fill="${B}"/><circle cx="8" cy="8" r="1.8" fill="#fff"/><circle cx="8" cy="16" r="1.8" fill="#fff"/><circle cx="16" cy="12" r="1.8" fill="#fff"/><path d="M8 9.8v4.4M8.7 8.7C11 9 14 9.5 14.6 11.2" stroke="#fff" stroke-width="1.4" fill="none"/>`,
+  /* --- clients / external / generic --- */
+  user:`<circle cx="12" cy="8.5" r="3.6" fill="${K}"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5z" fill="${K}"/>`,
+  users:`<circle cx="9" cy="9" r="3" fill="${K}"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5z" fill="${K}"/><circle cx="16.5" cy="8.5" r="2.6" fill="#9aa0a6"/><path d="M14 14.2c2.5-.3 6.5 1.3 6.5 4.8h-4" fill="#9aa0a6"/>`,
+  web:`<rect x="3" y="4.5" width="18" height="15" rx="2.5" fill="${K}"/><path d="M3 8.5h18" stroke="#fff" stroke-width="1.4"/><g fill="#fff"><circle cx="6" cy="6.5" r=".9"/><circle cx="8.6" cy="6.5" r=".9"/></g><path d="M8 15l2.5-2.5L13 15M14 12l2.5 3" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round"/>`,
+  mobile:`<rect x="7" y="3" width="10" height="18" rx="2.5" fill="${K}"/><rect x="8.6" y="6" width="6.8" height="10" rx="1" fill="#fff"/><circle cx="12" cy="18.4" r="1" fill="#fff"/>`,
+  internet:`<circle cx="12" cy="12" r="9" fill="${K}"/><ellipse cx="12" cy="12" rx="3.7" ry="9" fill="none" stroke="#fff" stroke-width="1.3"/><path d="M3.2 9.5h17.6M3.2 14.5h17.6M3 12h18" stroke="#fff" stroke-width="1.3"/>`,
+  external:`<path d="M7 16a4 4 0 010-8 5 5 0 019.6-1.2A3.8 3.8 0 0117 16z" fill="#9aa0a6"/><path d="M12 10v5m0 0l-1.8-1.8M12 15l1.8-1.8" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  database:`<ellipse cx="12" cy="6" rx="7" ry="2.8" fill="${K}"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6" fill="${K}"/><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8" fill="none" stroke="#fff" stroke-width="1.2"/>`,
+  queue:`<rect x="3" y="7" width="18" height="10" rx="2.5" fill="${K}"/><g fill="#fff"><rect x="6" y="10" width="2.4" height="4" rx="1"/><rect x="10" y="10" width="2.4" height="4" rx="1"/><rect x="14" y="10" width="2.4" height="4" rx="1"/></g>`,
+  onprem:`<g fill="${K}"><rect x="4" y="4" width="16" height="4.5" rx="1"/><rect x="4" y="10" width="16" height="4.5" rx="1"/><rect x="4" y="16" width="16" height="4.5" rx="1"/></g><g fill="#fff"><circle cx="7" cy="6.2" r=".9"/><circle cx="7" cy="12.2" r=".9"/><circle cx="7" cy="18.2" r=".9"/></g>`,
+  cloud:`<path d="M7 17a4.5 4.5 0 010-9 5.5 5.5 0 0110.5-1.3A4.2 4.2 0 0117.5 17z" fill="${B}"/>`,
+};
+
+/* =====================================================================================
+   CONFIG — set from the SKILL.md intake questionnaire.
+   ===================================================================================== */
+const CONFIG = {
+  showStatus: true,   // readiness pill on each card (Live / Planned / …)
+  showGroups: true,   // draw the grouping containers (project / VPC / region / tier)
+};
+
+/* Tier categories → card accent colour. Rename/recolour to fit, keep one colour per tier. */
+const TIER = {
+  compute:  {c:'var(--compute)',   label:'Compute · serverless'},
+  edge:     {c:'var(--edge)',      label:'Edge · ingress'},
+  data:     {c:'var(--data)',      label:'Data · storage'},
+  messaging:{c:'var(--messaging)', label:'Eventing · async'},
+  ai:       {c:'var(--ai)',        label:'AI · agentic'},
+  ops:      {c:'var(--ops)',       label:'Security · ops'},
+  client:   {c:'var(--client)',    label:'Client · external'},
+};
+const STAT = {
+  live:{c:'#188038',label:'Live'}, built:{c:'#1a73e8',label:'Built'},
+  plan:{c:'#a142f4',label:'Planned'}, ext:{c:'#5f6368',label:'External'},
+  managed:{c:'#12b5cb',label:'Managed'},
+};
+const cssvar=v=>v&&v.startsWith('var(')?getComputedStyle(document.documentElement).getPropertyValue(v.slice(4,-1)).trim():v;
+const TCOL=Object.fromEntries(Object.entries(TIER).map(([k,v])=>[k,cssvar(v.c)]));
+
+/* =====================================================================================
+   WORKED EXAMPLE — a production Cloud Run enterprise architecture with an agentic layer.
+   Replace GROUPS / NODES / SVC / GHOSTS / EDGES / CEDGES with your own system.
+   Coordinates are top-left of each card in one world space; group boxes AUTO-WRAP members.
+   ===================================================================================== */
+const DEFW=182, DEFH=62, BIGW=210, BIGH=78;
+
+/* GROUPS — containers. */
+const GROUPS = [
+  {id:'g_ext', kind:'external', title:'External SaaS', icon:'internet', members:['x_hubspot','x_mailgun','x_vapi']},
+  {id:'g_project', kind:'project', title:'Google Cloud project · ldqfingsrv-dev', sub:'region · us-central1', icon:'cloud',
+   members:['e_gtwy','svc_lp','svc_email','svc_voice','svc_mcp','m_pubsub','m_sched','o_iam','o_secret','o_ar','o_build','o_log','o_mon']},
+  {id:'g_edge', kind:'tier', title:'Public edge · allUsers + signature verify', icon:'apigw', members:['e_gtwy']},
+  {id:'g_vpc', kind:'vpc', title:'VPC · planned', sub:'internal · OIDC only', icon:'vpc', members:['svc_lp','svc_email','svc_voice','svc_mcp']},
+  {id:'g_msg', kind:'tier', title:'Eventing · planned', icon:'pubsub', members:['m_pubsub','m_sched']},
+  {id:'g_ops', kind:'tier', title:'Security & operations', icon:'iam', members:['o_iam','o_secret','o_ar','o_build','o_log','o_mon']},
+  /* cluster containers */
+  {id:'gc_gtwy', kind:'region', title:'Agent Gateway · lqabr-dev-gtwy', icon:'apigw', cl:'e_gtwy', members:['gw_ver','gw_route','gw_oidc']},
+  {id:'gc_lp', kind:'region', title:'Lead Profile Agent · lqabr-dev-ldpf', icon:'cloudrun', cl:'svc_lp', members:['lp_in','lp_build','lp_mcp']},
+  {id:'gc_email', kind:'region', title:'Email Agent · lqabr-dev-email-agent', icon:'cloudrun', cl:'svc_email', members:['em_core','em_send','em_status','em_cb']},
+  {id:'gc_voice', kind:'region', title:'Voice Agent (Vapi) · planned', icon:'cloudrun', cl:'svc_voice', members:['vo_gate','vo_call','vo_out','vo_cb']},
+  {id:'gc_mcp', kind:'region', title:'HubSpot MCP Server · shared', icon:'cloudrun', cl:'svc_mcp', members:['mc_http','mc_tools','mc_tok']},
+  {id:'gc_iam', kind:'tier', title:'IAM chain · grantor → deployer → runtime', icon:'iam', cl:'o_iam', members:['ia_sw','ia_grp','ia_dev','ia_sa']},
+  {id:'gc_emcore', kind:'ai', title:'ADK Agent Core', icon:'agentengine', cl:'em_core', members:['ec_model','ec_reg','ec_retry']},
+  {id:'gc_model', kind:'ai', title:'Model Call · config-driven', icon:'gemini', cl:'ec_model', members:['mm_env','mm_lite','mm_guard']},
+];
+
+const NODES = [
+  /* ---- external SaaS ---- */
+  {id:'x_hubspot', x:70,y:150, tier:'client', icon:'external', title:'HubSpot CRM', sub:'orchestrator · system of record', st:'ext', big:true, kind:'External SaaS · SoR',
+   detail:'Holds all canonical lead state (lqabr_* contact properties) AND acts as the orchestrator this sprint: workflow triggers fire on property changes (profile created, email opened) and call the public Agent Gateway over HTTPS. Every lead profile gets a HubSpot object ID — THE orchestration key carried through triggers, provider callbacks and agent write-backs. No orchestrator agent — a deliberate sprint decision.'},
+  {id:'x_mailgun', x:70,y:266, tier:'client', icon:'external', title:'Mailgun', sub:'email delivery + events', st:'ext', kind:'External SaaS',
+   detail:'Email provider. The Email agent calls its send API; Mailgun posts delivered / opened / clicked webhooks (HMAC-signed) to the public Email Webhook Receiver.'},
+  {id:'x_vapi', x:70,y:352, tier:'client', icon:'external', title:'Vapi', sub:'voice AI · calls + status', st:'ext', kind:'External SaaS',
+   detail:'Voice-AI provider (replaces Twilio in this design). The Voice agent starts outbound calls via the Vapi API; call status/outcome webhooks return to the public Voice Webhook Receiver.'},
+  /* ---- public edge ---- */
+  {id:'e_gtwy', x:340,y:150, tier:'edge', icon:'apigw', title:'Agent Gateway', sub:'lqabr-dev-gtwy · public', st:'live', big:true, expand:true, kind:'Cloud Run · public edge · expandable',
+   detail:'The ONLY public entry point for EVERYTHING inbound: HubSpot workflow triggers AND the Mailgun/Vapi status webhooks. Service-scoped allUsers run.invoker (verified live; enabled by the project DRS allowAll exception). Verifies each caller\'s signature (HubSpot secret, Mailgun HMAC, Vapi signature), resolves the trigger/event + object ID, and forwards to the target agent with an OIDC ID token. Click for internals.'},
+  /* ---- internal Cloud Run (VPC-planned) ---- */
+  {id:'svc_lp', x:620,y:132, tier:'compute', icon:'cloudrun', title:'Lead Profile Agent', sub:'lqabr-dev-ldpf · internal', st:'built', expand:true, kind:'Cloud Run service · expandable',
+   detail:'Builds the 9-pointer lead profile and upserts it to HubSpot through the shared MCP server. Internal ingress, invokable only with an OIDC token for lqabr-agent-dev. Image built; deploy pending. Click for its pipeline.'},
+  {id:'svc_email', x:620,y:224, tier:'compute', icon:'cloudrun', title:'Email Agent', sub:'lqabr-dev-email-agent · internal', st:'built', big:true, expand:true, kind:'Cloud Run service · expandable',
+   detail:'Composes personalized outreach from real profile data and sends via Mailgun. Mailgun\'s status triggers (delivered/opened/clicked) enter through the Gateway, which verifies the HMAC and routes them here over OIDC; the agent updates HubSpot via MCP keyed by the lead\'s object ID — never fabricated. The agent is fully internal — no public routes. Click through: pipeline → ADK core → model call (4 levels deep).'},
+  {id:'svc_voice', x:620,y:330, tier:'compute', icon:'cloudrun', title:'Voice Agent (Vapi)', sub:'internal · OIDC only', st:'plan', expand:true, kind:'Cloud Run service · expandable',
+   detail:'Planned. Triggered by a HubSpot workflow when lead status moves to Opened; starts an outbound voice-AI call via Vapi. Vapi\'s status triggers enter through the Gateway (signature-verified) and are routed here over OIDC; the agent writes outcome + counters to HubSpot via MCP keyed by the lead\'s object ID. Fully internal — no public routes. Click for its pipeline.'},
+  {id:'svc_mcp', x:620,y:436, tier:'compute', icon:'cloudrun', title:'HubSpot MCP Server', sub:'shared · stateless · scale-to-zero', st:'plan', big:true, expand:true, kind:'Shared MCP service · expandable',
+   detail:'ONE project-scope service shared by every agent and webhook receiver — the single read/write path to HubSpot. Streamable-HTTP, stateless, min-instances=0: it "loads at runtime" (first call after idle cold-starts it). Internal, OIDC-only; HubSpot token from Secret Manager. Click for internals.'},
+  /* ---- eventing (planned) ---- */
+  {id:'m_pubsub', x:910,y:150, tier:'messaging', icon:'pubsub', title:'Pub/Sub', sub:'engagement fan-out · planned', st:'plan', kind:'Eventing · planned',
+   detail:'Provisioning step 03 (pending). Topics lqabr-ingestion-trigger + lqabr-engagement-events. Not wired yet — HubSpot workflows carry orchestration this sprint; Pub/Sub becomes the event spine when orchestration moves in-house. No edges drawn because none exist yet.'},
+  {id:'m_sched', x:910,y:236, tier:'messaging', icon:'scheduler', title:'Cloud Scheduler', sub:'dispatch cycles · planned', st:'plan', kind:'Eventing · planned',
+   detail:'Provisioning step 06 (pending). Will drive periodic dispatch/ingestion via OIDC calls once services are deployed. Not wired yet.'},
+  /* ---- ops band ---- */
+  {id:'o_iam', x:340,y:560, tier:'ops', icon:'iam', title:'IAM & Identity', sub:'grantor → deployer → runtime', st:'live', expand:true, kind:'IAM model · expandable',
+   detail:'Three-identity model, live-validated 2026-08-03: swaroop@ (Owner) grants everything once; ai2d@ group holds the 8 deployer roles, aidcld@ inherits as member; lqabr-agent-dev SA is the runtime identity every service runs as. actAs is the only deployer↔runtime link. Click for the chain.'},
+  {id:'o_secret', x:540,y:560, tier:'ops', icon:'secret', title:'Secret Manager', sub:'12 lqabr-* secrets', st:'live', kind:'Ops',
+   detail:'All service credentials (HubSpot token, Mailgun keys, Anthropic key, parked Zoom/ZoomInfo). Injected via --set-secrets; readable only by the runtime SA (and dev group, read-only). Nothing in images or env files.'},
+  {id:'o_ar', x:740,y:560, tier:'ops', icon:'artifactregistry', title:'Artifact Registry', sub:'repo lqabr · images built', st:'live', kind:'Ops',
+   detail:'us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr. Images pushed: lqabr-dev-gtwy, -ldpf, -email-agent, -email-webhook. Cloud Build pushes (as aidcld@); Cloud Run pulls at deploy.'},
+  {id:'o_build', x:940,y:560, tier:'ops', icon:'build', title:'Cloud Build', sub:'image build · by aidcld@', st:'managed', kind:'Ops',
+   detail:'gcloud builds submit runs as the aidcld@ developer login (cloudbuild.builds.editor via the ai2d@ group) and pushes images to Artifact Registry.'},
+  {id:'o_log', x:1140,y:560, tier:'ops', icon:'logging', title:'Cloud Logging', sub:'runtime logs', st:'managed', kind:'Ops',
+   detail:'Service logs for every Cloud Run revision; actions attribute to the runtime SA (deployed code) or aidcld@ (deploys). Dev group has logging.viewer.'},
+  {id:'o_mon', x:1340,y:560, tier:'ops', icon:'monitoring', title:'Cloud Monitoring', sub:'metrics · scale signals', st:'managed', kind:'Ops',
+   detail:'Request/instance metrics — where scale-to-zero and cold-start behaviour is observed. Dev group has monitoring.viewer.'},
+];
+
+const SVC = [
+  /* Gateway internals */
+  {id:'gw_ver', cl:'e_gtwy', x:340,y:820, tier:'edge', icon:'armor', title:'Signature Verify', sub:'HubSpot · Mailgun · Vapi', st:'live',
+   detail:'First hop on every request: verify the caller\'s signature — HubSpot workflow secret, Mailgun HMAC, or Vapi webhook signature. The gateway is the only thing open to the internet (allUsers), so ALL authenticity checks live here; unsigned requests are rejected before routing.'},
+  {id:'gw_route', cl:'e_gtwy', x:580,y:820, tier:'edge', icon:'apigw', title:'Trigger Router', sub:'trigger / event → agent', st:'live',
+   detail:'Resolves the trigger_id (HubSpot workflows) or event type (Mailgun/Vapi webhooks) against the registry, carries the lead\'s object ID, and picks the target agent (lead profile, email, voice).'},
+  {id:'gw_oidc', cl:'e_gtwy', x:820,y:820, tier:'ops', icon:'iam', title:'OIDC Client', sub:'ID-token forward', st:'live',
+   detail:'Mints an OIDC ID token as lqabr-agent-dev and calls the internal agent URL — why agents can stay fully private.'},
+  /* Lead Profile internals */
+  {id:'lp_in', cl:'svc_lp', x:340,y:980, tier:'compute', icon:'cloudrun', title:'Trigger Intake', sub:'lead batch in', st:'built',
+   detail:'Receives the routed trigger from the Gateway (OIDC-verified) with lead reference(s) to process.'},
+  {id:'lp_build', cl:'svc_lp', x:580,y:980, tier:'compute', icon:'functions', title:'Profile Builder', sub:'9-pointer · deterministic', st:'built',
+   detail:'Builds the 9-pointer profile deterministically. Bad/messy records are flagged with explicit reasons — never dropped.'},
+  {id:'lp_mcp', cl:'svc_lp', x:820,y:980, tier:'compute', icon:'workflows', title:'MCP Client', sub:'upsert_lead_profiles', st:'built',
+   detail:'Calls the shared HubSpot MCP (OIDC, streamable HTTP) to upsert Contact + Company. The agent holds no canonical state.'},
+  /* Email internals */
+  {id:'em_core', cl:'svc_email', x:340,y:1140, tier:'ai', icon:'agentengine', title:'ADK Agent Core', sub:'reasoning + composition', st:'built', expand:true, kind:'Agent core · expandable',
+   detail:'The ADK agent loop: reads the profile via MCP, composes short, honest, personalized copy (opt-out always included), and drives the typed tools. Click for the model call, tool registry and resilience internals.'},
+  {id:'em_send', cl:'svc_email', x:580,y:1140, tier:'compute', icon:'workflows', title:'Mailgun Send Tool', sub:'typed · 3x backoff', st:'built',
+   detail:'Typed tool calling the Mailgun send API — 3 tries, exponential backoff on 429/5xx. A failure never silently drops the lead.'},
+  {id:'em_status', cl:'svc_email', x:820,y:1140, tier:'compute', icon:'workflows', title:'Status Writer', sub:'record send via MCP', st:'built',
+   detail:'Records the send on the HubSpot contact via MCP. Engagement (delivered/opened/clicked) is NOT written here — it arrives signed from Mailgun at the public webhook receiver.'},
+  {id:'em_cb', cl:'svc_email', x:580,y:1260, tier:'compute', icon:'workflows', title:'Status Event Handler', sub:'routed via Gateway · OIDC', st:'built',
+   detail:'Handles Mailgun status events (delivered/opened/clicked) routed in by the Gateway over OIDC — the agent itself has no public route. Resolves the lead by object ID and updates the HubSpot status via MCP. The opened write is what makes HubSpot fire the Voice trigger.'},
+  /* Voice internals */
+  {id:'vo_gate', cl:'svc_voice', x:340,y:1300, tier:'compute', icon:'cloudrun', title:'Opened-Trigger Check', sub:'gate + dedupe', st:'plan',
+   detail:'Validates the HubSpot "opened" trigger — eligibility gate plus idempotency, because HubSpot workflows can fire more than once for the same event.'},
+  {id:'vo_call', cl:'svc_voice', x:580,y:1300, tier:'compute', icon:'workflows', title:'Vapi Call Tool', sub:'assistant + outbound call', st:'plan',
+   detail:'Starts the outbound voice-AI call via the Vapi API — assistant config, number, conversational Q&A flow. Replaces the earlier Twilio design.'},
+  {id:'vo_out', cl:'svc_voice', x:820,y:1300, tier:'compute', icon:'workflows', title:'Outcome Writer', sub:'result via MCP', st:'plan',
+   detail:'Writes call outcome (answered counter, disposition) to HubSpot via MCP once Vapi reports completion.'},
+  {id:'vo_cb', cl:'svc_voice', x:580,y:1410, tier:'compute', icon:'workflows', title:'Status Event Handler', sub:'routed via Gateway · OIDC', st:'plan',
+   detail:'Handles Vapi status events (answered, voicemail, completed) routed in by the Gateway over OIDC — no public route on the agent. Writes outcome + counters to HubSpot via MCP keyed by object ID.'},
+  /* MCP internals */
+  {id:'mc_http', cl:'svc_mcp', x:340,y:1520, tier:'compute', icon:'cloudrun', title:'HTTP Endpoint', sub:'streamable · stateless', st:'plan',
+   detail:'Streamable-HTTP MCP transport in stateless mode — no session affinity, so instances scale horizontally and to zero. Cold-starts on first call after idle ("loads at runtime").'},
+  {id:'mc_tools', cl:'svc_mcp', x:580,y:1520, tier:'compute', icon:'workflows', title:'HubSpot Toolset', sub:'upsert / read tools', st:'plan',
+   detail:'upsert_lead_profiles (write) + get_lead_profile (read) against HubSpot REST. One shared write path — no agent talks to HubSpot directly.'},
+  {id:'mc_tok', cl:'svc_mcp', x:820,y:1520, tier:'ops', icon:'secret', title:'Token Loader', sub:'runtime · SA-scoped', st:'plan',
+   detail:'Fetches the HubSpot private-app token from Secret Manager at runtime as lqabr-agent-dev (secretmanager.secretAccessor). No credential in the image.'},
+  /* IAM chain */
+  {id:'ia_sw', cl:'o_iam', x:100,y:1820, tier:'ops', icon:'user', title:'swaroop@ · Owner', sub:'grantor · enables APIs', st:'live',
+   detail:'Project owner and sole grantor — enabled APIs, created the SA, bound every role once at provisioning. The trust boundary: no one else edits IAM.'},
+  {id:'ia_grp', cl:'o_iam', x:340,y:1820, tier:'ops', icon:'users', title:'ai2d@ Group', sub:'8 deployer roles', st:'live',
+   detail:'"AIDeveloper" group: run.developer, cloudbuild.builds.editor, artifactregistry.writer, secretmanager.viewer + secretAccessor, logging/monitoring viewer, serviceusage consumer — plus actAs on the runtime SA. Roles bind to the group, never individuals.'},
+  {id:'ia_dev', cl:'o_iam', x:580,y:1820, tier:'ops', icon:'user', title:'aidcld@ Login', sub:'shared dev · deploys', st:'live',
+   detail:'Shared developer login, MEMBER of ai2d@ — zero direct grants. Live-validated: can build, deploy (create/update/delete services), read secrets; cannot touch IAM, enable APIs, Pub/Sub or Scheduler.'},
+  {id:'ia_sa', cl:'o_iam', x:820,y:1820, tier:'ops', icon:'iam', title:'lqabr-agent-dev SA', sub:'runtime identity', st:'live',
+   detail:'The machine identity every service runs as (--service-account at deploy). Runtime roles: secretAccessor, pubsub pub/sub, run.invoker, aiplatform.user, log/metric writers. Deploy assigns it — appends nothing to it.'},
+  /* ADK core internals (level 4) */
+  {id:'ec_model', cl:'em_core', x:340,y:2000, tier:'ai', icon:'gemini', title:'Model Call', sub:'Claude · via LiteLLM', st:'plan', expand:true, kind:'Model integration · expandable',
+   detail:'The LLM call for composition/personalization. Currently the blocking code change: agents pass a bare model string (Gemini-only); a shared build_model() helper must wrap non-Gemini models in ADK LiteLlm. Click for the config chain.'},
+  {id:'ec_reg', cl:'em_core', x:580,y:2000, tier:'compute', icon:'workflows', title:'Tool Registry', sub:'typed · mockable', st:'built',
+   detail:'The typed tool surface the core drives (Mailgun send, MCP read/write). Tools are deterministic, mockable offline, and own their failure behaviour.'},
+  {id:'ec_retry', cl:'em_core', x:820,y:2000, tier:'ops', icon:'monitoring', title:'Resilience', sub:'3 tries · exp backoff', st:'built',
+   detail:'Retry/backoff policy on 429/5xx inside every tool. A tool failure never silently advances or drops a lead — failures land in explicit failure lists.'},
+  /* Model call internals (level 5) */
+  {id:'mm_env', cl:'ec_model', x:340,y:2180, tier:'ops', icon:'logging', title:'Model Config', sub:'LQABR_EMAIL_MODEL env', st:'live',
+   detail:'Config-driven model selection: per-agent env var, default swappable without a code edit. Provider/model changes are config changes — never code.'},
+  {id:'mm_lite', cl:'ec_model', x:580,y:2180, tier:'ai', icon:'vertexai', title:'LiteLlm Wrapper', sub:'ADK · non-Gemini models', st:'plan',
+   detail:'The pending build_model() helper: wraps non-Gemini model strings (Claude) in ADK LiteLlm + litellm dependency. Blocks deploy (step 05) until it lands.'},
+  {id:'mm_guard', cl:'ec_model', x:820,y:2180, tier:'ops', icon:'armor', title:'Output Guardrail', sub:'honest copy · opt-out', st:'built',
+   detail:'Deterministic checks on generated copy: personalized only from real profile data, short and honest, always includes opt-out. Engagement results are never fabricated by the model.'},
+];
+
+const GHOSTS = [
+  /* gateway */
+  {id:'gh_hs_gw', cl:'e_gtwy', x:100,y:820, tier:'client', icon:'external', title:'HubSpot CRM', tag:'workflow caller'},
+  {id:'gh_agents', cl:'e_gtwy', x:1060,y:820, tier:'compute', icon:'cloudrun', title:'Internal agents', tag:'OIDC targets'},
+  {id:'gh_prov_gw', cl:'e_gtwy', x:100,y:930, tier:'client', icon:'external', title:'Mailgun · Vapi', tag:'status webhooks in'},
+  /* lead profile */
+  {id:'gh_mcp_lp', cl:'svc_lp', x:1060,y:980, tier:'compute', icon:'cloudrun', title:'HubSpot MCP', tag:'shared service'},
+  /* email */
+  {id:'gh_sec_em', cl:'svc_email', x:100,y:1140, tier:'ops', icon:'secret', title:'Secret Manager', tag:'Mailgun + model keys'},
+  {id:'gh_gw_em', cl:'svc_email', x:100,y:1260, tier:'edge', icon:'apigw', title:'Agent Gateway', tag:'routes status events'},
+  {id:'gh_mg', cl:'svc_email', x:1060,y:1100, tier:'client', icon:'external', title:'Mailgun API', tag:'send (status via Gateway)'},
+  {id:'gh_mcp_em', cl:'svc_email', x:1060,y:1200, tier:'compute', icon:'cloudrun', title:'HubSpot MCP', tag:'read profile · write status'},
+  /* voice */
+  {id:'gh_vapi', cl:'svc_voice', x:1060,y:1260, tier:'client', icon:'external', title:'Vapi API', tag:'call (status via Gateway)'},
+  {id:'gh_gw_vo', cl:'svc_voice', x:100,y:1410, tier:'edge', icon:'apigw', title:'Agent Gateway', tag:'routes status events'},
+  {id:'gh_mcp_vo', cl:'svc_voice', x:1060,y:1360, tier:'compute', icon:'cloudrun', title:'HubSpot MCP', tag:'write-back'},
+  /* mcp */
+  {id:'gh_callers', cl:'svc_mcp', x:100,y:1520, tier:'compute', icon:'cloudrun', title:'Agents + Webhooks', tag:'OIDC callers'},
+  {id:'gh_hsapi', cl:'svc_mcp', x:1060,y:1520, tier:'client', icon:'external', title:'HubSpot API', tag:'REST v3'},
+  {id:'gh_sm_mcp', cl:'svc_mcp', x:820,y:1660, tier:'ops', icon:'secret', title:'Secret Manager', tag:'hubspot token'},
+  /* iam */
+  {id:'gh_cr_iam', cl:'o_iam', x:1060,y:1820, tier:'compute', icon:'cloudrun', title:'Cloud Run services', tag:'run as the SA'},
+  /* adk core */
+  {id:'gh_anthropic', cl:'em_core', x:1060,y:2000, tier:'client', icon:'external', title:'Anthropic API', tag:'model provider'},
+  /* model call */
+  {id:'gh_sm_model', cl:'ec_model', x:1060,y:2180, tier:'ops', icon:'secret', title:'Secret Manager', tag:'lqabr-anthropic-api-key'},
+];
+
+const EDGES = [
+  {f:'x_hubspot', t:'e_gtwy', kind:'sync', label:'workflow trigger · HTTPS'},
+  {f:'e_gtwy', t:'svc_lp', kind:'sync'},
+  {f:'e_gtwy', t:'svc_email', kind:'sync', label:'OIDC route · object ID'},
+  {f:'e_gtwy', t:'svc_voice', kind:'sync'},
+  {f:'svc_lp', t:'svc_mcp', kind:'sync'},
+  {f:'svc_email', t:'svc_mcp', kind:'sync', label:'MCP calls'},
+  {f:'svc_voice', t:'svc_mcp', kind:'sync'},
+  {f:'svc_mcp', t:'x_hubspot', kind:'sync', label:'HubSpot REST · by object ID'},
+  {f:'svc_email', t:'x_mailgun', kind:'sync', label:'send'},
+  {f:'svc_voice', t:'x_vapi', kind:'sync', label:'start call'},
+  {f:'x_mailgun', t:'e_gtwy', kind:'async', label:'status webhooks · HMAC'},
+  {f:'x_vapi', t:'e_gtwy', kind:'async', label:'status webhooks'},
+  {f:'o_build', t:'o_ar', kind:'dep', label:'push image'},
+  {f:'o_secret', t:'svc_mcp', kind:'dep'},
+];
+
+const CEDGES = [
+  /* gateway */
+  {cl:'e_gtwy', f:'gh_hs_gw', t:'gw_ver', kind:'sync', label:'workflow trigger'},
+  {cl:'e_gtwy', f:'gh_prov_gw', t:'gw_ver', kind:'async', label:'status webhooks'},
+  {cl:'e_gtwy', f:'gw_ver', t:'gw_route', kind:'sync'},
+  {cl:'e_gtwy', f:'gw_route', t:'gw_oidc', kind:'sync'},
+  {cl:'e_gtwy', f:'gw_oidc', t:'gh_agents', kind:'sync', label:'OIDC ID token'},
+  /* lead profile */
+  {cl:'svc_lp', f:'lp_in', t:'lp_build', kind:'sync'},
+  {cl:'svc_lp', f:'lp_build', t:'lp_mcp', kind:'sync'},
+  {cl:'svc_lp', f:'lp_mcp', t:'gh_mcp_lp', kind:'sync', label:'upsert'},
+  /* email */
+  {cl:'svc_email', f:'em_core', t:'em_send', kind:'sync', label:'tool call'},
+  {cl:'svc_email', f:'em_send', t:'gh_mg', kind:'sync'},
+  {cl:'svc_email', f:'em_core', t:'em_status', kind:'sync'},
+  {cl:'svc_email', f:'em_status', t:'gh_mcp_em', kind:'sync'},
+  {cl:'svc_email', f:'em_core', t:'gh_mcp_em', kind:'sync', label:'read profile'},
+  {cl:'svc_email', f:'em_send', t:'gh_sec_em', kind:'dep', label:'API key'},
+  {cl:'svc_email', f:'gh_gw_em', t:'em_cb', kind:'async', label:'status event (OIDC)'},
+  {cl:'svc_email', f:'em_cb', t:'gh_mcp_em', kind:'sync', label:'update by object ID'},
+  /* voice */
+  {cl:'svc_voice', f:'vo_gate', t:'vo_call', kind:'sync'},
+  {cl:'svc_voice', f:'vo_call', t:'vo_out', kind:'sync'},
+  {cl:'svc_voice', f:'vo_call', t:'gh_vapi', kind:'sync', label:'call API'},
+  {cl:'svc_voice', f:'vo_out', t:'gh_mcp_vo', kind:'sync', label:'outcome'},
+  {cl:'svc_voice', f:'gh_gw_vo', t:'vo_cb', kind:'async', label:'status event (OIDC)'},
+  {cl:'svc_voice', f:'vo_cb', t:'gh_mcp_vo', kind:'sync', label:'update by object ID'},
+  /* mcp */
+  {cl:'svc_mcp', f:'gh_callers', t:'mc_http', kind:'sync', label:'streamable HTTP'},
+  {cl:'svc_mcp', f:'mc_http', t:'mc_tools', kind:'sync'},
+  {cl:'svc_mcp', f:'mc_tools', t:'gh_hsapi', kind:'sync', label:'REST'},
+  {cl:'svc_mcp', f:'mc_tools', t:'mc_tok', kind:'sync'},
+  {cl:'svc_mcp', f:'mc_tok', t:'gh_sm_mcp', kind:'dep', label:'access secret'},
+  /* iam */
+  {cl:'o_iam', f:'ia_sw', t:'ia_grp', kind:'sync', label:'grants 8 roles'},
+  {cl:'o_iam', f:'ia_dev', t:'ia_grp', kind:'sync', label:'member of'},
+  {cl:'o_iam', f:'ia_grp', t:'ia_sa', kind:'sync', label:'actAs · deploy-time'},
+  {cl:'o_iam', f:'ia_sa', t:'gh_cr_iam', kind:'sync', label:'runtime identity'},
+  /* adk core */
+  {cl:'em_core', f:'ec_model', t:'ec_reg', kind:'sync', label:'select tool'},
+  {cl:'em_core', f:'ec_reg', t:'ec_retry', kind:'sync'},
+  {cl:'em_core', f:'ec_model', t:'gh_anthropic', kind:'sync', label:'inference'},
+  /* model call */
+  {cl:'ec_model', f:'mm_env', t:'mm_lite', kind:'sync', label:'model string'},
+  {cl:'ec_model', f:'mm_lite', t:'mm_guard', kind:'sync', label:'response'},
+  {cl:'ec_model', f:'mm_lite', t:'gh_sm_model', kind:'dep', label:'API key'},
+];
+
+/* HERO / brand text */
+const META = {
+  brand:'LQABR — Cloud Run Architecture', brandSub:'PROJECT LDQFINGSRV-DEV · SP-2 DESIGN REVIEW · 10 AUG 2026',
+  heroKicker:'GOOGLE CLOUD · LQABR DEV', heroTitle:'LQABR Cloud Run Architecture',
+  heroSub:'The technical architecture of the lead-qualification platform on Cloud Run — one public door, OIDC everywhere else, one shared MCP write path, agents drilled to their model calls. Click any card to go deeper.',
+  execTitle:'One public door, OIDC everywhere else, one MCP write path',
+  exec:[
+    '<b>Request path (teal → blue):</b> HubSpot workflow triggers call the public <b>Agent Gateway</b> (service-scoped allUsers + signature verify, enabled by the DRS exception); it routes by trigger_id and forwards to the internal <b>agents</b> with an OIDC ID token. The Gateway is the ONLY public service — HubSpot triggers and Mailgun/Vapi webhooks all enter there; agents and MCP have no public routes at all.',
+    '<b>Write path (blue):</b> every agent and receiver goes through the ONE shared <b>HubSpot MCP Server</b> — stateless streamable-HTTP, scale-to-zero, token from Secret Manager. No service talks to HubSpot directly.',
+    '<b>Async path (dashed):</b> status triggers live IN the providers, but enter through the front door — Mailgun and Vapi POST their status webhooks to the <b>Gateway</b>, which verifies each signature and routes the event to the Email/Voice agent over OIDC; the agents update HubSpot via MCP keyed by the lead\'s <b>object ID</b>, the orchestration key. The "opened" write is what fires the Voice trigger. Pub/Sub + Scheduler are provisioned-but-planned — no edges drawn because none exist yet.',
+    '<b>Agentic depth (purple):</b> open <b>Email Agent → ADK Agent Core → Model Call</b> for the 4-level drill: pipeline → reasoning core → Claude-via-LiteLLM config chain (the current blocking code change).',
+    '<b>Identity (grey):</b> open <b>IAM & Identity</b> for the validated chain — swaroop@ grants once, ai2d@/aidcld@ builds + deploys, and everything runs as <b>lqabr-agent-dev</b> (actAs is the only link).',
+    '<b>Readiness pills:</b> Live = verified in dev · Built = image ready, deploy pending · Planned = this sprint · External = SaaS.',
+  ],
+};
+
+/* =====================================================================================
+   ENGINE — do not edit below unless you are changing behaviour (not content).
+   ===================================================================================== */
+const scene=document.getElementById('scene'), wires=document.getElementById('wires'), stage=document.getElementById('stage');
+const WORLD_W=1900, WORLD_H=2350;
+wires.setAttribute('width',WORLD_W);wires.setAttribute('height',WORLD_H);wires.setAttribute('viewBox',`0 0 ${WORLD_W} ${WORLD_H}`);
+scene.style.width=WORLD_W+'px';scene.style.height=WORLD_H+'px';
+
+GHOSTS.forEach(g=>{g.ghost=true;});   // external dependencies → blurred, non-interactive cards
+const ALLNODES=[...NODES,...SVC,...GHOSTS];
+const NODEMAP={}; ALLNODES.forEach(n=>{n.w=n.w||(n.big?BIGW:DEFW); n.h=n.h||(n.big?BIGH:DEFH); NODEMAP[n.id]=n;});
+const TOPNODES=NODES.filter(n=>!n.cl);
+const center=n=>({x:n.x+n.w/2, y:n.y+n.h/2});
+/* point on node n's border along the line toward point p */
+function border(n,p){const c=center(n),dx=p.x-c.x,dy=p.y-c.y;const hw=n.w/2,hh=n.h/2;
+  const sx=dx?hw/Math.abs(dx):1e9, sy=dy?hh/Math.abs(dy):1e9, s=Math.min(sx,sy);
+  return {x:c.x+dx*s, y:c.y+dy*s};}
+
+/* arrow markers per tier + neutral */
+const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+defs.innerHTML=Object.keys(TCOL).map(k=>`<marker id="arw-${k}" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="${TCOL[k]}"/></marker>`).join('')
+  +`<marker id="arw-n" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#9aa0a6"/></marker>`
+  +`<marker id="arw-d" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#bdc1c6"/></marker>`;
+wires.appendChild(defs);
+
+/* ---- build group boxes (auto-wrap members) ---- */
+const groupEls={};
+function groupBox(g){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  g.members.forEach(id=>{const n=NODEMAP[id];if(!n)return;x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x+n.w);y1=Math.max(y1,n.y+n.h);});
+  const pad=26, padTop=30;
+  return {x:x0-pad, y:y0-padTop, w:(x1-x0)+pad*2, h:(y1-y0)+padTop+pad};}
+GROUPS.forEach(g=>{
+  const el=document.createElement('div');
+  el.className='group '+g.kind+(g.cl?' clus':'')+' hidden';
+  const b=groupBox(g);
+  el.style.left=b.x+'px';el.style.top=b.y+'px';el.style.width=b.w+'px';el.style.height=b.h+'px';
+  el.innerHTML=`<div class="glabel"><span class="gi"><svg viewBox="0 0 24 24">${ICONS[g.icon]||''}</svg></span>${g.title}</div>${g.sub?`<div class="gsub">${g.sub}</div>`:''}`;
+  if(g.cl)el.dataset.cluster=g.cl;
+  scene.appendChild(el);groupEls[g.id]=el;
+});
+
+/* ---- edges ---- */
+function edgePath(a,b){const s=border(a,center(b)),e=border(b,center(a));
+  const dx=e.x-s.x,dy=e.y-s.y; const ox=(Math.abs(dx)>Math.abs(dy))?dx*0.34:0, oy=(Math.abs(dy)>=Math.abs(dx))?dy*0.34:0;
+  return `M ${s.x} ${s.y} C ${s.x+ox} ${s.y+oy}, ${e.x-ox} ${e.y-oy}, ${e.x} ${e.y}`;}
+const mainWires=[],mainLabels=[];
+function addEdge(a,b,opt={}){
+  if(!a||!b)return;
+  const kind=opt.kind||'sync';
+  const col = kind==='dep' ? '#bdc1c6' : (kind==='async' ? '#9aa0a6' : TCOL[b.tier]||'#9aa0a6');
+  const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d',edgePath(a,b));
+  p.setAttribute('class','wire'+(kind==='async'?' async':'')+(kind==='dep'?' dep':''));
+  p.style.stroke=col;
+  p.setAttribute('marker-end', kind==='dep'?'url(#arw-d)':(kind==='async'?'url(#arw-n)':`url(#arw-${b.tier})`));
+  if(opt.cluster){p.dataset.cluster=opt.cluster;p.classList.add('hidden');}
+  wires.appendChild(p);
+  let L=null;
+  if(opt.label){const s=border(a,center(b)),e=border(b,center(a));
+    L=document.createElement('div');L.className='wlabel'+(opt.cluster?' hidden':'');
+    L.textContent=opt.label;L.style.left=((s.x+e.x)/2)+'px';L.style.top=((s.y+e.y)/2)+'px';
+    if(opt.cluster)L.dataset.cluster=opt.cluster;scene.appendChild(L);}
+  if(!opt.cluster){mainWires.push(p);if(L)mainLabels.push(L);}
+}
+EDGES.forEach(e=>addEdge(NODEMAP[e.f],NODEMAP[e.t],{label:e.label,kind:e.kind}));
+CEDGES.forEach(e=>addEdge(NODEMAP[e.f],NODEMAP[e.t],{label:e.label,kind:e.kind,cluster:e.cl}));
+
+/* ---- nodes ---- */
+const els={};
+function makeNode(n){
+  const isSvc=!!n.cl&&!n.ghost, isGhost=!!n.ghost;
+  const el=document.createElement('div');
+  el.className='node'+(isSvc?' svc hidden':'')+(isGhost?' ghost hidden':'')+(n.big?' big':'')+(n.expand?' exp':'');
+  el.style.left=n.x+'px';el.style.top=n.y+'px';el.style.width=n.w+'px';el.style.minHeight=n.h+'px';
+  el.style.setProperty('--ac',TCOL[n.tier]||'#4285F4');
+  const pill = (CONFIG.showStatus&&n.st&&!isGhost)?`<div class="c-pill" style="--sc:${cssvar(STAT[n.st].c)}"><span class="sdot"></span>${STAT[n.st].label}</div>`:'';
+  const sub = isGhost?`<div class="c-sub">${n.tag||''}</div>`:(n.sub?`<div class="c-sub">${n.sub}</div>`:'');
+  el.innerHTML=`<div class="ico"><svg viewBox="0 0 24 24">${ICONS[n.icon]||ICONS.cloud}</svg></div>`
+    +`<div class="txt"><div class="c-title">${n.title}</div>${sub}${pill}</div>`;
+  if(!isGhost)el.addEventListener('click',ev=>{ev.stopPropagation();onNodeClick(n);});
+  if(n.cl)el.dataset.cluster=n.cl;el.dataset.id=n.id;
+  scene.appendChild(el);els[n.id]=el;
+}
+NODES.forEach(makeNode);SVC.forEach(makeNode);GHOSTS.forEach(makeNode);
+
+/* ---- view / fit ---- */
+let tx=0,ty=0,scale=1;
+function apply(anim){scene.classList.toggle('anim',!!anim);scene.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;}
+function fit(bx,by,bw,bh,anim=true){
+  const vw=stage.clientWidth,vh=stage.clientHeight,rightPad=vw>900?348:16,availW=vw-rightPad-40,availH=vh-40,pad=1.1;
+  let s=Math.max(.12,Math.min(Math.min(availW/(bw*pad),availH/(bh*pad)),1.4));
+  scale=s;tx=(40+(availW-bw*s)/2)-bx*s;ty=(20+(availH-bh*s)/2)-by*s;apply(anim);
+}
+function bboxOf(ids,groups=[]){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  ids.forEach(id=>{const n=NODEMAP[id];if(!n)return;x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x+n.w);y1=Math.max(y1,n.y+n.h);});
+  groups.forEach(g=>{const b=groupBox(g);x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);});
+  return[x0,y0,x1-x0,y1-y0];}
+const OVERVIEW_IDS=TOPNODES.map(n=>n.id);
+const OVERVIEW_GROUPS=GROUPS.filter(g=>!g.cl);
+const clusterKids=id=>ALLNODES.filter(s=>s.cl===id).map(s=>s.id);
+const clusterGroups=id=>GROUPS.filter(g=>g.cl===id);
+
+let openCluster=null;
+function setCluster(id){
+  openCluster=id;
+  ALLNODES.forEach(s=>{if(s.cl!==undefined){els[s.id].classList.toggle('hidden',s.cl!==id);}});
+  TOPNODES.forEach(n=>{els[n.id].classList.toggle('hidden',!!id);});
+  wires.querySelectorAll('path[data-cluster]').forEach(p=>p.classList.toggle('hidden',p.dataset.cluster!==id));
+  scene.querySelectorAll('.wlabel[data-cluster]').forEach(l=>l.classList.toggle('hidden',l.dataset.cluster!==id));
+  mainWires.forEach(w=>w.classList.toggle('hidden',!!id));
+  mainLabels.forEach(l=>l.classList.toggle('hidden',!!id));
+  GROUPS.forEach(g=>{const show=CONFIG.showGroups && (id? g.cl===id : !g.cl); groupEls[g.id].classList.toggle('hidden',!show);});
+}
+function clearSel(){Object.values(els).forEach(e=>e.classList.remove('sel'));}
+function overview(){setCluster(null);clearSel();fit(...bboxOf(OVERVIEW_IDS,OVERVIEW_GROUPS));renderExec();}
+
+function onNodeClick(n){
+  clearSel();els[n.id].classList.add('sel');
+  if(n.expand){setCluster(n.id);fit(...bboxOf([n.id,...clusterKids(n.id)],clusterGroups(n.id)));}
+  else if(n.cl){const b=bboxOf([n.id]);fit(b[0]-150,b[1]-120,b[2]+300,b[3]+240);}
+  else{setCluster(null);const b=bboxOf([n.id]);fit(b[0]-230,b[1]-180,b[2]+460,b[3]+360);}
+  renderInfo(n);
+}
+
+/* ---- info panel ---- */
+const info=document.getElementById('info');
+function iconSvg(n){return `<div class="ico"><svg viewBox="0 0 24 24">${ICONS[n.icon]||ICONS.cloud}</svg></div>`;}
+function tierChip(t){const c=TCOL[t];return `<div class="pchip" style="color:${c};border-color:color-mix(in srgb,${c} 40%,#fff)"><span class="swatch" style="background:${c}"></span>${TIER[t].label}</div>`;}
+function statChip(s){const c=cssvar(STAT[s].c);return `<div class="pchip" style="color:${c};border-color:color-mix(in srgb,${c} 40%,#fff)"><span class="sdot" style="background:${c}"></span>${STAT[s].label}</div>`;}
+function renderExec(){
+  info.innerHTML=`
+    <div class="crumb">${META.brandSub}</div>
+    <h2>${META.execTitle}</h2>
+    <div class="exec"><ul>${META.exec.map(li=>`<li>${li}</li>`).join('')}</ul></div>
+    <div class="svcnote"><b>Edges:</b> solid = synchronous request/response, <b>dashed</b> = asynchronous event, <b>dotted</b> = dependency (secrets/identity). Card colour = the tier a component belongs to.</div>
+    <div class="footer">${META.brand} · interactive reference · click any card to drill in.</div>`;
+}
+function renderInfo(n){
+  const parent=n.cl?NODEMAP[n.cl]:null;
+  const crumb=parent?`${META.brand.toUpperCase()} · ${parent.title.toUpperCase()}`:META.brandSub;
+  const detail=n.detail||(n.sub||'');
+  const kids=n.expand?ALLNODES.filter(s=>s.cl===n.id):[];
+  const svcCount=kids.filter(s=>!s.ghost).length, ghostCount=kids.filter(s=>s.ghost).length;
+  const back=n.cl?`Press <b>Esc</b> to go back to ${parent.title}, or <b>Overview</b> to reset.`:'Press <b>Overview</b> to zoom out.';
+  const note=n.expand?`<div class="svcnote">Showing <b>${svcCount}</b> internal component${svcCount>1?'s':''}${ghostCount?` + <b>${ghostCount}</b> external dependenc${ghostCount>1?'ies':'y'} (blurred)`:''}. ${back}</div>`:'';
+  info.innerHTML=`
+    <div class="crumb">${crumb}</div>
+    <div class="htitle">${iconSvg(n)}<h2>${n.title}</h2></div>
+    <div class="chips">${tierChip(n.tier)}${n.st?statChip(n.st):''}</div>
+    <div class="desc">${detail}</div>
+    ${n.kind?`<div class="mrow"><b>Type</b><span>${n.kind}</span></div>`:''}
+    ${note}
+    <div class="footer">${META.brand}</div>`;
+}
+
+/* ---- legend ---- */
+document.getElementById('legend').innerHTML=`
+  <div class="legrp"><span class="cap">Tiers</span>
+    ${['compute','edge','data','messaging','ai','ops'].map(k=>`<span class="lg"><span class="swatch" style="background:${TCOL[k]}"></span>${TIER[k].label.split(' · ')[0]}</span>`).join('')}
+  </div>
+  <div class="legrp"><span class="cap">Flow</span>
+    <span class="lg"><span style="width:16px;height:0;border-top:2px solid #9aa0a6"></span>sync</span>
+    <span class="lg"><span style="width:16px;height:0;border-top:2px dashed #9aa0a6"></span>async</span>
+    <span class="lg"><span style="width:16px;height:0;border-top:2px dotted #bdc1c6"></span>dep</span>
+  </div>`;
+
+/* ---- interaction ---- */
+stage.addEventListener('wheel',e=>{e.preventDefault();
+  const r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,f=e.deltaY<0?1.12:1/1.12;
+  let ns=Math.max(.12,Math.min(scale*f,2.4));const wx=(mx-tx)/scale,wy=(my-ty)/scale;tx=mx-wx*ns;ty=my-wy*ns;scale=ns;apply(false);
+},{passive:false});
+let dragging=false,moved=false,psx=0,psy=0,stx=0,sty=0;
+stage.addEventListener('pointerdown',e=>{if(e.target.closest('.node')||e.target.closest('.ctrls')||e.target.closest('#info')||e.target.closest('#hero'))return;
+  dragging=true;moved=false;psx=e.clientX;psy=e.clientY;stx=tx;sty=ty;stage.classList.add('grabbing');stage.setPointerCapture(e.pointerId);});
+stage.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-psx,dy=e.clientY-psy;if(Math.abs(dx)+Math.abs(dy)>4)moved=true;tx=stx+dx;ty=sty+dy;apply(false);});
+stage.addEventListener('pointerup',()=>{stage.classList.remove('grabbing');if(dragging&&!moved)overview();dragging=false;});
+document.getElementById('reset').addEventListener('click',overview);
+function zoomBtn(f){const vw=stage.clientWidth/2,vh=stage.clientHeight/2;let ns=Math.max(.12,Math.min(scale*f,2.4));
+  const wx=(vw-tx)/scale,wy=(vh-ty)/scale;tx=vw-wx*ns;ty=vh-wy*ns;scale=ns;apply(true);}
+document.getElementById('zin').addEventListener('click',()=>zoomBtn(1.25));
+document.getElementById('zout').addEventListener('click',()=>zoomBtn(1/1.25));
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){const cur=openCluster&&NODEMAP[openCluster];if(cur&&cur.cl)onNodeClick(NODEMAP[cur.cl]);else overview();}});
+window.addEventListener('resize',()=>{if(openCluster)onNodeClick(NODEMAP[openCluster]);else overview();});
+
+/* ---- hero + brand text ---- */
+document.getElementById('brandName').textContent=META.brand;
+document.getElementById('brandSub').textContent=META.brandSub;
+document.getElementById('heroKicker').textContent=META.heroKicker;
+document.getElementById('heroTitle').textContent=META.heroTitle;
+document.getElementById('heroSub').textContent=META.heroSub;
+const hero=document.getElementById('hero');
+function enter(){hero.classList.add('hide');overview();}
+document.getElementById('heroCta').addEventListener('click',enter);
+document.getElementById('brandBtn').addEventListener('click',()=>{hero.classList.remove('hide');});
+renderExec();requestAnimationFrame(()=>overview());
+</script>
+</body>
+</html>

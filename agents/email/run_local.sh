@@ -57,22 +57,22 @@ fi
 case "${1:-preflight}" in
 
   preflight)
-    exec python agents/email/preflight.py
+    exec python agents/email/tools/preflight.py
     ;;
 
   probe)
     # Read-only investigation of the HubSpot schema — what the lead-selection
     # property should actually be. Writes nothing, sends nothing.
-    exec python agents/email/probe_hubspot.py
+    exec python agents/email/tools/probe_hubspot.py
     ;;
 
   test)
-    exec python -m pytest -q
+    exec python -m pytest -c tests/pytest.ini -q
     ;;
 
   serve)
     echo "run_local: preflight first (nothing is sent)"
-    python agents/email/preflight.py || die "preflight failed — fix the above before serving"
+    python agents/email/tools/preflight.py || die "preflight failed — fix the above before serving"
     cat <<EOF
 
 run_local: starting on http://127.0.0.1:${PORT}
