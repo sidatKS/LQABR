@@ -32,7 +32,7 @@ class FakeMailgun:
 
 def test_invite_offers_all_four_timezones(monkeypatch):
     lead = LeadProfile(full_name="Jane Smith", email="jane@acme.example",
-                       company="Acme", stage=LeadStage.SCHEDULING, contact_id="42")
+                       company="Acme", stage=LeadStage.SCHEDULING, hubspot_contact_id="42")
     monkeypatch.setattr(scheduling_agent, "HubSpotClient", lambda: FakeCRM(lead))
     monkeypatch.setattr(scheduling_agent, "ZoomSchedulerClient", FakeZoom)
     monkeypatch.setattr(scheduling_agent, "MailgunClient", FakeMailgun)
@@ -44,7 +44,7 @@ def test_invite_offers_all_four_timezones(monkeypatch):
     for zone in ("EST", "CST", "PST", "IST"):
         assert zone in html
     assert "https://scheduler.zoom.us/team/intro" in html
-    assert FakeMailgun.last_send["variables"] == {"contact_id": "42"}
+    assert FakeMailgun.last_send["variables"] == {"hubspot_contact_id": "42"}
 
 
 def test_unknown_lead_is_error(monkeypatch):

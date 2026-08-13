@@ -57,12 +57,12 @@ def test_dispatcher_sends_a2a_message_send(monkeypatch):
 def test_dry_run_plans_routing_per_stage(monkeypatch):
     leads = {
         LeadStage.PROFILED: [LeadProfile(email="new@x.com", probability=10,
-                                         stage=LeadStage.PROFILED, contact_id="1")],
+                                         stage=LeadStage.PROFILED, hubspot_contact_id="1")],
         LeadStage.TEXT_VOICE_OUTREACH: [LeadProfile(email="warm@x.com", probability=40,
                                                     stage=LeadStage.TEXT_VOICE_OUTREACH,
-                                                    contact_id="2")],
+                                                    hubspot_contact_id="2")],
         LeadStage.SCHEDULING: [LeadProfile(email="hot@x.com", probability=70,
-                                           stage=LeadStage.SCHEDULING, contact_id="3")],
+                                           stage=LeadStage.SCHEDULING, hubspot_contact_id="3")],
     }
     monkeypatch.setattr(orchestrator_agent, "_engine_crm", lambda: FakeCRM(leads))
     report = orchestrator_agent.dispatch_cycle(dry_run=True)
@@ -73,7 +73,7 @@ def test_dry_run_plans_routing_per_stage(monkeypatch):
 
 def test_lead_without_email_is_flagged_not_dropped(monkeypatch):
     leads = {LeadStage.PROFILED: [LeadProfile(phone="+1555", probability=10,
-                                              stage=LeadStage.PROFILED, contact_id="9")]}
+                                              stage=LeadStage.PROFILED, hubspot_contact_id="9")]}
     monkeypatch.setattr(orchestrator_agent, "_engine_crm", lambda: FakeCRM(leads))
     report = orchestrator_agent.dispatch_cycle(dry_run=True)
     assert report["dispatched"] == []

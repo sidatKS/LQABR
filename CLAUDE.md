@@ -122,7 +122,7 @@ source ./config.sh && bash 00_enable_apis.sh   # ... through 06, see infra/gcp/R
   state; every stage/probability change writes back via
   `lqabr_core.crm`, and on conflict CRM wins.
 - **Probability rules live only in `lqabr_core/probability.py`** —
-  increments (+2 delivered, +5 opened, +10 clicked, +3 SMS, +10 voicemail,
+  increments (+2 delivered, +5 opened, +10 clicked, +3 SMS, +2 voicemail,
   +15 answered, +15 engaged, 95 booked) and thresholds (30 → text/voice,
   60 → scheduling). Agents import them; never redefine.
 - **No cross-agent imports:** shared code flows through
