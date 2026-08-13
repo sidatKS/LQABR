@@ -13,7 +13,6 @@ dependencies = [
 
 [project.optional-dependencies]
 gcp = ["google-cloud-secret-manager>=2.20"]
-adk = ["google-adk>=2.3.0", "litellm>=1.50"]
 test = ["pytest>=8", "responses>=0.25"]
 
 [tool.setuptools.packages.find]

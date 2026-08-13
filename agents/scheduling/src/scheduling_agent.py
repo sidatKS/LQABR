@@ -70,15 +70,15 @@ def send_schedule_invite(contact_email: str, schedule_id: str = "") -> Dict[str,
     """
     crm = HubSpotClient()
     lead = crm.find_lead_by_email(contact_email)
-    if lead is None or not lead.contact_id:
+    if lead is None or not lead.hubspot_contact_id:
         return {"error": f"no HubSpot contact for {contact_email}"}
     if not lead.email:
-        return {"error": f"lead {lead.contact_id} has no email listed"}
+        return {"error": f"lead {lead.hubspot_contact_id} has no email listed"}
 
     try:
         booking_url = ZoomSchedulerClient().booking_link(schedule_id or None)
     except ZoomError as exc:
-        return {"error": f"zoom-error: {exc}", "contact_id": lead.contact_id}
+        return {"error": f"zoom-error: {exc}", "contact_id": lead.hubspot_contact_id}
 
     zones = zone_options()
     zone_rows = "\n".join(
@@ -97,13 +97,13 @@ def send_schedule_invite(contact_email: str, schedule_id: str = "") -> Dict[str,
             subject=INVITE_SUBJECT.format(**context),
             html=INVITE_HTML.format(**context),
             tags=["lqabr", "scheduling"],
-            variables={"contact_id": lead.contact_id},
+            variables={"hubspot_contact_id": lead.hubspot_contact_id},
         )
     except MailgunError as exc:
-        return {"error": f"mailgun-error: {exc}", "contact_id": lead.contact_id}
+        return {"error": f"mailgun-error: {exc}", "contact_id": lead.hubspot_contact_id}
 
     return {"status": "sent", "mailgun_id": sent.get("id"),
-            "contact_id": lead.contact_id, "to": lead.email,
+            "contact_id": lead.hubspot_contact_id, "to": lead.email,
             "booking_url": booking_url,
             "timezones_offered": [z.label for z in zones]}
 

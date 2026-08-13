@@ -73,7 +73,7 @@ async def zoom_webhook(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail="event missing invitee email")
 
     lead = _crm().find_lead_by_email(invitee_email)
-    if lead is None or not lead.contact_id:
+    if lead is None or not lead.hubspot_contact_id:
         logger.error("Zoom booking for unknown lead %s", invitee_email)
         raise HTTPException(status_code=404, detail=f"no HubSpot contact for {invitee_email}")
 
@@ -81,15 +81,15 @@ async def zoom_webhook(request: Request) -> Dict[str, Any]:
         crm = _crm()
         updated = crm.record_event(EngagementEvent(
             event_type=EventType.MEETING_SCHEDULED,
-            contact_id=lead.contact_id,
+            hubspot_contact_id=lead.hubspot_contact_id,
             detail=obj.get("schedule_id") or obj.get("id"),
         ))
-        crm.set_stage(lead.contact_id, LeadStage.MEETING_SCHEDULED,
+        crm.set_stage(lead.hubspot_contact_id, LeadStage.MEETING_SCHEDULED,
                       reason=f"zoom booking via {event}")
     except CRMError as exc:
         raise HTTPException(status_code=500, detail=f"CRM writeback failed: {exc}") from exc
 
     return {"status": "recorded", "event": event,
-            "contact_id": lead.contact_id,
+            "contact_id": lead.hubspot_contact_id,
             "probability": updated.probability,
             "stage": LeadStage.MEETING_SCHEDULED.value}

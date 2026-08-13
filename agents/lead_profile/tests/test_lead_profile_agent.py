@@ -30,11 +30,11 @@ def test_bad_record_is_flagged_with_reason():
 def test_get_lead_profile_reads_from_hubspot(monkeypatch):
     class FakeCRM:
         def find_lead_by_email(self, email):
-            return LeadProfile(full_name="Jane Smith", email=email, contact_id="9")
+            return LeadProfile(full_name="Jane Smith", email=email, hubspot_contact_id="9")
 
     monkeypatch.setattr(lead_profile_agent, "HubSpotClient", FakeCRM)
     result = lead_profile_agent.get_lead_profile("jane@acme.example")
-    assert result["contact_id"] == "9"
+    assert result["hubspot_contact_id"] == "9"
 
     class EmptyCRM:
         def find_lead_by_email(self, email):

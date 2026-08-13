@@ -11,7 +11,7 @@ Sequence per lead:
        `email_outreach`
     2. send_outreach_email pulls the lead's 9-pointer profile from HubSpot,
        personalizes the template, sends via Mailgun with open/click tracking
-       and the contact_id attached as a message variable
+       and the hubspot_contact_id attached as a message variable
     3. Mailgun events (delivered/opened/clicked) hit the webhook, which
        increments the HubSpot counters and probability
     4. once probability >= TEXT_VOICE_THRESHOLD the lead is promoted to the
@@ -76,10 +76,10 @@ def send_outreach_email(contact_email: str,
     """
     crm = HubSpotClient()
     lead = crm.find_lead_by_email(contact_email)
-    if lead is None or not lead.contact_id:
+    if lead is None or not lead.hubspot_contact_id:
         return {"error": f"no HubSpot contact for {contact_email} — ingest the lead first"}
     if not lead.email:
-        return {"error": f"lead {lead.contact_id} has no email listed"}
+        return {"error": f"lead {lead.hubspot_contact_id} has no email listed"}
 
     context = {
         "first_name": (lead.full_name or "there").split()[0],
@@ -97,22 +97,22 @@ def send_outreach_email(contact_email: str,
         sent = MailgunClient().send_email(
             to=lead.email, subject=subject_text, html=html,
             tags=["lqabr", "email-outreach"],
-            variables={"contact_id": lead.contact_id},
+            variables={"hubspot_contact_id": lead.hubspot_contact_id},
         )
     except MailgunError as exc:
-        return {"error": f"mailgun-error: {exc}", "contact_id": lead.contact_id}
+        return {"error": f"mailgun-error: {exc}", "contact_id": lead.hubspot_contact_id}
 
     try:
         if lead.stage in (LeadStage.PROFILED, LeadStage.INGESTED):
-            crm.set_stage(lead.contact_id, LeadStage.EMAIL_OUTREACH,
+            crm.set_stage(lead.hubspot_contact_id, LeadStage.EMAIL_OUTREACH,
                           reason="first outreach email sent")
     except CRMError as exc:
         # The email went out; the stage writeback must not vanish silently.
         return {"status": "sent", "warning": f"stage writeback failed: {exc}",
-                "mailgun_id": sent.get("id"), "contact_id": lead.contact_id}
+                "mailgun_id": sent.get("id"), "contact_id": lead.hubspot_contact_id}
 
     return {"status": "sent", "mailgun_id": sent.get("id"),
-            "contact_id": lead.contact_id, "to": lead.email}
+            "contact_id": lead.hubspot_contact_id, "to": lead.email}
 
 
 root_agent = Agent(

@@ -28,16 +28,12 @@ EVENT_INCREMENTS: Dict[EventType, int] = {
     EventType.EMAIL_OPENED: 5,
     EventType.EMAIL_CLICKED: 10,
     EventType.SMS_DELIVERED: 3,
-    EventType.VOICEMAIL_LEFT: 10,  # raised from 2 (2026-08-06, user request)
+    EventType.VOICEMAIL_LEFT: 2,
     EventType.CALL_ANSWERED: 15,
     EventType.CALL_ENGAGED: 15,   # on top of CALL_ANSWERED — an answered call
                                   # that completes the Q&A flow reaches the
                                   # scheduling threshold from the text/voice
                                   # entry point (30 + 15 + 15 = 60)
-    EventType.CALL_NOT_ANSWERED: 0,  # explicit, not just the .get() default:
-                                      # a call attempt that never connected
-                                      # must never move probability — it's
-                                      # recorded for visibility only.
 }
 
 # A booked meeting pins probability here (not incremental).
@@ -58,7 +54,6 @@ EVENT_COUNTERS: Dict[EventType, str] = {
     EventType.VOICEMAIL_LEFT: "lqabr_voicemail_count",
     EventType.CALL_ANSWERED: "lqabr_call_answered_count",
     EventType.CALL_ENGAGED: "lqabr_call_engaged_count",
-    EventType.CALL_NOT_ANSWERED: "lqabr_call_not_answered_count",
     EventType.MEETING_SCHEDULED: "lqabr_meeting_count",
 }
 
