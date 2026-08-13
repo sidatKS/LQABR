@@ -93,6 +93,7 @@ def ensure_provider_credentials(model_name: str) -> Optional[str]:
 
     logger.info("model %s: %s populated from secret %s", model_name, env_var, secret_name)
     return env_var
+from typing import Any
 
 
 def build_model(model_name: str) -> Any:

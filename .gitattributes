@@ -9,3 +9,56 @@
 *.xlsx binary
 *.pptx binary
 *.pdf  binary
+# =====================================================================
+# Line-ending policy.
+# ---------------------------------------------------------------------
+# Why this exists: git stores LF, but a Windows checkout can materialise
+# CRLF in the working tree — and `docker build` uses the WORKING TREE, not
+# the git blob. A shell script copied into a Linux image with CRLF endings
+# fails at runtime: `set -uo pipefail\r` is not a valid option, and
+# `PORT="${PORT:-8080}"\r` yields a port of "8080\r".
+#
+# Anything that runs inside a container, or is parsed by a Linux tool, is
+# pinned to LF regardless of the developer's platform.
+# =====================================================================
+
+# Sensible defaults; git decides what is text.
+* text=auto
+
+# --- Must be LF: executed inside Linux containers --------------------
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+*.Dockerfile    text eol=lf
+docker-entrypoint.sh text eol=lf
+entrypoint.sh   text eol=lf
+
+# --- Must be LF: parsed by Linux tooling ------------------------------
+*.yaml          text eol=lf
+*.yml           text eol=lf
+.dockerignore   text eol=lf
+.gitattributes  text eol=lf
+VERSION         text eol=lf
+
+# --- Python: LF everywhere, for consistent diffs ----------------------
+*.py            text eol=lf
+
+# --- Windows-only: leave as CRLF --------------------------------------
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# --- Binary: never touch ----------------------------------------------
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.pdf           binary
+*.docx          binary
+*.xlsx          binary
+*.pptx          binary
+*.ico           binary
+# Shell scripts must use LF so container shebangs resolve — this repo is edited
+# on a Windows filesystem (WSL), which would otherwise introduce CRLF and break
+# `#!/bin/sh` at container start.
+*.sh text eol=lf

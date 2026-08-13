@@ -1,4 +1,21 @@
-# agents/lead_profile — Lead Profile Agent (9 pointers -> HubSpot)
-google-adk==2.3.0
-requests>=2.31
-# lqabr_core is installed separately: pip install -e packages/lqabr_core (repo root)
+# agents/lead_profile — Lead Profile Agent
+# Deterministic CSV -> HubSpot pipeline (default); opt-in LLM operator console.
+#
+# lqabr_core is installed separately from the repo root:
+#   pip install -e packages/lqabr_core          # add the [gcp] extra for the Secret Manager backend
+#
+# NOTE (version reconciliation): this agent was developed and tested against
+# google-adk 2.6.x and is now PINNED to ==2.6.2 for reproducible image builds.
+# The repo-wide convention (CLAUDE.md) pins google-adk==2.3.0 for the other
+# agents. If every agent must share ONE environment, reconcile this pin first;
+# per-agent virtualenvs/images can differ.
+google-adk==2.6.2
+requests>=2.32.0
+python-dotenv>=1.0.1
+
+# Optional but recommended:
+psutil>=6.0.0                        # richer system-log snapshots; obs degrades gracefully without it
+google-cloud-secret-manager>=2.30.0  # Secret Manager backend (prod). Local dev can use LQABR_SECRET_BACKEND=env
+
+# Only needed for the opt-in LLM operator console (LQABR_ORCHESTRATOR=llm):
+litellm>=1.60.0

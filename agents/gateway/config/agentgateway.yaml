@@ -1,0 +1,87 @@
+# =====================================================================
+# agentgateway (Solo.io) — sidecar static configuration
+# ---------------------------------------------------------------------
+# Rev 3 calls this runtime "Solo AI", co-located in lib/soloai. The product is
+# Solo.io's agentgateway (https://agentgateway.dev, Linux Foundation): a Rust
+# data plane run as `agentgateway -f config.yaml`. It is a process, not a
+# library, so it runs as a sidecar *inside this gateway's container* — one
+# deploy, one release artifact, no extra hop off-box. Deviation D-02.
+#
+# What it gives us, and why it is worth the sidecar:
+#   * one MCP endpoint the four agents point at, instead of four HubSpot
+#     clients each holding their own token plumbing
+#   * A2A backends: agent endpoints become named, swappable config
+#   * access logs + Prometheus metrics + OTel spans on every hop, which is
+#     half of FR-7 without us writing it
+#
+# What it does NOT do: decide which agent owns a trigger. A proxy cannot know
+# that. Step 2 stays in router.py, and the decision records stay in audit.py.
+#
+# Run:    agentgateway -f config/agentgateway.yaml
+# UI:     http://127.0.0.1:15000
+# =====================================================================
+
+binds:
+  # ------------------------------------------------------------------
+  # A2A — gateway -> agent hand-off (Rev 3 Step 4).
+  # dispatch.py posts JSON-RPC message/send here; the sidecar forwards to the
+  # owning agent and produces the access log / span for the hop.
+  # Endpoints come from the environment so the same file ships to every env,
+  # matching agents_registry.yaml's endpoint_env indirection.
+  # ------------------------------------------------------------------
+  - port: 3000
+    listeners:
+      - name: a2a-egress
+        routes:
+          - name: email-agent
+            matches:
+              - path:
+                  pathPrefix: /a2a/email
+            backends:
+              - host: "${LQABR_EMAIL_AGENT_URL}"
+
+          - name: text-voice-agent
+            matches:
+              - path:
+                  pathPrefix: /a2a/voice
+            backends:
+              - host: "${LQABR_TEXT_VOICE_AGENT_URL}"
+
+          # ------------------------------------------------------------
+          # MCP — agent -> HubSpot (Rev 3 Step 6).
+          # This path is for the AGENTS, not for the gateway: Step 6 is direct
+          # and bypasses the gateway, and no profile data may cross it here.
+          # Publishing it through the same sidecar means one place to rotate
+          # the private-app token and one place the MCP traffic is audited.
+          # ------------------------------------------------------------
+          - name: hubspot-mcp
+            matches:
+              - path:
+                  pathPrefix: /mcp
+            backends:
+              - mcp:
+                  targets:
+                    - name: hubspot
+                      mcp:
+                        host: "${LQABR_HUBSPOT_MCP_URL:-https://mcp.hubspot.com/anthropic}"
+
+# ---------------------------------------------------------------------
+# Telemetry. Rev 3 FR-7: audit, process and system streams collected to the
+# runtime's own logging standard. The sidecar covers the network view; the
+# gateway's own JSONL records (lib/soloai/audit_hooks.py) carry the decision
+# view, which is the half no proxy can produce.
+#
+# token/model: not applicable. The gateway makes no model calls — recorded as
+# an explicit exclusion in the gateway's system stream at startup, not omitted.
+# ---------------------------------------------------------------------
+config:
+  logging:
+    level: info
+    # Correlate the sidecar's log lines with the gateway's run/trigger ids.
+    fields:
+      add:
+        service: '"agent-gateway"'
+        trigger_id: 'request.headers["x-lqabr-trigger-id"]'
+        run_id: 'request.headers["x-lqabr-run-id"]'
+  tracing:
+    otlpEndpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
