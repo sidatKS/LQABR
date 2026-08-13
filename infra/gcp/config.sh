@@ -23,6 +23,10 @@ export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
 export LQABR_SECRETS=(
   lqabr-google-api-key
   lqabr-hubspot-access-token
+  lqabr-vapi-api-key
+  lqabr-anthropic-api-key
+  lqabr-vapi-webhook-secret
+  lqabr-hubspot-webhook-token
   lqabr-mailgun-api-key
   lqabr-mailgun-webhook-signing-key
   lqabr-twilio-account-sid
@@ -50,6 +54,11 @@ export MAILGUN_DOMAIN="mg.yourdomain.com"        # CHANGE ME
 export MAILGUN_FROM="LQABR Outreach <outreach@${MAILGUN_DOMAIN}>"
 export TWILIO_FROM_NUMBER="+15551234567"         # CHANGE ME
 export LQABR_SENDER_NAME="Your Name"             # CHANGE ME
+# Rev 5 text_voice (Vapi): ids are not secrets — the API key is.
+export LQABR_VAPI_PHONE_NUMBER_ID="e4a65189-cede-4207-a7a7-50431102136e"
+# Dashboard-managed assistant "LQABR Text-Voice Outreach"; unset -> transient
+export LQABR_VAPI_ASSISTANT_ID="4f00be12-203d-468f-a11d-f45798165983"
+export LQABR_TEXT_VOICE_MODEL="anthropic/claude-sonnet-5"
 export LQABR_CTA_URL="https://yourdomain.com/overview"
 # Optional fixed Zoom booking page (else the Scheduler API is queried):
 export ZOOM_BOOKING_URL=""
