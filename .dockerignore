@@ -11,6 +11,7 @@
 # =====================================================================
 
 # --- Version control and CI -------------------------------------------
+# VCS / IDE
 .git
 .github
 .gitignore
@@ -48,3 +49,26 @@ pytest.ini
 *.log
 .DS_Store
 REMOVE-STRAY-BRANCH.bat
+# Python caches & envs
+__pycache__/
+*.py[cod]
+.venv/
+.venv-linux/
+.pytest_cache/
+*.egg-info/
+
+# Per-agent secrets & local ADK state — must NOT be baked into images
+**/.env
+**/.adk/
+**/session.db
+
+# Tests & docs not needed at runtime
+**/tests/
+docs/
+evals/
+data/
+# ...but bake in the 3 synthetic lead_profile seed CSVs the agent reads at runtime
+!data/seeds/b2b/employees_with_company_sample.csv
+!data/seeds/b2b/employee_contacts_5234.csv
+!data/seeds/b2b/companies_clean_734.csv
+_to_delete/
