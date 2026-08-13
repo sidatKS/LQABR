@@ -29,7 +29,7 @@ class FakeCRM(CRMClient):
     def upsert_lead(self, profile):
         if profile.email in self.fail_emails:
             raise CRMError("boom")
-        profile.hubspot_contact_id = f"hs-{len(self.upserts)}"
+        profile.contact_id = f"hs-{len(self.upserts)}"
         self.upserts.append(profile)
         return profile
 
@@ -37,6 +37,9 @@ class FakeCRM(CRMClient):
         raise NotImplementedError
 
     def find_lead_by_email(self, email):  # pragma: no cover
+        return None
+
+    def find_lead_by_phone(self, phone):  # pragma: no cover
         return None
 
     def leads_in_stage(self, stage, min_probability=0, limit=100):  # pragma: no cover
@@ -72,6 +75,6 @@ def test_profile_and_upsert_collects_crm_failures():
     crm = FakeCRM(fail_emails={"other@acme.example"})
     result = profile_and_upsert([RECORD, other], crm)
     assert len(result.profiles) == 1
-    assert result.profiles[0].hubspot_contact_id == "hs-0"
+    assert result.profiles[0].contact_id == "hs-0"
     assert len(result.upsert_failures) == 1
     assert result.upsert_failures[0].reason.startswith("crm-error")
