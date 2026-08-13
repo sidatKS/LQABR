@@ -1,4 +1,82 @@
 # =====================================================================
+# docker-compose.yml — build the LQABR Email Agent images and push them to
+# Google Artifact Registry.
+#
+# SCOPE: email component only. ONE image, one Cloud Run service, one endpoint
+# (Platform Engineering, 2026-08-04). The email-webhook image was removed —
+# Mailgun pushes to the SAME service the gateway reaches.
+#
+# BUILD/PUSH ONLY. These services are not meant to be started with
+# `docker compose up`: they are Cloud Run containers that expect injected
+# secrets and a runtime service account. Compose is used here purely as the
+# build+push driver, per the platform-engineering ask (2026-08-03).
+#
+#   Spec:       docs/IMAGE_BUILD_SPEC.md
+#   Dockerfile: infra/gcp/cloud-run/Dockerfile  (already parameterised)
+#   One-shot:   bash infra/gcp/compose_build_push.sh email-agent
+#
+# Manual equivalent:
+#   gcloud auth configure-docker us-central1-docker.pkg.dev
+#   docker compose build email-agent
+#   docker compose push email-agent
+#
+# Overridable at build time (defaults target the dev project):
+#   IMAGE_BASE    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr
+#   IMAGE_PREFIX  lqabr-dev          <project code>-<environment>
+#   VERSION       0.1.0              semantic version -> the immutable tag
+#
+#   VERSION=0.2.0 docker compose build email-agent
+#
+# Naming: ${IMAGE_PREFIX}-<component>-<kind>:${VERSION}, plus :latest — e.g.
+# lqabr-dev-email-agent:0.1.0.
+# =====================================================================
+
+name: lqabr
+
+# Repo root as context, the shared parameterised Dockerfile.
+x-image-build: &image-build
+  context: .
+  dockerfile: infra/gcp/cloud-run/Dockerfile
+
+services:
+
+  # ------------------------------------------------------------------- agent
+  # The agent's OWN domain surface — POST /hubspot/campaign, the Mailgun
+  # route, and both health spellings. This is what the gateway calls.
+  #
+  # CHANGED 2026-08-04: SERVICE_KIND was `agent` (the generic ADK
+  # api_server). That image only speaks ADK — POST /run with an
+  # {appName:"src", userId, sessionId, newMessage} envelope, after a session
+  # has been created — so a gateway dispatching a domain call the way it
+  # does to text_voice could never reach it, and the two agents did not even
+  # agree on the health path. See agents/email/src/service_app.py.
+  #
+  # The IMAGE NAME is deliberately unchanged: the Cloud Run service
+  # lqabr-dev-email-agent keeps its URL, so LQABR_EMAIL_AGENT_URL and any
+  # gateway config stay valid. Only the contract inside the container moves.
+  # 2026-08-04: this one service now serves the Mailgun push too
+  # (LQABR_EMAIL_ROUTES=all). The second image is gone.
+
+  email-agent:
+    image: ${IMAGE_BASE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr}/${IMAGE_PREFIX:-lqabr-dev}-email-agent:${VERSION:-0.1.0}
+    build:
+      <<: *image-build
+      args:
+        AGENT_DIR: email
+        SERVICE_KIND: service
+      tags:
+        - ${IMAGE_BASE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr}/${IMAGE_PREFIX:-lqabr-dev}-email-agent:latest
+
+# ---------------------------------------------------------------------------
+#
+# Mailgun is now configured with the email-agent service's own URL — the same
+# one the gateway reaches — and the event handling is business logic inside
+# the agent (agents/email/src/service_app.py -> events.py). One image, one
+# Cloud Run service, one endpoint, zero instances at rest.
+#
+# agents/email/src/webhook_app.py is deleted, so `SERVICE_KIND=webhook` can no
+# longer produce an email image even by accident.
+# ---------------------------------------------------------------------------
 # LQABR — container image build & push
 # ---------------------------------------------------------------------
 # This file is NOT for running the stack. It builds each component into an

@@ -79,6 +79,19 @@ class LeadProfile:
     stage: LeadStage = LeadStage.INGESTED
     probability: int = 0
     hubspot_contact_id: Optional[str] = None
+
+    @property
+    def object_id(self) -> Optional[str]:
+        """The HubSpot record id under its canonical name for the outreach
+        agents. A HubSpot contact IS a HubSpot object, so this is exactly
+        ``hubspot_contact_id`` — exposed as ``object_id`` so the email agent
+        speaks one identifier end to end. Read/write; the underlying field is
+        unchanged, so text_voice and scheduling keep working."""
+        return self.hubspot_contact_id
+
+    @object_id.setter
+    def object_id(self, value: Optional[str]) -> None:
+        self.hubspot_contact_id = value
     extra: Dict[str, Any] = field(default_factory=dict)
 
     POINTER_FIELDS = (
