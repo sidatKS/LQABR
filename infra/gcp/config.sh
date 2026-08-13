@@ -6,7 +6,7 @@
 # ============================================================
 
 # ── GCP Project ──────────────────────────────────────────────
-export PROJECT_ID="your-gcp-project-id"          # CHANGE ME
+export PROJECT_ID="ldqfingsrv-dev"          # CHANGE ME
 export REGION="us-central1"                      # CHANGE ME if needed
 
 # ── Service accounts ─────────────────────────────────────────

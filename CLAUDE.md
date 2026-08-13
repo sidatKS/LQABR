@@ -35,7 +35,12 @@ Node/npm toolchain anywhere. What exists and runs today:
   `types` (LeadProfile 9 pointers, stages, events), `probability` (the
   single source of truth for increments/thresholds), `secrets` (Secret
   Manager with env fallback), `crm` (CRMClient interface + HubSpotClient),
-  `mailgun`, `timezones`, `profile` (record → profile → upsert).
+  `mailgun`, `timezones`, `profile` (record → profile → upsert). Also `obs`
+  (four-stream run/lead observability) and `leadgen` — the Lead Profile
+  Agent's **isolated** path: `leadgen.hubspot` (Contact+Company+association
+  upsert, `employee_id`/`company_id` dedup, custom `email_id`),
+  `leadgen.secrets`, and `leadgen.server` (the MCP front door). It coexists
+  with the 9-pointer `types`/`crm` model rather than replacing it.
 - `agents/{ingestion, lead_profile, email, text_voice, scheduling,
   orchestrator}/` — six ADK agents, each with `src/` + `tests/`,
   `requirements.txt`, `.env.example`. Email/text_voice/scheduling also ship
@@ -61,7 +66,11 @@ The former BigLake/BigQuery data platform was retired — see
 - **Models (Gemini, config-driven):** per-agent env var
   (`LQABR_<AGENT>_MODEL`, default `gemini-2.0-flash`); swapping model or
   provider is a config change, never a code edit. Auth via AI Studio
-  `GOOGLE_API_KEY` or Vertex AI.
+  `GOOGLE_API_KEY` or Vertex AI. **The Lead Profile Agent is the exception:**
+  it runs **deterministically with no model by default**
+  (`LQABR_ORCHESTRATOR=deterministic`); set `LQABR_ORCHESTRATOR=llm` to enable
+  its opt-in operator console, whose model comes from `LQABR_AGENT_MODEL`
+  (default `anthropic/claude-sonnet-4-6`, routed via LiteLLM).
 - **CRM:** HubSpot (private-app token). All lead state lives on the contact
   (`lqabr_*` properties). The adapter is `lqabr_core.crm.HubSpotClient`
   behind the vendor-neutral `CRMClient` interface.

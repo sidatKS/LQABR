@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1760" height="1000" viewBox="0 0 1760 1000" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/>
+    </marker>
+    <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d03b3b"/>
+    </marker>
+  </defs>
+
+  <rect width="1760" height="1000" fill="#fcfcfb"/>
+
+  <!-- ============ header ============ -->
+  <text x="48" y="52" font-size="26" font-weight="700" fill="#0b0b0b">LQABR lead_profile agent — dataflow: CSVs → HubSpot CRM</text>
+  <text x="48" y="78" font-size="14" fill="#52514e">Rev 5 · deterministic agentic run, no model · verified live 31 Jul 2026: 263 built → 263 pushed → 0 failed → 0 dropped</text>
+
+  <!-- ============ side input: Secret Manager (top right) ============ -->
+  <rect x="1150" y="112" width="250" height="86" rx="10" fill="#fcfcfb" stroke="#52514e" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="1275" y="140" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">Google Secret Manager</text>
+  <text x="1275" y="160" font-size="12" fill="#52514e" text-anchor="middle">lqabr-hubspot-access-token</text>
+  <text x="1275" y="178" font-size="12" fill="#52514e" text-anchor="middle">read at runtime via ADC · value never on disk</text>
+  <path d="M1275,198 L1275,268" stroke="#52514e" stroke-width="2" fill="none" marker-end="url(#arg)"/>
+  <text x="1288" y="240" font-size="12" fill="#52514e">STEP A · auth.py + lib/secrets.py</text>
+  <text x="1288" y="257" font-size="12" fill="#52514e">Bearer token · cached 15 min · redacted in logs</text>
+
+  <!-- ============ MAIN DATA PATH ============ -->
+  <!-- 1. CSV sources -->
+  <g>
+    <rect x="48" y="300" width="252" height="188" rx="12" fill="#cde2fb" stroke="#1c5cab" stroke-width="2"/>
+    <text x="174" y="330" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="middle">SOURCE · 3 seed CSVs</text>
+    <text x="174" y="350" font-size="12" fill="#52514e" text-anchor="middle">data/incoming/ (GCS volume in prod)</text>
+    <rect x="66" y="364" width="216" height="30" rx="6" fill="#fcfcfb" stroke="#86b6ef"/>
+    <text x="76" y="384" font-size="12.5" fill="#0b0b0b">employees_…sample.csv</text>
+    <text x="272" y="384" font-size="12.5" fill="#1c5cab" text-anchor="end" font-weight="600">1 000</text>
+    <rect x="66" y="400" width="216" height="30" rx="6" fill="#fcfcfb" stroke="#86b6ef"/>
+    <text x="76" y="420" font-size="12.5" fill="#0b0b0b">employee_contacts_… .csv</text>
+    <text x="272" y="420" font-size="12.5" fill="#1c5cab" text-anchor="end" font-weight="600">5 234</text>
+    <rect x="66" y="436" width="216" height="30" rx="6" fill="#fcfcfb" stroke="#86b6ef"/>
+    <text x="76" y="456" font-size="12.5" fill="#0b0b0b">companies_clean_734.csv</text>
+    <text x="272" y="456" font-size="12.5" fill="#1c5cab" text-anchor="end" font-weight="600">734</text>
+  </g>
+  <path d="M300,394 L360,394" stroke="#2a78d6" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+  <text x="330" y="382" font-size="11.5" fill="#52514e" text-anchor="middle">rows</text>
+
+  <!-- 2. STEP 2 load -->
+  <g>
+    <rect x="360" y="316" width="240" height="156" rx="12" fill="#fcfcfb" stroke="#2a78d6" stroke-width="2"/>
+    <text x="480" y="344" font-size="14.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">STEP 1+2 · LOAD</text>
+    <text x="480" y="362" font-size="12" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">src/load_csv.py</text>
+    <text x="376" y="388" font-size="12.5" fill="#52514e">• required columns per file</text>
+    <text x="376" y="408" font-size="12.5" fill="#52514e">• alias Annual_Revenue (₹) → (M)</text>
+    <text x="376" y="428" font-size="12.5" fill="#52514e">• BOM / CRLF safe (utf-8-sig)</text>
+    <text x="376" y="448" font-size="12.5" fill="#52514e">• fail loudly: names file + column</text>
+  </g>
+  <path d="M600,394 L668,394" stroke="#2a78d6" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+  <text x="634" y="378" font-size="11.5" fill="#52514e" text-anchor="middle">RawFeed</text>
+  <text x="634" y="392" font-size="10.5" fill="#52514e" text-anchor="middle">(RAM)</text>
+
+  <!-- 3. STEP 3 build -->
+  <g>
+    <rect x="668" y="316" width="248" height="156" rx="12" fill="#fcfcfb" stroke="#2a78d6" stroke-width="2"/>
+    <text x="792" y="344" font-size="14.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">STEP 3 · BUILD</text>
+    <text x="792" y="362" font-size="12" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">src/build_profile.py</text>
+    <text x="684" y="388" font-size="12.5" fill="#52514e">• index contacts + companies</text>
+    <text x="684" y="408" font-size="12.5" fill="#52514e">• keep Decision_Maker == "yes"</text>
+    <text x="684" y="428" font-size="12.5" fill="#52514e">• join → 9-field LeadProfile</text>
+    <text x="684" y="448" font-size="12.5" fill="#52514e">• duplicates reported, never hidden</text>
+  </g>
+
+  <!-- in-memory list callout -->
+  <path d="M916,394 L984,394" stroke="#2a78d6" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+  <g>
+    <rect x="984" y="338" width="182" height="112" rx="12" fill="#3987e5" stroke="#1c5cab" stroke-width="2"/>
+    <text x="1075" y="368" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">263 LeadProfile</text>
+    <text x="1075" y="390" font-size="12" fill="#ffffff" text-anchor="middle">list in process RAM only</text>
+    <text x="1075" y="408" font-size="12" fill="#ffffff" text-anchor="middle">never written to disk</text>
+    <text x="1075" y="426" font-size="12" fill="#ffffff" text-anchor="middle">freed when the run ends</text>
+  </g>
+  <path d="M1166,394 L1226,394" stroke="#2a78d6" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+
+  <!-- 4. STEP 4+5 push -->
+  <g>
+    <rect x="1226" y="268" width="278" height="252" rx="12" fill="#fcfcfb" stroke="#2a78d6" stroke-width="2"/>
+    <text x="1365" y="296" font-size="14.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">STEP 4 · LOOP  →  STEP 5 · UPSERT</text>
+    <text x="1365" y="314" font-size="12" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">src/call_mcp.py · lqabr_mcp/…/crm.py</text>
+    <text x="1242" y="340" font-size="12.5" fill="#52514e">per lead (in-process call, no API hop):</text>
+    <text x="1242" y="362" font-size="12.5" fill="#0b0b0b">1  mint lead_ref_id</text>
+    <text x="1242" y="382" font-size="12.5" fill="#0b0b0b">2  validate (normalise → baseline)</text>
+    <text x="1242" y="402" font-size="12.5" fill="#0b0b0b">3  Company: search → PATCH/POST</text>
+    <text x="1242" y="422" font-size="12.5" fill="#0b0b0b">4  Contact: search → PATCH/POST</text>
+    <text x="1242" y="442" font-size="12.5" fill="#0b0b0b">5  associate (v4 default)</text>
+    <text x="1242" y="468" font-size="12" fill="#52514e">retries: transport · 429 Retry-After ·</text>
+    <text x="1242" y="485" font-size="12" fill="#52514e">401 → one forced token refresh</text>
+    <text x="1242" y="507" font-size="12" fill="#52514e">idempotent — re-runs never duplicate</text>
+  </g>
+  <path d="M1504,394 L1568,394" stroke="#2a78d6" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+  <text x="1536" y="378" font-size="11.5" fill="#52514e" text-anchor="middle">HTTPS</text>
+
+  <!-- 5. HubSpot destination -->
+  <g>
+    <rect x="1568" y="308" width="150" height="172" rx="12" fill="#0ca30c" fill-opacity="0.12" stroke="#0ca30c" stroke-width="2.5"/>
+    <text x="1643" y="338" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="middle">HubSpot CRM</text>
+    <text x="1643" y="358" font-size="11.5" fill="#52514e" text-anchor="middle">system of record</text>
+    <text x="1643" y="386" font-size="13" fill="#0b0b0b" text-anchor="middle">✓ 263 Contacts</text>
+    <text x="1643" y="408" font-size="13" fill="#0b0b0b" text-anchor="middle">✓ Companies</text>
+    <text x="1643" y="430" font-size="13" fill="#0b0b0b" text-anchor="middle">✓ associated</text>
+    <text x="1643" y="458" font-size="11.5" fill="#52514e" text-anchor="middle">dedup: employee_id /</text>
+    <text x="1643" y="472" font-size="11.5" fill="#52514e" text-anchor="middle">company_id</text>
+  </g>
+
+  <!-- Step 6 read path (dashed, return) -->
+  <path d="M1643,480 L1643,552" stroke="#52514e" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#arg)"/>
+  <rect x="1468" y="552" width="250" height="50" rx="10" fill="#fcfcfb" stroke="#52514e" stroke-width="1.5"/>
+  <text x="1593" y="572" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">STEP 6 · get_lead_profile (read-only)</text>
+  <text x="1593" y="590" font-size="11.5" fill="#52514e" text-anchor="middle">→ email / voice / scheduler agents (MCP)</text>
+
+  <!-- ============ HALT / ERROR SINKS (never drop a lead) ============ -->
+  <text x="48" y="640" font-size="15" font-weight="700" fill="#0b0b0b">Never drop a lead — every non-pushed lead has a destination</text>
+
+  <!-- structural halt -->
+  <path d="M480,472 L480,672" stroke="#d03b3b" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+  <rect x="368" y="672" width="224" height="64" rx="10" fill="#d03b3b" fill-opacity="0.08" stroke="#d03b3b" stroke-width="1.5"/>
+  <text x="480" y="696" font-size="12.5" font-weight="700" fill="#d03b3b" text-anchor="middle">⛔ STRUCTURAL HALT</text>
+  <text x="480" y="714" font-size="11.5" fill="#52514e" text-anchor="middle">missing file/column → run stops,</text>
+  <text x="480" y="728" font-size="11.5" fill="#52514e" text-anchor="middle">nothing pushed · exit 2</text>
+
+  <!-- unresolved sink -->
+  <path d="M792,472 L792,672" stroke="#52514e" stroke-width="2" fill="none" marker-end="url(#arg)"/>
+  <rect x="676" y="672" width="232" height="64" rx="10" fill="#fcfcfb" stroke="#52514e" stroke-width="1.5"/>
+  <text x="792" y="696" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">unresolved join (0 this run)</text>
+  <text x="792" y="714" font-size="11.5" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">errors/unresolved.jsonl</text>
+  <text x="792" y="728" font-size="11.5" fill="#52514e" text-anchor="middle">kept with reason · never pushed</text>
+
+  <!-- record fail sink -->
+  <path d="M1300,520 L1300,672" stroke="#ec835a" stroke-width="2" fill="none" marker-end="url(#arg)"/>
+  <rect x="1180" y="672" width="240" height="64" rx="10" fill="#ec835a" fill-opacity="0.10" stroke="#ec835a" stroke-width="1.5"/>
+  <text x="1300" y="692" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">▲ bad record (HubSpot 4xx)</text>
+  <text x="1300" y="710" font-size="11.5" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">errors/schema_mismatch.jsonl</text>
+  <text x="1300" y="726" font-size="11.5" fill="#52514e" text-anchor="middle">with lead_ref_id + stage · run continues</text>
+
+  <!-- transport fail sink -->
+  <path d="M1440,520 L1440,646 L1560,646 L1560,672" stroke="#ec835a" stroke-width="2" fill="none" marker-end="url(#arg)"/>
+  <rect x="1444" y="672" width="240" height="64" rx="10" fill="#ec835a" fill-opacity="0.10" stroke="#ec835a" stroke-width="1.5"/>
+  <text x="1564" y="692" font-size="12.5" font-weight="700" fill="#0b0b0b" text-anchor="middle">▲ transport (5xx / network)</text>
+  <text x="1564" y="710" font-size="11.5" fill="#1c5cab" text-anchor="middle" font-family="Consolas, monospace">errors/transport_failures.jsonl</text>
+  <text x="1564" y="726" font-size="11.5" fill="#52514e" text-anchor="middle">circuit breaker halts after N in a row</text>
+
+  <!-- systemic halt -->
+  <rect x="928" y="672" width="224" height="64" rx="10" fill="#d03b3b" fill-opacity="0.08" stroke="#d03b3b" stroke-width="1.5"/>
+  <text x="1040" y="696" font-size="12.5" font-weight="700" fill="#d03b3b" text-anchor="middle">⛔ SYSTEMIC HALT</text>
+  <text x="1040" y="714" font-size="11.5" fill="#52514e" text-anchor="middle">auth/secret broken → stop; leads report</text>
+  <text x="1040" y="728" font-size="11.5" fill="#52514e" text-anchor="middle">not_attempted · zero per-lead records</text>
+  <path d="M1226,480 L1100,480 L1100,672" stroke="#d03b3b" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+
+  <!-- ============ observability rail ============ -->
+  <rect x="48" y="790" width="1670" height="76" rx="10" fill="#fcfcfb" stroke="#c3c2b7" stroke-width="1.5"/>
+  <text x="66" y="818" font-size="13" font-weight="700" fill="#0b0b0b">Observability — every box above emits here</text>
+  <text x="66" y="842" font-size="12.5" fill="#52514e">four JSON streams → stdout (Cloud Logging): <tspan fill="#0b0b0b" font-weight="600">system</tspan> (memory/CPU) · <tspan fill="#0b0b0b" font-weight="600">process</tspan> (decisions) · <tspan fill="#0b0b0b" font-weight="600">audit</tspan> (every HubSpot + Secret Manager call: endpoint, status, ms) · <tspan fill="#0b0b0b" font-weight="600">tokens</tspan> (silent — no model)</text>
+  <text x="66" y="860" font-size="12.5" fill="#52514e">keys: one <tspan font-family="Consolas, monospace" fill="#1c5cab">run_id</tspan> per run (= ADK invocation id) · one <tspan font-family="Consolas, monospace" fill="#1c5cab">lead_ref_id</tspan> per lead, minted before the write</text>
+
+  <!-- footer -->
+  <rect x="48" y="900" width="1670" height="56" rx="10" fill="#0ca30c" fill-opacity="0.10" stroke="#0ca30c" stroke-width="1.5"/>
+  <text x="883" y="924" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">✓ Verified live 31 Jul 2026 — 1 000 + 5 234 + 734 rows in → 263 decision-makers built → 263 pushed · 0 failed · 0 not_attempted · 0 unresolved · 0 dropped</text>
+  <text x="883" y="944" font-size="12" fill="#52514e" text-anchor="middle">one agentic run (adk run / adk web / Cloud Run Job — same root_agent) · zero LLM calls · credentials fetched from Secret Manager at runtime</text>
+</svg>

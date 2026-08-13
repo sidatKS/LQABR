@@ -14,6 +14,13 @@ dependencies = [
 [project.optional-dependencies]
 gcp = ["google-cloud-secret-manager>=2.20"]
 test = ["pytest>=8", "responses>=0.25"]
+# The lqabr_core.leadgen.server MCP front door (the "second door" to the same
+# two HubSpot tools). Only needed to run/serve the MCP server, not to import
+# the in-process leadgen.hubspot layer.
+mcp = ["mcp>=1.9.0"]
+
+[project.scripts]
+lqabr-mcp-server = "lqabr_core.leadgen.server:main"
 
 [tool.setuptools.packages.find]
 include = ["lqabr_core*"]

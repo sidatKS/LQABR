@@ -1,0 +1,4 @@
+# Shell scripts must use LF so container shebangs resolve — this repo is edited
+# on a Windows filesystem (WSL), which would otherwise introduce CRLF and break
+# `#!/bin/sh` at container start.
+*.sh text eol=lf

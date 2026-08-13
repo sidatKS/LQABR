@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQABR — lead_profile agent · architecture &amp; file-to-file dataflow</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f4f4f2;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #8a897f;
+    --line:           #d8d7d0;
+    --agent:          #2a78d6;   /* agent-layer files  */
+    --core:           #eb6834;   /* lqabr_core shared  */
+    --ext:            #1baf7a;   /* external systems   */
+    --deploy:         #4a3aa7;   /* container/deploy   */
+    --fail:           #e34948;   /* failure paths      */
+    --agent-tint:     #eaf2fc;
+    --core-tint:      #fdeee7;
+    --ext-tint:       #e6f7f0;
+    --deploy-tint:    #edebf8;
+    --fail-tint:      #fdecec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --surface-2: #232322;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8a897f;
+      --line: #3a3a38;
+      --agent: #3987e5; --core: #d95926; --ext: #199e70; --deploy: #9085e9; --fail: #e66767;
+      --agent-tint: #16283d; --core-tint: #3a2015; --ext-tint: #143026;
+      --deploy-tint: #262040; --fail-tint: #3a1c1c;
+    }
+  }
+  html, body { margin: 0; padding: 0; }
+  .viz-root {
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    padding: 28px 32px 48px;
+  }
+  .viz-root h1 { font-size: 21px; margin: 0 0 4px; }
+  .viz-root .sub { color: var(--text-secondary); font-size: 13.5px; margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px;
+            color: var(--text-secondary); margin-bottom: 14px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 7px; }
+  .legend .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+  .diagram-wrap { max-width: 1420px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg text { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  .mono, svg .mono { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; }
+
+  table.iotab { border-collapse: collapse; width: 100%; max-width: 1420px;
+                font-size: 13px; margin-top: 10px; }
+  table.iotab th { text-align: left; color: var(--text-secondary); font-weight: 600;
+                   border-bottom: 2px solid var(--line); padding: 8px 10px; }
+  table.iotab td { border-bottom: 1px solid var(--line); padding: 8px 10px;
+                   vertical-align: top; color: var(--text-primary); }
+  table.iotab td.file { white-space: nowrap; font-family: ui-monospace, Consolas, monospace;
+                        font-size: 12.5px; }
+  table.iotab .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px;
+                     margin-right: 7px; vertical-align: 1px; }
+  h2 { font-size: 16px; margin: 34px 0 4px; }
+  .note { color: var(--text-secondary); font-size: 12.5px; max-width: 1000px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <h1>LQABR · lead_profile agent — architecture &amp; file-to-file dataflow</h1>
+  <p class="sub">Mono-repo layout (<span class="mono">C:\Users\StephenMiller\LQABR</span>) · deterministic default, zero model calls ·
+     one agentic run: CSVs → 9-field lead profiles (in memory) → HubSpot CRM · 03&nbsp;Aug&nbsp;2026</p>
+
+  <div class="legend">
+    <span class="key"><span class="swatch" style="background:var(--agent)"></span>agent layer — <span class="mono">agents/lead_profile/src/</span></span>
+    <span class="key"><span class="swatch" style="background:var(--core)"></span>shared core — <span class="mono">packages/lqabr_core/lqabr_core/</span></span>
+    <span class="key"><span class="swatch" style="background:var(--ext)"></span>external systems &amp; data</span>
+    <span class="key"><span class="swatch" style="background:var(--deploy)"></span>container / deploy</span>
+    <span class="key"><span class="swatch" style="background:var(--fail)"></span>failure path (flag, never drop)</span>
+  </div>
+
+  <div class="diagram-wrap">
+  <svg viewBox="0 0 1420 2060" role="img" aria-label="Architecture diagram of the lead_profile agent">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--text-secondary)"/>
+      </marker>
+      <marker id="arrF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--fail)"/>
+      </marker>
+    </defs>
+
+    <!-- ═══════════ BAND A · ENTRY POINTS ═══════════ -->
+    <text x="40" y="34" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">1 · ENTRY POINTS — how a run starts</text>
+
+    <g>
+      <rect x="40" y="48" width="400" height="86" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="58" y="74" font-size="14" font-weight="700" fill="var(--text-primary)">Operator (interactive)</text>
+      <text x="58" y="95" font-size="12.5" class="mono" fill="var(--text-secondary)">adk web · adk run · adk api_server</text>
+      <text x="58" y="113" font-size="12.5" class="mono" fill="var(--text-secondary)">agents/lead_profile/src</text>
+    </g>
+    <g>
+      <rect x="488" y="48" width="400" height="86" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="506" y="74" font-size="14" font-weight="700" fill="var(--text-primary)">Headless job</text>
+      <text x="506" y="95" font-size="12.5" class="mono" fill="var(--text-secondary)">agent.py :: run_headless()</text>
+      <text x="506" y="113" font-size="12.5" fill="var(--text-secondary)">exit 0 ok · 2 halted · 3 partial failure</text>
+    </g>
+    <g>
+      <rect x="936" y="48" width="444" height="86" rx="8" fill="var(--deploy-tint)" stroke="var(--deploy)" stroke-width="1.6"/>
+      <text x="954" y="74" font-size="14" font-weight="700" fill="var(--text-primary)">Cloud Run container</text>
+      <text x="954" y="95" font-size="12.5" class="mono" fill="var(--text-secondary)">entrypoint.sh → adk api_server agents/lead_profile/src</text>
+      <text x="954" y="113" font-size="12.5" class="mono" fill="var(--text-secondary)">image: lqabr-dev-ldpf  (see strip 7 below)</text>
+    </g>
+
+    <line x1="240" y1="134" x2="480" y2="196" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <line x1="688" y1="134" x2="640" y2="196" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <line x1="1158" y1="134" x2="800" y2="196" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="710" y="172" font-size="12" fill="var(--text-muted)">all three import the same package</text>
+
+    <!-- ═══════════ BAND B · DISCOVERY + ORCHESTRATOR SELECTION ═══════════ -->
+    <text x="40" y="230" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">2 · DISCOVERY &amp; ORCHESTRATOR SELECTION</text>
+
+    <g>
+      <rect x="470" y="244" width="380" height="58" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="488" y="268" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">src/__init__.py</text>
+      <text x="488" y="288" font-size="12.5" fill="var(--text-secondary)">load-bearing import — re-exports <tspan class="mono">agent.root_agent</tspan></text>
+    </g>
+    <line x1="660" y1="302" x2="660" y2="330" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+
+    <g>
+      <rect x="40" y="352" width="330" height="72" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="58" y="378" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">agents/lead_profile/.env</text>
+      <text x="58" y="398" font-size="12.5" fill="var(--text-secondary)">config + secret <tspan font-weight="700">names</tspan> only —</text>
+      <text x="58" y="414" font-size="12.5" fill="var(--text-secondary)">never a credential value</text>
+    </g>
+    <line x1="370" y1="388" x2="438" y2="388" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="376" y="380" font-size="11.5" fill="var(--text-muted)">env vars</text>
+
+    <g>
+      <rect x="440" y="340" width="440" height="118" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="2"/>
+      <text x="458" y="366" font-size="14" font-weight="700" class="mono" fill="var(--text-primary)">agent.py</text>
+      <text x="458" y="388" font-size="12.5" fill="var(--text-secondary)">① <tspan class="mono">_load_dotenv_if_present()</tspan> — src/.env → agent/.env → cwd</text>
+      <text x="458" y="408" font-size="12.5" fill="var(--text-secondary)">② <tspan class="mono">build_root_agent()</tspan> — switch on <tspan class="mono">LQABR_ORCHESTRATOR</tspan></text>
+      <text x="458" y="428" font-size="12.5" fill="var(--text-secondary)">③ <tspan class="mono">run_headless()</tspan> — InMemoryRunner, one invocation</text>
+      <text x="458" y="448" font-size="12.5" fill="var(--text-secondary)">also reads: <tspan class="mono">container_definition.py</tspan> (contract constants)</text>
+    </g>
+
+    <g>
+      <rect x="960" y="340" width="420" height="118" rx="8" fill="var(--surface-2)" stroke="var(--agent)" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text x="978" y="366" font-size="13.5" font-weight="700" fill="var(--text-primary)">OPT-IN console — <tspan class="mono">LQABR_ORCHESTRATOR=llm</tspan></text>
+      <text x="978" y="388" font-size="12.5" class="mono" fill="var(--text-secondary)">llm_agent.py — LlmAgent + 6 FunctionTools (tools.py)</text>
+      <text x="978" y="408" font-size="12.5" class="mono" fill="var(--text-secondary)">model.py — SecretBackedLiteLlm (key via leadgen.secrets)</text>
+      <text x="978" y="428" font-size="12.5" class="mono" fill="var(--text-secondary)">callbacks.py — ADK↔logs bridge, feeds tokens log</text>
+      <text x="978" y="448" font-size="12.5" fill="var(--text-secondary)">default path never loads a model — tokens log stays silent</text>
+    </g>
+    <line x1="880" y1="380" x2="958" y2="380" stroke="var(--text-secondary)" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <text x="890" y="372" font-size="11.5" fill="var(--text-muted)">opt-in</text>
+
+    <line x1="660" y1="458" x2="660" y2="496" stroke="var(--text-secondary)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="672" y="482" font-size="12" fill="var(--text-muted)">DEFAULT: deterministic (§7.4 — no model)</text>
+
+    <!-- ═══════════ BAND C · THE DETERMINISTIC AGENT ═══════════ -->
+    <text x="40" y="524" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">3 · COMMAND GRAMMAR — plain English in, one of five actions out</text>
+
+    <g>
+      <rect x="40" y="538" width="840" height="150" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="2"/>
+      <text x="58" y="564" font-size="14" font-weight="700" class="mono" fill="var(--text-primary)">pipeline_agent.py — DeterministicLeadProfileAgent(BaseAgent)</text>
+      <text x="58" y="586" font-size="12.5" fill="var(--text-secondary)">in: operator text → <tspan class="mono">parse_command()</tspan> (written rules, never a guess) → out: command dict</text>
+      <text x="58" y="612" font-size="12.5" fill="var(--text-primary)"><tspan font-weight="700">RUN</tspan> verb + explicit scope (all / ids / industry / limit / dry)   ·   <tspan font-weight="700">COUNT</tspan> "how many …"   ·   <tspan font-weight="700">LOOKUP</tspan> id or email</text>
+      <text x="58" y="636" font-size="12.5" fill="var(--text-primary)"><tspan font-weight="700" fill="var(--fail)">REFUSE</tspan> negation · named selection without a recognisable id · verb without scope — with the reason</text>
+      <text x="58" y="660" font-size="12.5" fill="var(--text-primary)"><tspan font-weight="700">HELP</tspan> questions &amp; anything unrecognised → usage text   ·   state persists via <tspan class="mono">EventActions(state_delta)</tspan></text>
+      <text x="58" y="680" font-size="11.5" fill="var(--text-muted)">count → build only, zero HubSpot calls · lookup → read-only · 0-match selection → refuse, never widen</text>
+    </g>
+
+    <g>
+      <rect x="960" y="538" width="420" height="150" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="1.6"/>
+      <text x="978" y="564" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">lqabr_core.obs — four log streams</text>
+      <text x="978" y="586" font-size="12.5" class="mono" fill="var(--text-secondary)">loggers.py + context.py (ContextVar-scoped)</text>
+      <text x="978" y="608" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">system</tspan> · <tspan class="mono">process</tspan> · <tspan class="mono">audit</tspan> · <tspan class="mono">tokens</tspan> (silent — no model)</text>
+      <text x="978" y="630" font-size="12.5" fill="var(--text-secondary)">every line keyed <tspan class="mono">run_id</tspan> (= ADK invocation id)</text>
+      <text x="978" y="650" font-size="12.5" fill="var(--text-secondary)">+ per-record <tspan class="mono">lead_ref_id</tspan></text>
+      <text x="978" y="672" font-size="12.5" fill="var(--text-secondary)">→ stdout JSON → Cloud Logging</text>
+    </g>
+    <line x1="880" y1="612" x2="958" y2="612" stroke="var(--core)" stroke-width="1.3" marker-end="url(#arr)"/>
+    <text x="887" y="604" font-size="11.5" fill="var(--text-muted)">events</text>
+
+    <line x1="330" y1="688" x2="330" y2="726" stroke="var(--text-secondary)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="342" y="712" font-size="12" fill="var(--text-muted)">action = run → _do_run( )   — Steps 1→5, one process, one run_id</text>
+
+    <!-- ═══════════ BAND D · PIPELINE STEPS ═══════════ -->
+    <text x="40" y="756" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">4 · PIPELINE STEPS — what each file consumes and produces</text>
+
+    <!-- CSV source -->
+    <g>
+      <rect x="40" y="774" width="300" height="112" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="58" y="800" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">data/incoming/</text>
+      <text x="58" y="822" font-size="12" class="mono" fill="var(--text-secondary)">employees_with_company_sample.csv</text>
+      <text x="58" y="840" font-size="12" class="mono" fill="var(--text-secondary)">employee_contacts_5234.csv</text>
+      <text x="58" y="858" font-size="12" class="mono" fill="var(--text-secondary)">companies_clean_734.csv</text>
+      <text x="58" y="878" font-size="11.5" fill="var(--text-muted)">(LQABR_INCOMING_DIR · or "… from &lt;path&gt;")</text>
+    </g>
+    <line x1="340" y1="830" x2="418" y2="830" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="348" y="822" font-size="11.5" fill="var(--text-muted)">3 files</text>
+
+    <!-- Step 1+2 load_csv -->
+    <g>
+      <rect x="420" y="774" width="440" height="112" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="438" y="800" font-size="13.5" font-weight="700" fill="var(--text-primary)">STEP 1+2 · <tspan class="mono">load_csv.py :: load_csvs()</tspan></text>
+      <text x="438" y="822" font-size="12.5" fill="var(--text-secondary)">utf-8-sig / CRLF safe · header contract check</text>
+      <text x="438" y="842" font-size="12.5" fill="var(--text-secondary)">unit-suffix aliasing: <tspan class="mono">Annual_Revenue (₹) → (M)</tspan></text>
+      <text x="438" y="864" font-size="12.5" fill="var(--text-primary)">out: <tspan font-weight="700">feed</tspan> {employees 1000 · contacts 5234 · companies 734}</text>
+      <text x="438" y="882" font-size="11.5" fill="var(--fail)">missing file / bad header → CsvStructureError → HALT (names the file)</text>
+    </g>
+    <line x1="860" y1="830" x2="938" y2="830" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="872" y="822" font-size="11.5" fill="var(--text-muted)">feed</text>
+
+    <!-- Step 3 build_profile -->
+    <g>
+      <rect x="940" y="774" width="440" height="112" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="958" y="800" font-size="13.5" font-weight="700" fill="var(--text-primary)">STEP 3 · <tspan class="mono">build_profile.py :: build_profiles()</tspan></text>
+      <text x="958" y="822" font-size="12.5" fill="var(--text-secondary)">join on Employee_ID/Company_ID · decision-makers only</text>
+      <text x="958" y="842" font-size="12.5" fill="var(--text-secondary)">duplicates counted, never silently merged</text>
+      <text x="958" y="864" font-size="12.5" fill="var(--text-primary)">out: <tspan font-weight="700">263 LeadProfile</tspan> (9 fields) — process heap only</text>
+      <text x="958" y="882" font-size="11.5" fill="var(--fail)">non-workable rows → unresolved (with reason) → errors/unresolved.jsonl</text>
+    </g>
+    <path d="M 1160 886 L 1160 916 L 682 916 L 682 944" fill="none" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="700" y="936" font-size="11.5" fill="var(--text-muted)">profiles (in memory — never in session state, model context, or a file)</text>
+
+    <!-- selection -->
+    <g>
+      <rect x="420" y="946" width="440" height="104" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="438" y="972" font-size="13.5" font-weight="700" fill="var(--text-primary)">SELECTION · <tspan class="mono">tools.py :: filter_profiles()</tspan></text>
+      <text x="438" y="994" font-size="12.5" fill="var(--text-secondary)">in: profiles + command (employee_ids · company_ids · industry · limit)</text>
+      <text x="438" y="1014" font-size="12.5" fill="var(--text-primary)">out: <tspan font-weight="700">matched subset</tspan> + human-readable spec</text>
+      <text x="438" y="1036" font-size="11.5" fill="var(--fail)">0 matches → refuse and stop — a selection is never widened to everything</text>
+    </g>
+    <line x1="860" y1="998" x2="938" y2="998" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="866" y="990" font-size="11.5" fill="var(--text-muted)">selected</text>
+
+    <!-- Step 4+5 call_mcp -->
+    <g>
+      <rect x="940" y="946" width="440" height="104" rx="8" fill="var(--agent-tint)" stroke="var(--agent)" stroke-width="1.6"/>
+      <text x="958" y="972" font-size="13.5" font-weight="700" fill="var(--text-primary)">STEP 4+5 · <tspan class="mono">call_mcp.py :: push_profiles()</tspan></text>
+      <text x="958" y="994" font-size="12.5" fill="var(--text-secondary)">per lead: <tspan class="mono">new_lead_ref_id()</tspan> → <tspan class="mono">crm.upsert_lead_profiles()</tspan></text>
+      <text x="958" y="1014" font-size="12.5" fill="var(--text-secondary)">CircuitBreaker: N consecutive transport failures → halt</text>
+      <text x="958" y="1036" font-size="12.5" fill="var(--text-primary)">out: <tspan font-weight="700">RunSummary</tspan> — pushed / failed_record / failed_transport / halted</text>
+    </g>
+    <path d="M 1160 1050 L 1160 1092" fill="none" stroke="var(--core)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="1172" y="1078" font-size="11.5" fill="var(--text-muted)">LeadProfile dicts (validated per record)</text>
+
+    <path d="M 640 1050 L 640 1092 L 330 1092 L 330 690" fill="none" stroke="var(--text-secondary)" stroke-width="0" />
+    <path d="M 440 1030 L 240 1030 L 240 1120" fill="none" stroke="var(--text-secondary)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="60" y="1084" font-size="11.5" fill="var(--text-muted)">summary → final event text +</text>
+    <text x="60" y="1100" font-size="11.5" fill="var(--text-muted)">state_delta (pushed, failed, halted…)</text>
+    <g>
+      <rect x="40" y="1122" width="340" height="58" rx="8" fill="var(--surface-2)" stroke="var(--line)" stroke-width="1.4"/>
+      <text x="58" y="1146" font-size="12.5" font-weight="700" fill="var(--text-primary)">back to the operator / caller</text>
+      <text x="58" y="1166" font-size="12" fill="var(--text-secondary)">"Run complete… No lead was dropped." · session state</text>
+    </g>
+
+    <!-- ═══════════ BAND E · SHARED CORE ═══════════ -->
+    <text x="40" y="1216" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">5 · SHARED CORE — packages/lqabr_core/lqabr_core/leadgen  (ONE write path, two front doors)</text>
+
+    <rect x="40" y="1230" width="1340" height="330" rx="10" fill="none" stroke="var(--core)" stroke-width="1.6" stroke-dasharray="2 0"/>
+
+    <g>
+      <rect x="66" y="1252" width="380" height="120" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="1.6"/>
+      <text x="84" y="1278" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">hubspot/schema.py</text>
+      <text x="84" y="1300" font-size="12.5" fill="var(--text-secondary)">LeadProfile (9-field contract) · normalise →</text>
+      <text x="84" y="1320" font-size="12.5" fill="var(--text-secondary)">validate · HubSpot property mapping</text>
+      <text x="84" y="1342" font-size="12.5" fill="var(--text-secondary)">(incl. custom <tspan class="mono">email_id</tspan>) · PushResult</text>
+    </g>
+
+    <g>
+      <rect x="486" y="1252" width="450" height="188" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="2"/>
+      <text x="504" y="1278" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">hubspot/crm.py — the ONLY write path</text>
+      <text x="504" y="1300" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">HubSpotHttp.request()</tspan>: retries on 429/5xx (Retry-After</text>
+      <text x="504" y="1318" font-size="12.5" fill="var(--text-secondary)">honoured) · 401/403 → ONE forced token refresh</text>
+      <text x="504" y="1342" font-size="12.5" fill="var(--text-primary)"><tspan class="mono">upsert_lead_profiles()</tspan>: search by dedup key (limit 2)</text>
+      <text x="504" y="1362" font-size="12.5" fill="var(--text-primary)">→ <tspan font-weight="700">Company first</tspan> → Contact → associate (v4) — idempotent</text>
+      <text x="504" y="1386" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">get_lead_profile()</tspan>: read by employee_id / email</text>
+      <text x="504" y="1406" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">record_unresolved()</tspan> + error-file writers</text>
+      <text x="504" y="1428" font-size="11.5" fill="var(--fail)">failures.py taxonomy: record vs transport vs SystemicFailure (halt)</text>
+    </g>
+
+    <g>
+      <rect x="976" y="1252" width="380" height="120" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="1.6"/>
+      <text x="994" y="1278" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">hubspot/auth.py</text>
+      <text x="994" y="1300" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">get_hubspot_token()</tspan> — M2M utility, cached</text>
+      <text x="994" y="1320" font-size="12.5" fill="var(--text-secondary)"><tspan class="mono">HUBSPOT_AUTH_MODE</tspan>: private_app (interim)</text>
+      <text x="994" y="1342" font-size="12.5" fill="var(--text-secondary)">| refresh_token (target) — no default, by design</text>
+    </g>
+
+    <g>
+      <rect x="66" y="1396" width="380" height="118" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="1.6"/>
+      <text x="84" y="1422" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">leadgen/secrets.py</text>
+      <text x="84" y="1444" font-size="12.5" fill="var(--text-secondary)">SecretResolver — backend <tspan class="mono">gcp</tspan> (default, fails</text>
+      <text x="84" y="1464" font-size="12.5" fill="var(--text-secondary)">closed) | <tspan class="mono">env</tspan> (tests) · 15-min cache · values</text>
+      <text x="84" y="1486" font-size="12.5" fill="var(--text-secondary)">redacted in every log line</text>
+    </g>
+
+    <g>
+      <rect x="976" y="1396" width="380" height="118" rx="8" fill="var(--core-tint)" stroke="var(--core)" stroke-width="1.6" stroke-dasharray="6 4"/>
+      <text x="994" y="1422" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">leadgen/server.py — 2nd front door</text>
+      <text x="994" y="1444" font-size="12.5" fill="var(--text-secondary)">same two tools over MCP protocol:</text>
+      <text x="994" y="1464" font-size="12.5" class="mono" fill="var(--text-secondary)">upsert_lead_profiles · get_lead_profile</text>
+      <text x="994" y="1486" font-size="12.5" fill="var(--text-secondary)">for email / text_voice / scheduling agents</text>
+    </g>
+
+    <!-- edges inside core -->
+    <line x1="446" y1="1312" x2="484" y2="1312" stroke="var(--core)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <line x1="976" y1="1312" x2="938" y2="1312" stroke="var(--core)" stroke-width="1.4" marker-start="url(#arr)"/>
+    <text x="945" y="1304" font-size="11" fill="var(--text-muted)">token</text>
+    <path d="M 1100 1372 L 1100 1394" fill="none" stroke="var(--core)" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="1112" y="1388" font-size="11" fill="var(--text-muted)">secret name → value</text>
+    <path d="M 446 1444 L 700 1444" fill="none" stroke="var(--core)" stroke-width="0"/>
+    <path d="M 976 1444 L 940 1444 L 940 1440" fill="none" stroke="var(--core)" stroke-width="0"/>
+    <path d="M 711 1440 L 711 1394" fill="none" stroke="var(--core)" stroke-width="0"/>
+    <path d="M 1176 1514 L 1176 1536 L 736 1536 L 736 1442" fill="none" stroke="var(--core)" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+    <text x="760" y="1530" font-size="11" fill="var(--text-muted)">delegates to the same crm.py functions — nothing reimplemented</text>
+
+    <!-- ═══════════ BAND F · EXTERNALS ═══════════ -->
+    <text x="40" y="1606" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">6 · EXTERNAL SYSTEMS &amp; RUN OUTPUTS</text>
+
+    <g>
+      <rect x="40" y="1620" width="320" height="96" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="58" y="1646" font-size="13.5" font-weight="700" fill="var(--text-primary)">Google Secret Manager</text>
+      <text x="58" y="1668" font-size="12" class="mono" fill="var(--text-secondary)">ldqfingsrv-dev (432617526728)</text>
+      <text x="58" y="1686" font-size="12" class="mono" fill="var(--text-secondary)">lqabr-hubspot-access-token</text>
+      <text x="58" y="1704" font-size="11.5" fill="var(--text-muted)">identity: ADC / runtime service account</text>
+    </g>
+    <path d="M 200 1618 L 200 1560 L 256 1560 L 256 1516" fill="none" stroke="var(--ext)" stroke-width="1.4" marker-start="url(#arr)"/>
+
+    <g>
+      <rect x="400" y="1620" width="320" height="96" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="418" y="1646" font-size="13.5" font-weight="700" fill="var(--text-primary)">HubSpot CRM</text>
+      <text x="418" y="1668" font-size="12" fill="var(--text-secondary)">Contacts + Companies + association</text>
+      <text x="418" y="1686" font-size="12" fill="var(--text-secondary)">system of record — 263/263 verified live</text>
+      <text x="418" y="1704" font-size="11.5" fill="var(--text-muted)">in: property JSON · out: hs_ids, search hits</text>
+    </g>
+    <path d="M 560 1618 L 560 1580 L 660 1580 L 660 1442" fill="none" stroke="var(--ext)" stroke-width="1.4" marker-start="url(#arr)" marker-end="url(#arr)"/>
+    <text x="580" y="1572" font-size="11" fill="var(--text-muted)">HTTPS (crm.py only)</text>
+
+    <g>
+      <rect x="760" y="1620" width="300" height="96" rx="8" fill="var(--fail-tint)" stroke="var(--fail)" stroke-width="1.6"/>
+      <text x="778" y="1646" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">errors/*.jsonl</text>
+      <text x="778" y="1668" font-size="12" class="mono" fill="var(--text-secondary)">schema_mismatch · transport_failures</text>
+      <text x="778" y="1686" font-size="12" class="mono" fill="var(--text-secondary)">unresolved</text>
+      <text x="778" y="1704" font-size="11.5" fill="var(--text-muted)">every non-pushed lead on file, with a reason</text>
+    </g>
+    <path d="M 910 1618 L 910 1590 L 800 1590 L 800 1442" fill="none" stroke="var(--fail)" stroke-width="1.4" marker-start="url(#arrF)"/>
+
+    <g>
+      <rect x="1100" y="1620" width="280" height="96" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="1118" y="1646" font-size="13.5" font-weight="700" fill="var(--text-primary)">stdout → Cloud Logging</text>
+      <text x="1118" y="1668" font-size="12" fill="var(--text-secondary)">four JSON streams, one run_id</text>
+      <text x="1118" y="1686" font-size="12" class="mono" fill="var(--text-secondary)">system · process · audit · tokens</text>
+      <text x="1118" y="1704" font-size="11.5" fill="var(--text-muted)">from lqabr_core.obs (band 3)</text>
+    </g>
+
+    <!-- ═══════════ BAND G · CONTAINER / DEPLOY STRIP ═══════════ -->
+    <text x="40" y="1776" font-size="13" font-weight="700" fill="var(--text-muted)" letter-spacing="1.5">7 · CONTAINER &amp; REGISTRY — build once, Swaroop deploys from the image</text>
+
+    <g>
+      <rect x="40" y="1790" width="300" height="96" rx="8" fill="var(--deploy-tint)" stroke="var(--deploy)" stroke-width="1.6"/>
+      <text x="58" y="1816" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">docker-compose.yml</text>
+      <text x="58" y="1838" font-size="12" fill="var(--text-secondary)">service <tspan class="mono">ldpf</tspan> — build args:</text>
+      <text x="58" y="1856" font-size="12" class="mono" fill="var(--text-secondary)">AGENT_DIR=lead_profile · SERVICE_KIND=agent</text>
+      <text x="58" y="1874" font-size="11.5" fill="var(--text-muted)">docker compose build ldpf · push ldpf</text>
+    </g>
+    <line x1="340" y1="1838" x2="398" y2="1838" stroke="var(--deploy)" stroke-width="1.4" marker-end="url(#arr)"/>
+
+    <g>
+      <rect x="400" y="1790" width="340" height="96" rx="8" fill="var(--deploy-tint)" stroke="var(--deploy)" stroke-width="1.6"/>
+      <text x="418" y="1816" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">infra/gcp/cloud-run/Dockerfile</text>
+      <text x="418" y="1838" font-size="12" fill="var(--text-secondary)">python:3.12-slim · pip install lqabr_core</text>
+      <text x="418" y="1856" font-size="12" fill="var(--text-secondary)">+ agent requirements · runs as <tspan class="mono">nobody</tspan></text>
+      <text x="418" y="1874" font-size="12" class="mono" fill="var(--text-secondary)">entrypoint.sh → adk api_server (:8080)</text>
+    </g>
+    <line x1="740" y1="1838" x2="798" y2="1838" stroke="var(--deploy)" stroke-width="1.4" marker-end="url(#arr)"/>
+
+    <g>
+      <rect x="800" y="1790" width="330" height="96" rx="8" fill="var(--deploy-tint)" stroke="var(--deploy)" stroke-width="1.6"/>
+      <text x="818" y="1816" font-size="13.5" font-weight="700" class="mono" fill="var(--text-primary)">lqabr-dev-ldpf</text>
+      <text x="818" y="1838" font-size="12" class="mono" fill="var(--text-secondary)">:0.1.0 + :latest · ~138 MB compressed</text>
+      <text x="818" y="1856" font-size="12" fill="var(--text-secondary)">no secrets baked — resolved at runtime</text>
+      <text x="818" y="1874" font-size="11.5" fill="var(--text-muted)">naming: &lt;project&gt;-&lt;env&gt;-&lt;component&gt;</text>
+    </g>
+    <line x1="1130" y1="1838" x2="1188" y2="1838" stroke="var(--deploy)" stroke-width="1.4" marker-end="url(#arr)"/>
+
+    <g>
+      <rect x="1190" y="1790" width="190" height="96" rx="8" fill="var(--ext-tint)" stroke="var(--ext)" stroke-width="1.6"/>
+      <text x="1208" y="1816" font-size="13.5" font-weight="700" fill="var(--text-primary)">Artifact Registry</text>
+      <text x="1208" y="1838" font-size="12" class="mono" fill="var(--text-secondary)">us-central1 / lqabr</text>
+      <text x="1208" y="1856" font-size="12" fill="var(--text-secondary)">PUSHED ✓ 03 Aug</text>
+      <text x="1208" y="1874" font-size="11.5" fill="var(--text-muted)">→ Cloud Run (Swaroop)</text>
+    </g>
+
+    <text x="40" y="1930" font-size="12" fill="var(--text-muted)">Failure doctrine everywhere: record-level → error file &amp; continue · transport → retry ladder, then error file · systemic → HALT, not_attempted, zero per-lead noise. A lead is never silently dropped.</text>
+    <text x="40" y="1952" font-size="12" fill="var(--text-muted)">Lead data touches ONLY: the CSVs → process memory → HubSpot. Never the session state, never a model context, never an artifact file.</text>
+  </svg>
+  </div>
+
+  <h2>File-to-file connections — inputs and outputs</h2>
+  <p class="note">Read each row as: this file <em>receives</em> the input from the file(s) on its left in the flow, and <em>hands</em> the output to the file(s) it calls.</p>
+  <table class="iotab">
+    <thead><tr><th>File</th><th>Input — comes from</th><th>Output — goes to</th><th>Why it exists</th></tr></thead>
+    <tbody>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>src/__init__.py</td>
+          <td>import by ADK loader (adk web / run / api_server) or Runner</td>
+          <td>re-exports <span class="mono">root_agent</span> from agent.py</td>
+          <td>ADK discovery — load-bearing import</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>agent.py</td>
+          <td><span class="mono">.env</span> (config + secret names) · <span class="mono">LQABR_ORCHESTRATOR</span></td>
+          <td>the selected orchestrator instance → pipeline_agent.py (default) or llm_agent.py (opt-in)</td>
+          <td>single switch point; also the headless entrypoint</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>pipeline_agent.py</td>
+          <td>operator text (ADK event) → <span class="mono">parse_command()</span></td>
+          <td>command dict → calls load_csv → build_profile → tools.filter_profiles → call_mcp; final text + <span class="mono">state_delta</span> back to caller</td>
+          <td>THE default orchestrator — deterministic, zero model</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>load_csv.py</td>
+          <td>3 CSVs from <span class="mono">data/incoming/</span> (or "… from &lt;path&gt;")</td>
+          <td><span class="mono">feed</span> (validated, header-aliased rows) → build_profile.py</td>
+          <td>Steps 1+2 — structural gate; halts naming the broken file</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>build_profile.py</td>
+          <td><span class="mono">feed</span> from load_csv.py; field contract from <span class="mono">lqabr_core…hubspot/schema.py</span></td>
+          <td>263 in-memory LeadProfile + unresolved list → pipeline_agent (selection), unresolved → crm.record_unresolved</td>
+          <td>Step 3 — the 9-pointer join, decision-makers only</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>tools.py</td>
+          <td>profiles + selection args (ids / industry / limit)</td>
+          <td>matched subset → call_mcp.py · also exposes the 6 FunctionTools for the opt-in LLM console</td>
+          <td>selection lives in ONE place for both orchestrators</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>call_mcp.py</td>
+          <td>selected profiles from tools.py</td>
+          <td>per-lead dicts → <span class="mono">crm.upsert_lead_profiles()</span>; RunSummary → pipeline_agent.py</td>
+          <td>Steps 4+5 — push loop, lead_ref_ids, circuit breaker</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--agent)"></span>llm_agent.py + model.py + callbacks.py</td>
+          <td>opt-in only (<span class="mono">LQABR_ORCHESTRATOR=llm</span>); API key via leadgen.secrets</td>
+          <td>same tools.py functions; callbacks feed the tokens log</td>
+          <td>operator console — never the default path</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core…hubspot/schema.py</td>
+          <td>raw LeadProfile dicts</td>
+          <td>normalised + validated profiles, HubSpot property payloads → crm.py</td>
+          <td>the 9-field data contract — names never drift</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core…hubspot/crm.py</td>
+          <td>profile payloads from call_mcp / server.py; token from auth.py</td>
+          <td>HTTPS to HubSpot (search → company → contact → associate); results/ids back; failures → errors/*.jsonl via failures.py taxonomy</td>
+          <td>the ONLY write path to the CRM</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core…hubspot/auth.py</td>
+          <td>mode from <span class="mono">HUBSPOT_AUTH_MODE</span>; secret value via leadgen/secrets.py</td>
+          <td>cached bearer token → crm.py (force-refreshed once on 401/403)</td>
+          <td>M2M auth utility <span class="mono">get_hubspot_token()</span></td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core/leadgen/secrets.py</td>
+          <td>logical name (e.g. <span class="mono">HUBSPOT_PRIVATE_APP_TOKEN</span>) + <span class="mono">LQABR_SECRET_*</span> env mapping</td>
+          <td>secret value from Google Secret Manager (ADC) → auth.py / model.py — redacted everywhere</td>
+          <td>fails closed; env backend for tests only</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core/obs (loggers.py · context.py)</td>
+          <td>events from every file above (run_id, lead_ref_id)</td>
+          <td>four JSON streams on stdout → Cloud Logging</td>
+          <td>system · process · audit · tokens(silent) observability</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--core)"></span>lqabr_core/leadgen/server.py</td>
+          <td>MCP calls from other agents (stdio / streamable-http)</td>
+          <td>delegates to the SAME crm.py functions</td>
+          <td>second front door — one implementation, no drift</td></tr>
+      <tr><td class="file"><span class="dot" style="background:var(--deploy)"></span>docker-compose.yml → infra/gcp/cloud-run/Dockerfile · entrypoint.sh</td>
+          <td>repo source (lqabr_core + agents/lead_profile)</td>
+          <td>image <span class="mono">lqabr-dev-ldpf:0.1.0/:latest</span> → Artifact Registry → Cloud Run (Swaroop)</td>
+          <td>build &amp; ship — no secrets baked, config at deploy time</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Guarantees the design encodes</h2>
+  <p class="note">
+    <b>Deterministic by default</b> — same input, same outcome; the tokens log staying empty is the proof a run used no model.
+    <b>One write path</b> — both front doors (in-process import and the MCP server) end in the same <span class="mono">crm.py</span> functions.
+    <b>Never drop a lead</b> — every non-pushed lead lands in an error file with a reason; systemic failures halt before per-lead noise.
+    <b>No secrets at rest</b> — files and image carry secret <em>names</em>; values exist only in Secret Manager and process memory.
+    <b>Lead data stays out of the model</b> — profiles live in the process heap; even the opt-in console only ever sees counts and ids.
+  </p>
+</div>
+</body>
+</html>

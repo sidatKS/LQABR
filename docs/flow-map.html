@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQABR lead_profile agent — execution flow map (Rev 5)</title>
+<style>
+  :root{
+    --bg:#ffffff; --ink:#1a1f28; --muted:#5b6472; --line:#d7dce3;
+    --box:#f4f6f9; --accent:#2456a6; --accent-ink:#ffffff;
+    --ok:#1e7a46; --warn:#a05a00; --err:#a02828; --code:#eef1f5;
+    --chip:#e8edf5; --chip-ink:#2456a6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12151a; --ink:#e8ebf0; --muted:#9aa4b2; --line:#333a45;
+      --box:#1a1f27; --accent:#7aa5e8; --accent-ink:#0e1116;
+      --ok:#5fca8e; --warn:#e0a458; --err:#e07070; --code:#20262f;
+      --chip:#243043; --chip-ink:#a8c4f0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+       padding:32px 20px 80px}
+  main{max-width:980px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px}
+  h2{font-size:19px;margin:44px 0 12px;padding-top:20px;border-top:1px solid var(--line)}
+  h3{font-size:15px;margin:22px 0 8px}
+  p.lead{color:var(--muted);margin:0 0 8px}
+  code,.f{font:13px/1.4 ui-monospace,"Cascadia Code",Consolas,monospace;
+     background:var(--code);padding:1px 6px;border-radius:4px;white-space:nowrap}
+  .badge{display:inline-block;font-size:12px;font-weight:600;border-radius:20px;
+     padding:2px 10px;margin-right:6px}
+  .b-ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+  .b-info{background:var(--chip);color:var(--chip-ink)}
+  /* flow boxes */
+  .flow{margin:18px 0}
+  .node{border:1.5px solid var(--line);border-radius:10px;background:var(--box);
+        padding:14px 18px;position:relative}
+  .node.entry{border-color:var(--accent)}
+  .node h4{margin:0 0 4px;font-size:14.5px}
+  .node .files{margin-top:8px}
+  .file-chip{display:inline-block;font:12px ui-monospace,Consolas,monospace;
+     background:var(--chip);color:var(--chip-ink);border-radius:5px;
+     padding:2px 8px;margin:2px 4px 0 0}
+  .node p{margin:6px 0 0;font-size:13.5px;color:var(--muted)}
+  .arrow{display:flex;align-items:center;gap:10px;margin:2px 0 2px 30px;
+     color:var(--muted);font-size:12.5px;min-height:34px}
+  .arrow::before{content:"";display:block;width:0;height:34px;
+     border-left:2px solid var(--line);margin-right:2px}
+  .arrow .lbl{transform:translateY(0)}
+  .branch{border-left:3px solid var(--err);border-radius:8px;background:var(--box);
+     padding:10px 14px;margin:8px 0 8px 46px;font-size:13px}
+  .branch.warn{border-left-color:var(--warn)}
+  .branch b{font-size:12.5px}
+  .branch .file-chip{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+  .branch.warn .file-chip{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;
+     color:var(--muted);border-bottom:2px solid var(--line);padding:8px 10px}
+  td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}
+  td:first-child{white-space:nowrap}
+  tr:hover td{background:color-mix(in srgb,var(--chip) 40%,transparent)}
+  .why{color:var(--muted)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .mini{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--box)}
+  .mini h4{margin:0 0 6px;font-size:13.5px}
+  .mini ol{margin:4px 0 0;padding-left:20px;font-size:13px;color:var(--muted)}
+  .mini ol li{margin:3px 0}
+  .note{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .kbd{font:12px ui-monospace,Consolas,monospace;border:1px solid var(--line);
+      border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--box)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>LQABR lead_profile agent — execution flow map</h1>
+<p class="lead">Rev 5 · 31 Jul 2026 · deterministic orchestrator (no model) ·
+one agentic run, CSVs → HubSpot CRM</p>
+<p>
+  <span class="badge b-ok">verified live: 263 built / 263 pushed / 0 failed</span>
+  <span class="badge b-info">165 tests</span>
+  <span class="badge b-info">zero LLM calls in the default path</span>
+</p>
+
+<!-- ==================================================================== -->
+<h2>0 · The three doors — one orchestrator</h2>
+<p class="lead">All three invocations construct and drive the <em>same</em>
+<code>root_agent</code>. There is no second code path.</p>
+
+<div class="cols">
+  <div class="mini"><h4><span class="kbd">adk web agents</span> / <span class="kbd">adk run …</span></h4>
+    <ol>
+      <li>ADK imports <span class="f">agents/lead_profile_agent/__init__.py</span> → <code>from . import agent</code></li>
+      <li>Importing <span class="f">agent.py</span> runs <code>_load_dotenv_if_present()</code> — agent-dir <span class="f">.env</span> first, then repo root</li>
+      <li><code>build_root_agent()</code> reads <code>LQABR_ORCHESTRATOR</code> (default <b>deterministic</b>; <code>llm</code> = opt-in; anything else raises)</li>
+      <li><code>root_agent = DeterministicLeadProfileAgent(…)</code> from <span class="f">pipeline_agent.py</span></li>
+    </ol>
+  </div>
+  <div class="mini"><h4><span class="kbd">lead-profile-agent</span> (headless / Cloud Run Job)</h4>
+    <ol>
+      <li><span class="f">pyproject.toml</span> <code>[project.scripts]</code> → <span class="f">agent.py</span><code>:main()</code></li>
+      <li><code>run_headless()</code> builds an ADK <code>InMemoryRunner</code> over the same <code>root_agent</code></li>
+      <li>Sends the fixed prompt <code>"run the pipeline …"</code>, streams events, maps session state → exit code 0 / 2 / 3</li>
+    </ol>
+    <p class="note">Same orchestrator in dev and prod — no drift possible.</p>
+  </div>
+</div>
+
+<!-- ==================================================================== -->
+<h2>1 · The run, start to end</h2>
+
+<div class="flow">
+
+  <div class="node entry">
+    <h4>Turn begins — ADK Runner delivers the operator message</h4>
+    <div class="files"><span class="file-chip">pipeline_agent.py · _run_async_impl()</span></div>
+    <p>Binds <code>RunContext(run_id = ADK invocation_id, uses_model=False)</code> and the
+    Observability bundle — so every log line of this run correlates with the
+    <em>adk web</em> event view. Emits <code>container_up</code> (memory/CPU snapshot) and
+    <code>agent_invoked</code>.</p>
+    <div class="files"><span class="file-chip">lib/obs/context.py</span><span class="file-chip">lib/obs/loggers.py</span></div>
+  </div>
+
+  <div class="arrow"><span class="lbl">operator text</span></div>
+
+  <div class="node">
+    <h4>Command parsing — written rules, never a guess</h4>
+    <div class="files"><span class="file-chip">pipeline_agent.py · parse_command()</span></div>
+    <p><code>run the pipeline</code> · <code>… limit 5</code> · <code>dry run</code> ·
+    <code>lookup E1042</code> / <code>lookup email a@b.c</code> ·
+    anything unrecognised → usage help. The parsed command is logged
+    (<code>operator_command</code>) so the interpretation is itself auditable.</p>
+  </div>
+
+  <div class="arrow"><span class="lbl">action = run</span></div>
+
+  <div class="node">
+    <h4>STEP 1+2 — load &amp; structurally validate the three CSVs</h4>
+    <div class="files"><span class="file-chip">src/load_csv.py · load_csvs()</span></div>
+    <p>Reads <code>employees_with_company_sample.csv</code>,
+    <code>employee_contacts_5234.csv</code>, <code>companies_clean_734.csv</code>
+    (UTF-8-sig, BOM/CRLF-safe). Asserts required columns per file.
+    Unit-suffixed columns get deterministic aliasing: the real feed's
+    <code>Annual_Revenue (₹)</code> matches the contract's
+    <code>Annual_Revenue (M)</code> by exactly-one-prefix rule; ambiguity halts;
+    every alias is logged (<code>column_alias_applied</code>).</p>
+  </div>
+
+  <div class="branch"><b>HALT — structural feed failure.</b>
+    Missing file or column raises <span class="file-chip">CsvStructureError</span>
+    naming the exact file + column. Agent yields
+    <em>“HALTED — … No lead was pushed”</em>, state <code>feed_loaded=false</code>,
+    headless exit code <b>2</b>. Nothing downstream runs.</div>
+
+  <div class="arrow"><span class="lbl">RawFeed (3 in-memory row lists)</span></div>
+
+  <div class="node">
+    <h4>STEP 3 — build the decision-maker profile list, in memory only</h4>
+    <div class="files"><span class="file-chip">src/build_profile.py · build_profiles()</span></div>
+    <p>Indexes contacts by <code>(Employee_ID, Company_ID)</code> and companies by
+    <code>Company_ID</code> — duplicate source rows are counted and logged, never
+    silently overwritten. Keeps rows where <code>Decision_Maker_Flag == "yes"</code>
+    (the single source of truth in <span class="f">schema.py</span>). Both joins resolve →
+    <code>LeadProfile</code> (9-field contract); either missing →
+    <code>UnresolvedLead</code>. Counts reconcile:
+    <code>decision_makers_seen = profiles + unresolved + duplicates</code>.</p>
+    <div class="files"><span class="file-chip">lqabr_mcp/hubspot/schema.py · LeadProfile</span></div>
+  </div>
+
+  <div class="arrow"><span class="lbl">unresolved leads persisted — never dropped</span></div>
+
+  <div class="node">
+    <h4>Unresolved evidence written to disk</h4>
+    <div class="files"><span class="file-chip">lqabr_mcp/hubspot/crm.py · record_unresolved()</span></div>
+    <p>→ <code>errors/unresolved.jsonl</code> with run_id + reason per lead.
+    (On Cloud Run, <code>errors/</code> lives on the mounted GCS volume.)</p>
+  </div>
+
+  <div class="branch warn"><b>EXIT — dry run.</b> If the operator said
+    <code>dry run</code>, the agent reports the counts and stops here: no HubSpot
+    call, no token minted. This is how <b>263</b> was confirmed before any write.</div>
+
+  <div class="arrow"><span class="lbl">list[LeadProfile] (limit applied if requested)</span></div>
+
+  <div class="node">
+    <h4>STEP 4 — the loop: one in-process MCP call per lead</h4>
+    <div class="files"><span class="file-chip">src/call_mcp.py · push_profiles()</span></div>
+    <p>For each profile: mint a unique <code>lead_ref_id</code>
+    (<span class="f">lib/obs/context.py</span>), then call
+    <code>upsert_lead_profiles()</code> — a Python call, not a network hop.
+    Tallies the three-way outcome (<code>pushed</code> / <code>failed_record</code> /
+    <code>failed_transport</code>) into <code>RunSummary</code>; a
+    <b>circuit breaker</b> (<span class="f">failures.py</span>) halts the run after N
+    consecutive transport failures so an outage never masquerades as N bad leads.</p>
+  </div>
+
+  <div class="arrow"><span class="lbl">per lead — in-process</span></div>
+
+  <div class="node">
+    <h4>STEP 5 — TOOL 1: <code>upsert_lead_profiles</code> (the only writer)</h4>
+    <div class="files"><span class="file-chip">lqabr_mcp/hubspot/crm.py</span><span class="file-chip">lqabr_mcp/hubspot/schema.py</span></div>
+    <p>Per lead: <b>(1)</b> normalise-then-validate (baseline, no network) →
+    <b>(2)</b> Company search-by-<code>company_id</code> → PATCH/POST →
+    <b>(3)</b> Contact search-by-<code>employee_id</code> → PATCH/POST →
+    <b>(4)</b> associate (v4 default). Company before Contact, so a rejection
+    can never orphan a Contact in a lead pipeline. Create+update = one
+    idempotent upsert. Duplicate dedup-keys in HubSpot are detected
+    (search limit 2) and logged.</p>
+  </div>
+
+  <div class="arrow"><span class="lbl">before EVERY HubSpot HTTP call</span></div>
+
+  <div class="node">
+    <h4>STEP A — M2M auth: <code>get_hubspot_token()</code></h4>
+    <div class="files"><span class="file-chip">lqabr_mcp/hubspot/auth.py</span><span class="file-chip">lib/secrets.py</span></div>
+    <p><code>TokenCache</code> → <code>TokenProvider</code>
+    (<code>private_app</code> interim · <code>refresh_token</code> target — mode has
+    <b>no default</b>, unset is an error). The credential itself is resolved at
+    runtime from <b>Google Secret Manager</b>
+    (<code>lqabr-hubspot-access-token</code>) under ADC / workload identity —
+    audit-logged, value redacted, cached 15 min, never on disk or in
+    <code>os.environ</code>.</p>
+  </div>
+
+  <div class="branch"><b>HALT — systemic failure.</b> Auth/secret misconfiguration
+    raises <span class="file-chip">SystemicFailure</span>: the run stops, remaining
+    leads are reported <code>not_attempted</code>, and <b>no per-lead error record is
+    written</b> — one missing credential is never “263 bad leads”. Headless exit 2.</div>
+  <div class="branch warn"><b>RETRY ladder (per HTTP call)</b> —
+    <span class="f">crm.py · HubSpotHttp.request()</span>: transport exceptions
+    retried with backoff · 429/5xx retried honouring <code>Retry-After</code> ·
+    401/403 retried once with a <b>forced token refresh</b>. Exhausted →
+    <code>transport_failures.jsonl</code>. HubSpot 400/409/422 →
+    <code>schema_mismatch.jsonl</code> with lead_ref_id + stage_reached +
+    any ids already written. The run continues either way.</div>
+
+  <div class="arrow"><span class="lbl">RunSummary</span></div>
+
+  <div class="node entry">
+    <h4>Turn ends — summary event + state delta</h4>
+    <div class="files"><span class="file-chip">pipeline_agent.py</span></div>
+    <p>Final event: pushed / failed_record / failed_transport / not_attempted /
+    unresolved / run_id — “No lead was dropped: every non-pushed lead is on file
+    with a reason.” Session state (<code>pushed</code>, <code>failed</code>,
+    <code>halted</code>) travels as <code>EventActions.state_delta</code>.
+    <code>agent_complete</code> + <code>container_down</code> close the four logs.
+    Headless exit: <b>0</b> clean · <b>2</b> structural/systemic halt ·
+    <b>3</b> completed with per-record failures.</p>
+  </div>
+
+</div>
+
+<!-- ==================================================================== -->
+<h2>2 · STEP 6 — the read path (not part of the pipeline)</h2>
+<div class="cols">
+  <div class="mini"><h4>Operator: <span class="kbd">lookup E1042</span></h4>
+    <ol>
+      <li><span class="f">pipeline_agent.py · _do_lookup()</span> → <span class="f">crm.py · get_lead_profile()</span></li>
+      <li>Contact search by <code>employee_id</code> (or the <b>custom</b> <code>email_id</code> property) → associated Company → 9-field profile + <code>contact_hs_id</code>/<code>company_hs_id</code></li>
+      <li><code>company_resolved=false</code> + <code>warnings[]</code> whenever the company half could not be read — never a silently half-empty profile</li>
+    </ol>
+  </div>
+  <div class="mini"><h4>Other agents (email / voice / scheduler)</h4>
+    <ol>
+      <li>In the same process: <code>from lqabr_mcp.hubspot import get_lead_profile</code></li>
+      <li>Cross-process / cross-language: <span class="f">lqabr_mcp/server.py</span> serves the <b>same two functions</b> over the MCP protocol (stdio / streamable-http) for ADK <code>MCPToolset</code></li>
+    </ol>
+    <p class="note">Two front doors, one implementation — the write path cannot fork.</p>
+  </div>
+</div>
+
+<!-- ==================================================================== -->
+<h2>3 · Every file: where it runs, and why it exists</h2>
+
+<h3>Agent package — <code>agents/lead_profile_agent/</code></h3>
+<table>
+<tr><th>file</th><th>executes at</th><th>why it needs to exist</th></tr>
+<tr><td class="f">__init__.py</td><td>import time (adk discovery)</td>
+  <td class="why"><code>from . import agent</code> is the hook <em>adk run/web</em> use to find <code>root_agent</code>. Load-bearing, not decorative.</td></tr>
+<tr><td class="f">agent.py</td><td>import time + headless entry</td>
+  <td class="why">The single place the orchestrator is chosen (<code>LQABR_ORCHESTRATOR</code>) and the headless door (<code>run_headless</code>/<code>main</code>). Loads .env <em>before</em> the choice is read; guarantees dev and prod drive the identical agent.</td></tr>
+<tr><td class="f">pipeline_agent.py</td><td>every turn (default)</td>
+  <td class="why">The deterministic orchestrator — Steps 1–5 as one agentic run with zero model calls. Exists so §7.4 holds, the pipeline has no LLM outage mode, and every branch is a written, testable rule.</td></tr>
+<tr><td class="f">llm_agent.py</td><td>only when <code>LQABR_ORCHESTRATOR=llm</code></td>
+  <td class="why">The opt-in conversational console over the same tools — free-form phrasing, failure triage in plain language. Its failure breaks a chat, never ingestion.</td></tr>
+<tr><td class="f">tools.py</td><td>LLM variant tool calls</td>
+  <td class="why">Wraps the step functions as JSON-schema-able ADK tools with preconditions (<code>next_step</code> refusals) and a process-local run store, so a model can orchestrate but never see, skip, or reorder the data work.</td></tr>
+<tr><td class="f">callbacks.py</td><td>LLM variant lifecycle</td>
+  <td class="why">Bridges ADK callbacks to the four logs: run_id = invocation id, every tool choice audited, <code>after_model</code> feeds the tokens log — the FR’s “tokens wherever a model runs”.</td></tr>
+<tr><td class="f">model.py</td><td>first model call (LLM variant)</td>
+  <td class="why"><code>SecretBackedLiteLlm</code>: resolves the API key lazily from Secret Manager, passes it in-memory to LiteLLM — never into <code>os.environ</code>, never at import.</td></tr>
+<tr><td class="f">container_definition.py</td><td>read, not executed</td>
+  <td class="why">Machine-readable architecture: in-process MCP dependency, required env, secret names, orchestrator default. Asserted by tests, so the declared design can’t drift from reality.</td></tr>
+<tr><td class="f">src/load_csv.py</td><td>Step 1+2</td>
+  <td class="why">The feed boundary: fail loudly on structural problems <em>before</em> any processing, name file+column exactly, alias unit-suffixed headers deterministically. Per-file path overrides are the future BigQuery swap point.</td></tr>
+<tr><td class="f">src/build_profile.py</td><td>Step 3</td>
+  <td class="why">The join+filter that produces the in-memory lead list — the FR’s “no JSON artifact” rule lives here. Reports (never hides) duplicates and unresolved rows; counts must reconcile.</td></tr>
+<tr><td class="f">src/call_mcp.py</td><td>Step 4</td>
+  <td class="why">The per-lead loop and the run’s bookkeeping: lead_ref_id minting, three-way failure tally, circuit breaker. Keeps “driving the pipeline” separate from “talking to HubSpot”.</td></tr>
+</table>
+
+<h3>Central MCP — <code>lqabr_mcp/</code> <span class="badge b-info">shared with email / voice / gateway</span></h3>
+<table>
+<tr><th>file</th><th>executes at</th><th>why it needs to exist</th></tr>
+<tr><td class="f">hubspot/schema.py</td><td>Steps 3 &amp; 5</td>
+  <td class="why">The 9-field data contract as code — field names and HubSpot property names (incl. custom <code>email_id</code>), payload mapping, baseline validation. One definition every agent shares; renaming anything here breaks the platform on purpose.</td></tr>
+<tr><td class="f">hubspot/crm.py</td><td>Steps 5 &amp; 6</td>
+  <td class="why">The only two tools: <code>upsert_lead_profiles</code> (sole writer: search→upsert→associate, retry ladder, error-file routing) and <code>get_lead_profile</code> (sole reader). One HTTP transport = one place to audit-log and one place to mock.</td></tr>
+<tr><td class="f">hubspot/auth.py</td><td>Step A (every HubSpot call)</td>
+  <td class="why">M2M token utility behind one <code>TokenProvider</code> interface — interim <code>private_app</code> and target <code>refresh_token</code> swap by config, no call-site change. No default mode: the non-compliant path must be chosen deliberately.</td></tr>
+<tr><td class="f">hubspot/failures.py</td><td>Steps 4–5 error paths</td>
+  <td class="why">The failure taxonomy (record / transport / systemic) + circuit breaker. Exists so “263 leads failed” can never again mean “one env var was missing” or “HubSpot was down”.</td></tr>
+<tr><td class="f">server.py</td><td>separate process (other agents)</td>
+  <td class="why">The same two tools over the real MCP protocol — a language-agnostic contract for the other three agents that cannot drift, because it calls the identical functions.</td></tr>
+<tr><td class="f">__init__.py</td><td>import time</td>
+  <td class="why">Named <code>lqabr_mcp</code>, not <code>mcp</code> — a top-level <code>mcp</code> package shadows the official MCP SDK this repo depends on.</td></tr>
+</table>
+
+<h3>Shared platform — <code>lib/</code></h3>
+<table>
+<tr><th>file</th><th>executes at</th><th>why it needs to exist</th></tr>
+<tr><td class="f">obs/context.py</td><td>run start; per lead</td>
+  <td class="why">Identity: one <code>run_id</code> spans the run (= ADK invocation id), one <code>lead_ref_id</code> per record minted <em>before</em> the write, so a failed insert is individually traceable. ContextVar-scoped so co-resident agents can’t steal each other’s run.</td></tr>
+<tr><td class="f">obs/loggers.py</td><td>every log line</td>
+  <td class="why">The four streams (system/process/audit/tokens) as JSON to stdout, keyed by run_id + lead_ref_id. Never raises — observability can’t kill a run. Tokens stream auto-follows <code>uses_model</code>: silent here, live for model agents.</td></tr>
+<tr><td class="f">secrets.py</td><td>first credential use, then cached</td>
+  <td class="why">Runtime Secret Manager resolution under ADC/workload identity — Mahi’s “never an environment variable” made literal. Fails closed, redacts every log, audit-logs every fetch, strips dotenv comment pollution. One resolver for all five credentials across all four agents.</td></tr>
+</table>
+
+<h3>Configuration, build &amp; verification</h3>
+<table>
+<tr><th>file</th><th>role</th><th>why it needs to exist</th></tr>
+<tr><td class="f">pyproject.toml + uv.lock</td><td>dependency truth</td>
+  <td class="why">uv-managed, no requirements.txt; the committed lock makes every build byte-reproducible (<code>uv sync --frozen</code>).</td></tr>
+<tr><td class="f">.python-version</td><td>interpreter pin (3.12)</td>
+  <td class="why">Dev venv = container interpreter; kills a whole class of “works on my machine”.</td></tr>
+<tr><td class="f">Dockerfile + .dockerignore</td><td>Cloud Run Job image</td>
+  <td class="why">Non-root, frozen deps, inputs/error-files on a GCS volume at <code>/data</code> — the container FS is ephemeral, the never-drop evidence must not be.</td></tr>
+<tr><td class="f">.env.example (×2)</td><td>config templates</td>
+  <td class="why">Names only, never values. The agent-dir copy exists because ADK reads .env from the agent directory, not the repo root.</td></tr>
+<tr><td class="f">tests/ (11 files, 165 tests)</td><td><code>uv run pytest</code></td>
+  <td class="why">Contract lock (field/property names), failure taxonomy, retries, secrets leak-checks, both orchestrators end-to-end against a stateful fake HubSpot, hermetic from any developer .env. Runs with zero credentials.</td></tr>
+<tr><td class="f">docs/ (AGENT, SECRETS, AUTH, this map)</td><td>reference</td>
+  <td class="why">The decisions and their reasons — §7.4 restoration, auth modes, secret runbook — so the next person inherits the <em>why</em>, not just the code.</td></tr>
+</table>
+
+<p class="note" style="margin-top:36px">
+Generated 31 Jul 2026 from the Rev 5 tree · verified against the live 263/263 run ·
+supersedes the Rev 4 CLI flow map.</p>
+
+</main>
+</body>
+</html>
