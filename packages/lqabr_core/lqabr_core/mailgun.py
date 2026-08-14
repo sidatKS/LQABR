@@ -2,6 +2,10 @@
 
 Secrets (Secret Manager): lqabr-mailgun-api-key, lqabr-mailgun-webhook-signing-key.
 Config (env): MAILGUN_DOMAIN, MAILGUN_FROM (e.g. "LQABR <outreach@mg.example.com>").
+  MAILGUN_FROM must be on MAILGUN_DOMAIN so the From aligns with DKIM/the
+  envelope sender — a From on a different domain makes clients show the VERP
+  bounce address and "on behalf of". Optional MAILGUN_REPLY_TO routes human
+  replies to a mailbox on any domain without breaking that alignment.
 
 Tracking: messages are sent with opens/clicks tracking enabled; Mailgun then
 POSTs `delivered` / `opened` / `clicked` events to our webhook
@@ -32,12 +36,17 @@ class MailgunError(RuntimeError):
 class MailgunClient:
     def __init__(self, api_key: Optional[str] = None, domain: Optional[str] = None,
                  sender: Optional[str] = None, session: Optional[requests.Session] = None,
-                 max_retries: int = 3) -> None:
+                 max_retries: int = 3, reply_to: Optional[str] = None) -> None:
         self._api_key = api_key or get_secret("lqabr-mailgun-api-key")
         self._domain = domain or os.environ.get("MAILGUN_DOMAIN", "")
         if not self._domain:
             raise MailgunError("MAILGUN_DOMAIN is not configured")
         self._sender = sender or os.environ.get("MAILGUN_FROM", f"LQABR <outreach@{self._domain}>")
+        # Keep From on the sending domain so it aligns with DKIM/the envelope
+        # (no "on behalf of"), but let human replies land in a real mailbox on
+        # any domain. Empty/unset -> no Reply-To header, replies go to From.
+        self._reply_to = (reply_to if reply_to is not None
+                          else os.environ.get("MAILGUN_REPLY_TO", "")).strip()
         self._session = session or requests.Session()
         self._max_retries = max_retries
 
@@ -46,7 +55,7 @@ class MailgunClient:
                    variables: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Send one tracked email. `variables` are attached as Mailgun user
         variables and echoed back in webhook events (we always attach
-        contact_id so events can be tied back to the lead)."""
+        hubspot_contact_id so events can be tied back to the lead)."""
         data: Dict[str, Any] = {
             "from": self._sender,
             "to": to,
@@ -56,6 +65,9 @@ class MailgunClient:
             "o:tracking-opens": "yes",
             "o:tracking-clicks": "yes",
         }
+        if self._reply_to:
+            # Mailgun passes arbitrary MIME headers via the `h:` prefix.
+            data["h:Reply-To"] = self._reply_to
         if text:
             data["text"] = text
         for tag in tags or []:
@@ -69,7 +81,13 @@ class MailgunClient:
             try:
                 resp = self._session.post(f"{API_BASE}/{self._domain}/messages",
                                           auth=("api", self._api_key), data=data, timeout=30)
-            except requests.RequestException as exc:
+            # `requests.RequestException` is a SUBCLASS of OSError, not a
+            # superset: a plain OSError raised below the requests layer
+            # (a missing/unreadable TLS CA bundle, socket exhaustion, a
+            # DNS failure surfacing from the OS) is NOT caught by
+            # `except RequestException` and would escape this retry loop
+            # as an unhandled 500. Catch both.
+            except (requests.RequestException, OSError) as exc:
                 last = str(exc)
             else:
                 if resp.status_code == 200:
