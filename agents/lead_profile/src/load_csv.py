@@ -72,7 +72,7 @@ class RawFeed:
 
 
 def default_incoming_dir() -> Path:
-    return Path(os.getenv("LQABR_INCOMING_DIR", "data/incoming"))
+    return Path(os.getenv("LQABR_INCOMING_DIR", "data/seeds/b2b"))
 
 
 def _read_one(path: Path, required: tuple[str, ...]) -> list[dict[str, str]]:
