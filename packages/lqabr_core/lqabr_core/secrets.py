@@ -1,12 +1,11 @@
 """Secret access for LQABR.
 
-All service credentials (MailGun, Twilio, HubSpot, ZoomInfo, Zoom, the model
-provider) live in Google Secret Manager — never hard-coded, never committed.
-Locally, a git-ignored `.env` exporting the same names is the fallback so
-agents run without GCP access.
+All service credentials (MailGun, Twilio, HubSpot, ZoomInfo, Zoom) live in
+Google Secret Manager — never hard-coded, never committed. Locally, a
+git-ignored `.env` exporting the same names is the fallback so agents run
+without GCP access.
 
-Secret names (provisioned by infra/gcp/02_secret_manager.sh via config.sh /
-config.dev.sh):
+Secret names (provisioned by infra/gcp/02_secret_manager.sh):
 
     lqabr-hubspot-access-token
     lqabr-mailgun-api-key
@@ -19,8 +18,6 @@ config.dev.sh):
     lqabr-zoom-client-id
     lqabr-zoom-client-secret
     lqabr-zoom-webhook-secret-token
-    lqabr-anthropic-api-key   (bridged to ANTHROPIC_API_KEY for litellm/ADK
-                                by lqabr_core.model.ensure_provider_key())
 
 Where a value comes from is controlled by ``LQABR_SECRETS_SOURCE``:
 

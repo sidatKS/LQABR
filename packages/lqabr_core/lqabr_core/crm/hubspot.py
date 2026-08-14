@@ -23,6 +23,15 @@ are real, currently-existing enumeration fields. Field mapping:
                       the HubSpot UI, but the real property name has the
                       `lqabr_` prefix) — written by record_event() for
                       VOICEMAIL_LEFT/CALL_ANSWERED/CALL_ENGAGED
+    email_status      lqabr_email_status — read-only here (nothing in this
+                      file writes it; the Email Agent does). Must be in
+                      _PROPERTIES and mapped into extra{} on every read path
+                      (_from_contact), or callers like outreach.py's
+                      already-sent gate see extra["email_status"] missing,
+                      default to "PENDING", and re-send (found via live
+                      testing 2026-08-14 — the direct-GET path was missing
+                      both; the batch-search path's _row_to_profile in
+                      mcp/hubspot/crm.py already set it correctly).
     stage             not stored — derived from probability on read
                       (see stage_for_probability)
 
@@ -55,6 +64,7 @@ BASE_URL = "https://api.hubapi.com"
 _PROPERTIES = [
     "firstname", "lastname", "jobtitle", "company", "email", "email_id", "phone",
     "employee_id", "decision_maker", "opted_out", "probability", "lqabr_voice_status",
+    "lqabr_email_status",
 ]
 
 # EventType -> lqabr_voice_status value (enumeration: PENDING, INITIATED,
@@ -177,7 +187,8 @@ class HubSpotClient(CRMClient):
             object_id=contact.get("id"),
             opted_out=p.get("opted_out") == "true",
             extra={"decision_maker": p.get("decision_maker"),
-                   "voice_status": p.get("lqabr_voice_status")},
+                   "voice_status": p.get("lqabr_voice_status"),
+                   "email_status": p.get("lqabr_email_status")},
         )
 
     # ----------------------------------------------------------------- api
