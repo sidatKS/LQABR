@@ -1,0 +1,28 @@
+# agents/gateway — Agent Gateway (HubSpot trigger routing, Rev 3)
+#
+# Deliberately short. The gateway routes a trigger id; it holds no lead data,
+# calls no model, and touches no CRM SDK. Anything heavier than this list is a
+# sign that something has leaked in that belongs in an agent.
+#
+# Note there is no lqabr_core dependency: the gateway must not import the
+# LeadProfile types, because it must never be in a position to carry one.
+
+fastapi>=0.111
+uvicorn>=0.30
+requests>=2.31
+PyYAML>=6.0
+
+# Local development only: lets `uvicorn server:app` pick up config/.env.
+# Deployed environments inject real env vars, so this is never load-bearing —
+# server.py degrades silently if it is absent.
+python-dotenv>=1.0
+
+# Test-only
+# pytest>=8
+# responses>=0.25
+# httpx>=0.27          # required by fastapi.testclient
+
+# The orchestrator runtime is Solo.io agentgateway, run as a sidecar in this
+# container — not a Python package. It is installed in the image, not by pip:
+#   curl -sL https://agentgateway.dev/install | bash
+# and configured by config/agentgateway.yaml. See lib/soloai/__init__.py (D-02).

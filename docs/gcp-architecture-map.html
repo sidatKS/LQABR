@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Lead Qualifying Service</title>
+<style>
+  :root{
+    --ink:#0f172a; --mut:#5b6b83; --line:#e2e8f0;
+    --agent:#4f46e5; --gateway:#0d9488; --hub:#ea580c; --dep:#7c3aed; --service:#6366f1; --future:#c026d3; --proc:#0891b2;
+    --live:#16a34a; --built:#2563eb; --blocked:#f59e0b; --ext:#64748b; --data:#0891b2; --plan:#a855f7;
+    --shadow:0 14px 34px rgba(15,23,42,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);overflow:hidden;background:#eef3fb}
+
+  header{position:relative;z-index:30;padding:13px 22px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+    background:rgba(255,255,255,.86);border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+  .brand{display:flex;align-items:center;gap:12px;min-width:250px;cursor:pointer}
+  .brand .glyph{width:36px;height:36px;border-radius:50%;background:conic-gradient(from 140deg,#4f46e5,#0d9488,#ea580c,#7c3aed,#4f46e5);flex:none;box-shadow:0 4px 12px rgba(79,70,229,.3)}
+  .brand h1{font-size:15.5px;margin:0;letter-spacing:.2px;font-weight:800}
+  .brand p{margin:2px 0 0;font-size:11px;color:var(--mut);letter-spacing:.3px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--mut)}
+  .legrp{display:flex;gap:11px;align-items:center}
+  .legrp + .legrp{border-left:1px solid var(--line);padding-left:18px}
+  .legrp .cap{font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#94a3b8;font-size:9.5px;margin-right:4px}
+  .lg{display:flex;align-items:center;gap:6px}
+  .swatch{width:12px;height:12px;border-radius:50%;flex:none;border:2px solid #fff;box-shadow:0 0 0 1.5px currentColor}
+  .sdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .hint{margin-left:auto;font-size:11px;color:var(--mut);display:flex;gap:10px;align-items:center}
+  .kbd{border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:10.5px;color:var(--ink);background:#fff}
+
+  main{position:absolute;inset:0;overflow:hidden;cursor:grab;
+    background:radial-gradient(1200px 700px at 22% 12%,rgba(79,70,229,.06),transparent 60%),
+               radial-gradient(1100px 700px at 88% 90%,rgba(13,148,136,.06),transparent 60%),
+               linear-gradient(135deg,#f6f9fe,#e9eff9)}
+  main::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(circle,#c7d2e2 1px,transparent 1.4px);background-size:30px 30px;opacity:.35}
+  main.grabbing{cursor:grabbing}
+  #scene{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #scene.anim{transition:transform .64s cubic-bezier(.22,.61,.36,1)}
+  #wires{position:absolute;top:0;left:0;overflow:visible}
+  .wire{fill:none;stroke:#9fb0c9;stroke-width:2.4}
+  .wire.dash{stroke-dasharray:7 6}
+  .wire.svc{stroke:#cbd5e1;stroke-width:1.5;stroke-dasharray:2 6;stroke-linecap:round}
+  .wire.hidden{display:none}
+  .wlabel{position:absolute;transform:translate(-50%,-50%);font-size:11.5px;font-weight:600;background:#fff;
+    border:1px solid var(--line);border-radius:20px;padding:3px 10px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 6px rgba(15,23,42,.06)}
+  .wlabel.hidden{display:none}
+
+  .node{position:absolute;border-radius:50%;cursor:pointer;background:#fff;
+    border:3px solid var(--ac,#4f46e5);box-shadow:var(--shadow);
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    transition:transform .2s ease,box-shadow .2s ease,opacity .3s ease}
+  .node:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 20px 42px rgba(15,23,42,.16)}
+  .node.sel{box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 22%,transparent),0 20px 44px rgba(15,23,42,.18)}
+  .node.hidden{display:none}
+  .node.svc,.node.ghost{animation:pop .38s cubic-bezier(.2,.8,.3,1.25) both}
+  @keyframes pop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+  .node.exp::after{content:"";position:absolute;inset:-9px;border-radius:50%;border:1.5px dashed var(--ac);opacity:.55;animation:spin 16s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .node.ghost{border-style:dashed;border-width:2.5px;background:rgba(255,255,255,.72);
+    box-shadow:0 0 0 10px color-mix(in srgb,var(--ac) 9%,transparent);filter:blur(.6px);opacity:.92;pointer-events:none}
+  .node.ghost .c-title{color:var(--ac);opacity:.9}
+  .node.ghost .c-tag{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut);margin-top:4px;font-weight:700}
+
+  .c-inner{padding:6px 12px;max-width:94%}
+  .c-title{font-weight:800;line-height:1.14;letter-spacing:.1px;font-size:12.5px;color:var(--ac)}
+  .node.big .c-title{font-size:15px}
+  /* Agents: emphasised — bold + italic + larger so they read as the actors (toggled by CONFIG.emphasizeAgents) */
+  .emph-agents .node[data-role="agent"] .c-title{font-style:italic;font-weight:900;font-size:14.5px;letter-spacing:.2px}
+  .emph-agents .node.big[data-role="agent"] .c-title{font-size:18px}
+  .c-pill{display:inline-flex;align-items:center;gap:5px;margin-top:7px;font-size:8.5px;font-weight:800;letter-spacing:.5px;
+    text-transform:uppercase;color:var(--sc);background:color-mix(in srgb,var(--sc) 12%,#fff);border:1px solid color-mix(in srgb,var(--sc) 30%,#fff);
+    padding:2px 8px;border-radius:20px}
+  .c-pill .sdot{width:6px;height:6px;background:var(--sc)}
+
+  .cap{position:absolute;text-align:center;font-size:11px;line-height:1.35;color:var(--mut);pointer-events:none;transition:opacity .3s}
+  .cap b{color:#334155;font-weight:700}
+  .cap.hidden{display:none}
+
+  .ctrls{position:absolute;left:18px;bottom:18px;z-index:25;display:flex;flex-direction:column;gap:8px}
+  .btn{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:19px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  .btn:hover{background:#f1f5fb}
+  .btn.wide{width:auto;padding:0 16px;height:42px;font-size:13px;font-weight:700;gap:7px;border-radius:22px}
+
+  #info{position:absolute;right:16px;top:16px;bottom:16px;width:322px;z-index:26;background:#fff;border:1px solid var(--line);
+    border-radius:18px;box-shadow:var(--shadow);padding:20px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+  #info::-webkit-scrollbar{width:8px}#info::-webkit-scrollbar-thumb{background:#dbe3ee;border-radius:8px}
+  #info .crumb{font-size:11px;color:var(--mut);letter-spacing:.4px;font-weight:700}
+  #info h2{font-size:19px;margin:0;line-height:1.2}
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .pchip{font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;display:flex;align-items:center;gap:6px;
+    padding:4px 11px;border-radius:20px;border:1px solid var(--line)}
+  #info .desc{font-size:13px;line-height:1.56;color:#334155}
+  .mrow{display:flex;gap:10px;font-size:12px;align-items:flex-start}
+  .mrow b{color:var(--mut);font-weight:700;min-width:66px;flex:none}
+  .sumline{display:flex;align-items:center;gap:9px;font-size:12.3px;padding:8px 0;border-top:1px solid var(--line)}
+  .sumline .sdot{width:9px;height:9px}
+  .exec ul{margin:6px 0 0;padding-left:18px}
+  .exec li{font-size:12.5px;line-height:1.5;margin-bottom:7px;color:#334155}
+  .svcnote{font-size:11.5px;color:var(--mut);border-top:1px solid var(--line);padding-top:10px}
+  .footer{margin-top:auto;font-size:10.5px;color:#94a3b8;border-top:1px solid var(--line);padding-top:10px;line-height:1.5}
+
+  #hero{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(900px 600px at 50% 42%,#ffffff,#e9eff9);transition:opacity .6s ease}
+  #hero.hide{opacity:0;pointer-events:none}
+  .hero-ring{padding:6px;border-radius:50%;background:conic-gradient(from 150deg,#4f46e5,#0d9488,#ea580c,#7c3aed,#4f46e5);
+    box-shadow:0 40px 90px rgba(79,70,229,.22);animation:float 5.5s ease-in-out infinite;cursor:pointer}
+  .hero-circle{width:330px;height:330px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 40px}
+  .hero-kicker{font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#94a3b8}
+  .hero-circle h1{font-size:30px;margin:12px 0 8px;line-height:1.12;background:linear-gradient(120deg,#4f46e5,#0d9488);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:850}
+  .hero-circle p{font-size:13px;color:var(--mut);margin:0;line-height:1.45}
+  .hero-cta{margin-top:22px;font-size:13px;font-weight:700;color:#4f46e5;display:flex;align-items:center;gap:8px;cursor:pointer;animation:float 5.5s ease-in-out infinite}
+  .hero-cta .arw{width:26px;height:26px;border-radius:50%;background:#4f46e5;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @media (max-width:860px){#info,.hint{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" id="brandBtn" title="Back to start">
+    <div class="glyph"></div>
+    <div><h1>LQABR — Cloud Deployment</h1><p>GCP DEV · LDQFINGSRV-DEV · SP-2 DESIGN REVIEW · 10 AUG 2026</p></div>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="hint"><span><span class="kbd">Click</span> an agent to zoom in</span><span><span class="kbd">Scroll</span> zoom</span><span><span class="kbd">Drag</span> pan</span></div>
+</header>
+
+<main id="stage">
+  <div id="scene"><svg id="wires"></svg></div>
+  <div class="ctrls">
+    <button class="btn wide" id="reset">⤢ Overview</button>
+    <button class="btn" id="zin">+</button>
+    <button class="btn" id="zout">−</button>
+  </div>
+  <aside id="info"></aside>
+  <div id="hero">
+    <div class="hero-ring" id="heroRing">
+      <div class="hero-circle">
+        <div class="hero-kicker">LQABR · PROJECT LDQFINGSRV-DEV</div>
+        <h1>Cloud Deployment Architecture</h1>
+        <p>Cloud Run · scale-to-zero · HubSpot-orchestrated agents<br>with a shared HubSpot MCP service.</p>
+      </div>
+    </div>
+    <div class="hero-cta" id="heroCta">Enter design review <span class="arw">▸</span></div>
+  </div>
+</main>
+
+<script>
+/* ===================== CATEGORY + STATUS ===================== */
+const CAT = {
+  agent:  {c:'var(--agent)',   label:'Agent (Cloud Run)'},
+  proc:   {c:'var(--proc)',    label:'Sub-process'},
+  gateway:{c:'var(--gateway)', label:'Public edge'},
+  hub:    {c:'var(--hub)',     label:'HubSpot (SoR)'},
+  dep:    {c:'var(--dep)',     label:'External SaaS'},
+  future: {c:'var(--future)',  label:'Future State'},
+  service:{c:'var(--service)', label:'GCP platform'},
+};
+const STAT = {
+  live:{c:'var(--live)',label:'Live (dev)'}, built:{c:'var(--built)',label:'Built'},
+  blocked:{c:'var(--blocked)',label:'To unblock'}, ext:{c:'var(--ext)',label:'External'}, data:{c:'var(--data)',label:'Data'},
+  plan:{c:'var(--plan)',label:'Planned'},
+};
+const cssvar=v=>v&&v.startsWith('var(')?getComputedStyle(document.documentElement).getPropertyValue(v.slice(4,-1)).trim():v;
+const CATCOL={agent:cssvar('var(--agent)'),proc:cssvar('var(--proc)'),gateway:cssvar('var(--gateway)'),hub:cssvar('var(--hub)'),dep:cssvar('var(--dep)'),future:cssvar('var(--future)'),service:cssvar('var(--service)')};
+const FLOW='#94a3b8', FLOWLAB='#475569';   // role-mode: all flow arrows + labels are this one neutral colour
+
+/* ================= CONFIG — set these from the intake questionnaire (see SKILL.md Step 0) =================
+   colorMode:
+     'role'        → each tile is coloured by WHAT IT IS (Agent / Sub-process / dependency); flow arrows are one
+                     neutral grey. Cleanest when a cluster mixes many destinations. Agents can be emphasised.
+     'destination' → the classic standard: every arrow, its label, and a connecting service's TITLE take the colour
+                     of WHAT THEY POINT TO (into hub = amber, into gateway = teal, …). Great for teaching data flow.
+   emphasizeAgents → render role==='agent' tiles bold + italic + larger so the actors stand out.
+   showStatus      → show the readiness pill (Built / Planned / …). Turn off for a pure structure map.            */
+const CONFIG = {
+  colorMode: 'role',        // 'role' | 'destination'
+  emphasizeAgents: true,    // bold + italic + larger agent titles
+  showStatus: true,         // readiness pill on each tile
+};
+const DEST = ()=>CONFIG.colorMode==='destination';
+
+/* ===================== L1 NODES (overview) + nested Cloud Run services ===================== */
+const NODES = [
+  // ---- External SaaS lane (top) ----
+  {id:'hubspot', x:1060,y:120, w:210,h:210, cat:'hub', st:'ext', big:true, kind:'System of record + orchestrator',
+   title:'HubSpot CRM', sub:'orchestrator + <b>system of record</b>',
+   detail:'HubSpot holds all canonical lead state (lqabr_* contact properties) AND — a deliberate sprint decision — acts as the orchestrator: its workflow triggers fire on property changes (profile created, email opened) and call the public Gateway over HTTPS. No separate orchestrator agent this sprint.'},
+  {id:'mailgun', x:1500,y:150, w:150,h:150, cat:'dep', st:'ext', kind:'Email provider',
+   title:'Mailgun', sub:'email send + event webhooks',
+   detail:'Email delivery provider. The Email agent calls its send API; Mailgun posts delivered / opened / clicked events back to the public Email Webhook Receiver (HMAC-signed).'},
+  {id:'vapi', x:1740,y:150, w:150,h:150, cat:'dep', st:'ext', kind:'Voice AI provider',
+   title:'Vapi', sub:'voice AI calls + status webhooks',
+   detail:'Voice-AI provider (replaces Twilio in this design). The Voice agent starts outbound calls via the Vapi API; call status and outcomes come back to the public Voice Webhook Receiver.'},
+
+  // ---- GCP project lane (inside ldqfingsrv-dev) ----
+  {id:'iam', x:240,y:580, w:150,h:150, cat:'service', st:'live', expand:true, kind:'Identity & IAM · expandable',
+   title:'IAM & Identity', sub:'grantor → deployer → runtime',
+   detail:'The three-identity model, all grants made once by the owner. swaroop@ (Owner) enables APIs and binds every role; the ai2d@ group holds the 8 deployer roles and aidcld@ inherits them as a member; lqabr-agent-dev is the runtime service account every Cloud Run service runs as. The ONLY link between deployer and runtime identity is actAs. Explode to see the chain.'},
+  {id:'ar', x:460,y:580, w:150,h:150, cat:'service', st:'live', kind:'Container registry',
+   title:'Artifact Registry', sub:'repo <b>lqabr</b> · images built',
+   detail:'Docker repo us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr. Dev images already pushed: lqabr-dev-gtwy, lqabr-dev-ldpf, lqabr-dev-email-agent, lqabr-dev-email-webhook. Cloud Build (run by aidcld@) pushes; Cloud Run pulls at deploy.'},
+  {id:'secmgr', x:680,y:580, w:150,h:150, cat:'service', st:'live', kind:'Secrets store',
+   title:'Secret Manager', sub:'12 secrets · SA-only access',
+   detail:'All service credentials (HubSpot token, Mailgun keys, Anthropic key, …) live here — 12 lqabr-* secrets. Injected into Cloud Run via --set-secrets; only the runtime SA (and the dev group, read-only) can access values. Nothing is baked into images.'},
+  {id:'pubsub', x:460,y:830, w:150,h:150, cat:'service', st:'plan', kind:'Event bus · planned',
+   title:'Pub/Sub', sub:'engagement fan-out · planned',
+   detail:'Provisioning step 03 (pending). Topics lqabr-ingestion-trigger and lqabr-engagement-events. Not on the sprint critical path — HubSpot workflows carry orchestration for now; Pub/Sub becomes the event spine when orchestration moves in-house.'},
+  {id:'sched', x:680,y:830, w:150,h:150, cat:'service', st:'plan', kind:'Cron · planned',
+   title:'Cloud Scheduler', sub:'dispatch cycles · planned',
+   detail:'Provisioning step 06 (pending). Will drive periodic dispatch/ingestion cycles via OIDC-authenticated calls once services are deployed.'},
+  {id:'cloudrun', x:1060,y:540, w:200,h:200, cat:'agent', st:'built', big:true, expand:true, kind:'Serverless tier · expandable',
+   title:'Cloud Run Services', sub:'5 services · <b>scale-to-zero</b>',
+   detail:'The serverless tier inside project ldqfingsrv-dev — every component is a container on Cloud Run with min-instances=0, scaling per request. PUBLIC edge: the Agent Gateway (allUsers + HubSpot signature check, enabled by the project DRS exception) and the two webhook receivers (provider-signature-verified). INTERNAL: the three agents and the shared HubSpot MCP server — no public ingress, OIDC ID-token calls only, all running as lqabr-agent-dev. Explode to see placement and flows.'},
+
+  // ---- Nested inside the Cloud Run cluster (hidden from overview) ----
+  {id:'gtwy', x:600,y:1110, w:170,h:170, cat:'gateway', st:'live', nested:'cloudrun', expand:true, kind:'Public edge · expandable',
+   title:'Agent Gateway', sub:'public · allUsers + signature',
+   detail:'lqabr-dev-gtwy — the ONLY public entry point for orchestration. Service-scoped allUsers run.invoker binding (verified live; made possible by the project DRS allowAll exception), ingress all. Verifies the HubSpot workflow signature on every request, resolves trigger_id to a target agent, and forwards over an OIDC ID-token call. Explode for internals.'},
+  {id:'lp', x:960,y:860, w:160,h:160, cat:'agent', st:'built', role:'agent', nested:'cloudrun', expand:true, kind:'Agent · expandable',
+   title:'Lead Profile Agent', sub:'internal · OIDC only',
+   detail:'lqabr-dev-ldpf (image built). Builds the 9-pointer lead profile and upserts it to HubSpot through the shared MCP server. Internal ingress, invokable only with an OIDC token for lqabr-agent-dev. Explode for its pipeline.'},
+  {id:'email', x:960,y:1120, w:160,h:160, cat:'agent', st:'built', role:'agent', nested:'cloudrun', expand:true, kind:'Agent · expandable',
+   title:'Email Agent', sub:'internal · OIDC only',
+   detail:'lqabr-dev-email-agent (image built). Composes personalized outreach from real profile data, sends via Mailgun, and records the send in HubSpot via MCP. Mailgun status triggers enter via the Gateway (HMAC-verified) and are routed here over OIDC; status is written to HubSpot via MCP keyed by the lead\'s object ID — never fabricated. Explode for its pipeline.'},
+  {id:'voice', x:960,y:1380, w:160,h:160, cat:'agent', st:'plan', role:'agent', nested:'cloudrun', expand:true, kind:'Agent · expandable',
+   title:'Voice Agent (Vapi)', sub:'internal · OIDC only',
+   detail:'Planned. Triggered by a HubSpot workflow when a lead status moves to Opened. Starts an outbound voice-AI call through Vapi (replacing the earlier Twilio design), runs the conversational Q&A flow; Vapi status triggers enter via the Gateway and are routed here over OIDC; the outcome is written back via MCP keyed by the lead\'s object ID. Explode for its pipeline.'},
+  {id:'mcp', x:1360,y:1110, w:170,h:170, cat:'service', st:'plan', nested:'cloudrun', expand:true, kind:'Shared MCP · expandable',
+   title:'HubSpot MCP Server', sub:'shared · stateless · scale-to-zero',
+   detail:'ONE project-scope Cloud Run service shared by every agent and webhook receiver — the single write/read path to HubSpot. Streamable-HTTP transport in stateless mode so instances scale horizontally; min-instances=0 means it "loads at runtime": the first call after idle cold-starts it. Internal ingress, OIDC-only, HubSpot token fetched from Secret Manager by the runtime SA. Explode for internals.'},
+];
+
+/* ===================== SERVICES ===================== */
+const SVC = [
+  // ---- IAM chain (cl:'iam') ----
+  {id:'sw', cl:'iam', x:200,y:900, w:150,h:150, st:'live', title:'swaroop@ (Owner)', sub:'grantor · enables APIs',
+   detail:'Project owner and sole grantor. Enabled all APIs, created the SA, and bound every IAM role — once, at provisioning. Holds the trust boundary: no one else can edit IAM or enable APIs.'},
+  {id:'grp', cl:'iam', x:460,y:900, w:150,h:150, st:'live', title:'ai2d@ Group', sub:'8 deployer roles',
+   detail:'Google Group "AIDeveloper". Holds all deployer roles at project scope: run.developer, cloudbuild.builds.editor, artifactregistry.writer, secretmanager.viewer + secretAccessor, logging/monitoring viewer, serviceusage consumer — plus actAs on the runtime SA. Roles bind to the group, never to individuals.'},
+  {id:'dev', cl:'iam', x:720,y:900, w:150,h:150, st:'live', title:'aidcld@ Login', sub:'shared dev · deploys',
+   detail:'Shared developer login, MEMBER of ai2d@ — zero direct grants; everything inherited. Builds images and runs gcloud run deploy. Live-validated: can create/update/delete Cloud Run services and read secrets, but cannot touch IAM, enable APIs, Pub/Sub, or Scheduler.'},
+  {id:'sa', cl:'iam', x:980,y:900, w:150,h:150, st:'live', title:'lqabr-agent-dev SA', sub:'runtime identity',
+   detail:'The machine identity every Cloud Run service runs as. Runtime roles: secretmanager.secretAccessor, pubsub publisher/subscriber, run.invoker (agent-to-agent OIDC), aiplatform.user, log/metric writers. Assigned at deploy with --service-account; deploy appends nothing to it.'},
+
+  // ---- Webhook receivers (cl:'cloudrun') ----
+
+  // ---- Gateway internals (cl:'gtwy') ----
+  {id:'gw1', cl:'gtwy', x:560,y:1450, w:150,h:150, st:'live', title:'Signature Verify', sub:'HubSpot webhook auth',
+   detail:'First hop on every request: verify the HubSpot workflow signature / shared secret. The gateway is open to the internet (allUsers), so authenticity lives here — unsigned requests are rejected before any routing.'},
+  {id:'gw2', cl:'gtwy', x:820,y:1450, w:150,h:150, st:'live', title:'Trigger Router', sub:'trigger_id → agent',
+   detail:'Resolves the trigger_id in the payload against the agent registry and picks the target agent service (lead profile, email, voice).'},
+  {id:'gw3', cl:'gtwy', x:1080,y:1450, w:150,h:150, st:'live', title:'OIDC Client', sub:'ID-token forward',
+   detail:'Mints an OIDC ID token as lqabr-agent-dev and calls the internal agent URL. This is why agents can stay fully private: only callers with run.invoker for the SA get through.'},
+
+  // ---- Lead Profile pipeline (cl:'lp') ----
+  {id:'lp1', cl:'lp', x:1320,y:780, w:150,h:150, st:'built', title:'Trigger Intake', sub:'lead batch in',
+   detail:'Receives the routed trigger from the Gateway (OIDC-verified) with the lead reference(s) to process.'},
+  {id:'lp2', cl:'lp', x:1580,y:780, w:150,h:150, st:'built', title:'Profile Builder', sub:'9-pointer profile',
+   detail:'Builds the 9-pointer lead profile deterministically from source data. Bad/messy records are flagged with explicit reasons — never dropped.'},
+  {id:'lp3', cl:'lp', x:1840,y:780, w:150,h:150, st:'built', title:'MCP Client', sub:'upsert_lead_profiles',
+   detail:'Calls the shared HubSpot MCP server (OIDC, streamable HTTP) to upsert the profile as Contact + Company. The agent holds no canonical state.'},
+
+  // ---- Email pipeline (cl:'email') ----
+  {id:'em1', cl:'email', x:1320,y:1200, w:150,h:150, st:'built', title:'Compose + Personalize', sub:'from profile data',
+   detail:'Builds a short, honest, personalized email from real profile fields read via MCP. Copy rules (opt-out, no fabricated claims) enforced here.'},
+  {id:'em2', cl:'email', x:1580,y:1200, w:150,h:150, st:'built', title:'Mailgun Send Tool', sub:'API · typed · retries',
+   detail:'Typed tool that calls the Mailgun send API — 3 tries with exponential backoff on 429/5xx. A failure never silently drops the lead.'},
+  {id:'em3', cl:'email', x:1840,y:1200, w:150,h:150, st:'built', title:'Status Writer', sub:'record send via MCP',
+   detail:'Records the send on the HubSpot contact via the shared MCP. Engagement (delivered/opened/clicked) is NOT written here — it arrives later through the public webhook receiver, from Mailgun, signed.'},
+
+  // ---- Voice pipeline (cl:'voice') ----
+  {id:'vo1', cl:'voice', x:1320,y:1560, w:150,h:150, st:'plan', title:'Opened-Trigger Check', sub:'gate + dedupe',
+   detail:'Validates the HubSpot "opened" trigger: stage/eligibility gate plus idempotency check, because HubSpot workflows can fire more than once for the same event.'},
+  {id:'vo2', cl:'voice', x:1580,y:1560, w:150,h:150, st:'plan', title:'Vapi Call Tool', sub:'assistant + outbound call',
+   detail:'Starts the outbound voice-AI call via the Vapi API — assistant config, phone number, and the conversational Q&A flow. Replaces the earlier Twilio voicemail/SMS design.'},
+  {id:'vo3', cl:'voice', x:1840,y:1560, w:150,h:150, st:'plan', title:'Outcome Writer', sub:'result via MCP',
+   detail:'Writes the call outcome (answered counter, disposition) to HubSpot via the shared MCP once Vapi reports completion.'},
+
+  // ---- MCP internals (cl:'mcp') ----
+  {id:'mc1', cl:'mcp', x:1360,y:1560, w:150,h:150, st:'plan', title:'HTTP Endpoint', sub:'streamable · stateless',
+   detail:'Streamable-HTTP MCP transport in stateless mode — no session affinity, so Cloud Run can scale instances horizontally and to zero. Cold-starts on the first call after idle ("loads at runtime").'},
+  {id:'mc2', cl:'mcp', x:1660,y:1560, w:150,h:150, st:'plan', title:'HubSpot Toolset', sub:'upsert / read tools',
+   detail:'The tool surface: upsert_lead_profiles (write) and get_lead_profile (read) against the HubSpot REST API. One shared write path for every agent — no agent talks to HubSpot directly.'},
+  {id:'mc3', cl:'mcp', x:1660,y:1800, w:150,h:150, st:'plan', title:'Token Loader', sub:'Secret Manager',
+   detail:'Fetches the HubSpot private-app token from Secret Manager at runtime using the lqabr-agent-dev SA (secretmanager.secretAccessor). No credential in the image or env-committed files.'},
+];
+
+/* ===================== GHOST MODULES ===================== */
+const GHOSTS = [
+  // IAM cluster
+  {id:'g_cr_iam', cl:'iam', x:1240,y:900, w:150,h:150, cat:'agent', ghost:1, title:'Cloud Run svcs', tag:'run as the SA'},
+  // Cloud Run cluster
+  {id:'g_hub_in', cl:'cloudrun', x:300,y:1115, w:160,h:160, cat:'hub', ghost:1, title:'HubSpot CRM', tag:'trigger source · SoR'},
+  {id:'g_sec',    cl:'cloudrun', x:1720,y:860, w:150,h:150, cat:'service', ghost:1, title:'Secret Manager', tag:'secrets → SA only'},
+  {id:'g_hubw',   cl:'cloudrun', x:2080,y:1115, w:160,h:160, cat:'hub', ghost:1, title:'HubSpot API', tag:'write-back target'},
+  {id:'g_prov',   cl:'cloudrun', x:560,y:1560, w:150,h:150, cat:'dep', ghost:1, title:'Mailgun · Vapi', tag:'provider APIs'},
+  // Gateway cluster
+  {id:'g_hubgw',  cl:'gtwy', x:300,y:1450, w:150,h:150, cat:'hub', ghost:1, title:'HubSpot CRM', tag:'workflow caller'},
+  {id:'g_agents', cl:'gtwy', x:1340,y:1450, w:150,h:150, cat:'agent', ghost:1, title:'Internal Agents', tag:'OIDC targets'},
+  // Agent clusters — each agent's own dependencies
+  {id:'g_mcp_lp', cl:'lp', x:2100,y:780, w:150,h:150, cat:'service', ghost:1, title:'HubSpot MCP', tag:'shared service'},
+  {id:'g_mg',     cl:'email', x:2100,y:1100, w:150,h:150, cat:'dep', ghost:1, title:'Mailgun API', tag:'send'},
+  {id:'g_mcp_em', cl:'email', x:2100,y:1320, w:150,h:150, cat:'service', ghost:1, title:'HubSpot MCP', tag:'write-back'},
+  {id:'g_vapi',   cl:'voice', x:2100,y:1460, w:150,h:150, cat:'dep', ghost:1, title:'Vapi API', tag:'voice call'},
+  {id:'g_mcp_vo', cl:'voice', x:2100,y:1680, w:150,h:150, cat:'service', ghost:1, title:'HubSpot MCP', tag:'write-back'},
+  // MCP cluster
+  {id:'g_callers', cl:'mcp', x:1060,y:1560, w:150,h:150, cat:'agent', ghost:1, title:'Agents + Webhooks', tag:'OIDC callers'},
+  {id:'g_hsapi',   cl:'mcp', x:1960,y:1560, w:150,h:150, cat:'hub', ghost:1, title:'HubSpot API', tag:'REST v3'},
+  {id:'g_sm2',     cl:'mcp', x:1960,y:1800, w:150,h:150, cat:'service', ghost:1, title:'Secret Manager', tag:'token read'},
+];
+
+/* ===================== CONNECTORS ===================== */
+const LINKS = [
+  {f:'hubspot',t:'cloudrun',label:'workflow trigger → Gateway (HTTPS)'},
+  {f:'cloudrun',t:'hubspot',label:'profiles + status via MCP',back:true},
+  {f:'cloudrun',t:'mailgun',label:'send (API)'},
+  {f:'mailgun',t:'cloudrun',label:'delivery webhooks',back:true},
+  {f:'cloudrun',t:'vapi',label:'start call (API)'},
+  {f:'vapi',t:'cloudrun',label:'call status webhooks',back:true},
+  {f:'ar',t:'cloudrun',label:'container images'},
+  {f:'secmgr',t:'cloudrun',label:'secrets at runtime'},
+  {f:'iam',t:'cloudrun',label:'deploy + runtime identity'},
+];
+const CLINKS = [
+  // IAM chain
+  {cl:'iam',f:'sw',t:'grp',label:'grants 8 roles'},
+  {cl:'iam',f:'dev',t:'grp',label:'member of'},
+  {cl:'iam',f:'grp',t:'sa',label:'actAs (deploy-time)'},
+  {cl:'iam',f:'sa',t:'g_cr_iam',label:'runtime identity'},
+  // Cloud Run tier
+  {cl:'cloudrun',f:'g_hub_in',t:'gtwy',label:'signed workflow webhook'},
+  {cl:'cloudrun',f:'gtwy',t:'lp',label:''},
+  {cl:'cloudrun',f:'gtwy',t:'email',label:'route by trigger (OIDC)'},
+  {cl:'cloudrun',f:'gtwy',t:'voice',label:''},
+  {cl:'cloudrun',f:'lp',t:'mcp',label:'profile upsert'},
+  {cl:'cloudrun',f:'email',t:'mcp',label:''},
+  {cl:'cloudrun',f:'voice',t:'mcp',label:'status write'},
+  {cl:'cloudrun',f:'mcp',t:'g_hubw',label:'HubSpot REST'},
+  {cl:'cloudrun',f:'mcp',t:'g_sec',label:'token (SA-scoped)'},
+  {cl:'cloudrun',f:'email',t:'g_prov',label:'send email'},
+  {cl:'cloudrun',f:'voice',t:'g_prov',label:'start call'},
+  {cl:'cloudrun',f:'g_prov',t:'gtwy',label:'status webhooks (signed)'},
+  // Gateway internals
+  {cl:'gtwy',f:'g_hubgw',t:'gw1',label:'HTTPS (allUsers)'},
+  {cl:'gtwy',f:'gw1',t:'gw2',label:''},
+  {cl:'gtwy',f:'gw2',t:'gw3',label:''},
+  {cl:'gtwy',f:'gw3',t:'g_agents',label:'OIDC ID token'},
+  // Lead Profile
+  {cl:'lp',f:'lp1',t:'lp2',label:''},
+  {cl:'lp',f:'lp2',t:'lp3',label:''},
+  {cl:'lp',f:'lp3',t:'g_mcp_lp',label:'upsert'},
+  // Email
+  {cl:'email',f:'em1',t:'em2',label:''},
+  {cl:'email',f:'em2',t:'em3',label:''},
+  {cl:'email',f:'em2',t:'g_mg',label:'API send'},
+  {cl:'email',f:'em3',t:'g_mcp_em',label:'record send'},
+  // Voice
+  {cl:'voice',f:'vo1',t:'vo2',label:''},
+  {cl:'voice',f:'vo2',t:'vo3',label:''},
+  {cl:'voice',f:'vo2',t:'g_vapi',label:'call API'},
+  {cl:'voice',f:'vo3',t:'g_mcp_vo',label:'outcome'},
+  // MCP internals
+  {cl:'mcp',f:'g_callers',t:'mc1',label:'streamable HTTP'},
+  {cl:'mcp',f:'mc1',t:'mc2',label:''},
+  {cl:'mcp',f:'mc2',t:'mc3',label:''},
+  {cl:'mcp',f:'mc2',t:'g_hsapi',label:'REST'},
+  {cl:'mcp',f:'mc3',t:'g_sm2',label:'read token'},
+];
+
+/* ===================== BUILD ===================== */
+const scene=document.getElementById('scene'), wires=document.getElementById('wires'), stage=document.getElementById('stage');
+const WORLD_W=2500, WORLD_H=2200;
+wires.setAttribute('width',WORLD_W);wires.setAttribute('height',WORLD_H);wires.setAttribute('viewBox',`0 0 ${WORLD_W} ${WORLD_H}`);
+scene.style.width=WORLD_W+'px';scene.style.height=WORLD_H+'px';
+const CLUSTERNODES=[...SVC,...GHOSTS];
+const NODEMAP={};[...NODES,...CLUSTERNODES].forEach(n=>NODEMAP[n.id]=n);
+const TOPNODES=NODES.filter(n=>!n.nested);   // shown in the overview
+const NESTNODES=NODES.filter(n=>n.nested);    // sub-hubs shown inside a parent cluster
+const center=n=>({x:n.x+n.w/2,y:n.y+n.h/2});
+/* ROLE-mode colour: a node is coloured by what it IS. Agents (role:'agent' or cat:'agent') → agent colour;
+   any service (has cl) → 'proc'; ghosts keep their own dependency category; everything else uses its own cat. */
+function roleOf(n){ if(n.ghost) return n.cat; if(n.role==='agent'||n.cat==='agent') return 'agent'; if(n.cl) return 'proc'; return n.cat; }
+/* DESTINATION-mode colour: what a connector INTO this node is coloured by (a service inherits its parent's cat). */
+function destCat(n){return n.ghost?n.cat:(n.cl?NODEMAP[n.cl].cat:n.cat);}
+function destColor(n){return CATCOL[destCat(n)]||CATCOL.service;}
+
+const MARKCATS=['agent','proc','gateway','hub','dep','future','service'];
+const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+defs.innerHTML=MARKCATS.map(k=>`<marker id="arw-${k}" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="${CATCOL[k]}"/></marker>`).join('')
+  +`<marker id="arw-flow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="${FLOW}"/></marker>`;
+wires.appendChild(defs);
+
+function endpoints(a,b){const c1=center(a),c2=center(b),r1=a.w/2,r2=b.w/2;
+  const dx=c2.x-c1.x,dy=c2.y-c1.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d;
+  return{sx:c1.x+ux*r1,sy:c1.y+uy*r1,ex:c2.x-ux*(r2+8),ey:c2.y-uy*(r2+8)};}
+function pathD(a,b){const {sx,sy,ex,ey}=endpoints(a,b),dx=ex-sx,dy=ey-sy;
+  const ox=(dx>=0?1:-1)*Math.max(38,Math.abs(dx)*0.4);
+  const oy=Math.abs(dy)>Math.abs(dx)?(dy>=0?1:-1)*Math.max(28,Math.abs(dy)*0.26):0;
+  return `M ${sx} ${sy} C ${sx+ox} ${sy+oy}, ${ex-ox} ${ey-oy}, ${ex} ${ey}`;}
+
+const mainWires=[],mainLabels=[];
+function addWire(a,b,opt={}){
+  const structural=opt.structural, destMode=DEST();
+  const col = structural ? '#cbd5e1' : (destMode ? destColor(b) : FLOW);
+  const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d',pathD(a,b));p.setAttribute('class','wire'+(structural?' svc':'')+(opt.dash?' dash':''));
+  p.style.stroke=col;
+  if(!structural)p.setAttribute('marker-end',destMode?`url(#arw-${destCat(b)})`:'url(#arw-flow)');
+  if(opt.cluster){p.dataset.cluster=opt.cluster;p.classList.add('hidden');}
+  wires.appendChild(p);
+  let L=null;
+  if(opt.label){const {sx,sy,ex,ey}=endpoints(a,b);
+    L=document.createElement('div');L.className='wlabel'+(opt.cluster?' hidden':'');
+    L.textContent=opt.label;L.style.left=((sx+ex)/2)+'px';L.style.top=((sy+ey)/2)+'px';
+    L.style.color=destMode?col:FLOWLAB;L.style.borderColor=destMode?('color-mix(in srgb,'+col+' 45%,#fff)'):'#dbe3ee';
+    if(opt.cluster)L.dataset.cluster=opt.cluster;scene.appendChild(L);}
+  if(!opt.cluster){mainWires.push(p);if(L)mainLabels.push(L);}
+}
+LINKS.forEach(l=>addWire(NODEMAP[l.f],NODEMAP[l.t],{label:l.label,dash:!!l.back}));
+SVC.forEach(s=>addWire(NODEMAP[s.cl],s,{structural:true,cluster:s.cl}));
+NESTNODES.forEach(n=>addWire(NODEMAP[n.nested],n,{structural:true,cluster:n.nested})); // dotted "contains" line from parent to the nested sub-hub
+CLINKS.forEach(l=>addWire(NODEMAP[l.f],NODEMAP[l.t],{label:l.label,cluster:l.cl}));
+
+/* DESTINATION-mode: a service TITLE echoes its destination — explicit SVC.to wins, else the first outbound CLINK. */
+const TITLE_TO={};
+CLINKS.forEach(l=>{const s=NODEMAP[l.f];if(s&&s.cl&&!s.ghost&&TITLE_TO[l.f]===undefined)TITLE_TO[l.f]=destCat(NODEMAP[l.t]);});
+SVC.forEach(s=>{if(s.to)TITLE_TO[s.id]=s.to;});
+
+const els={},caps={};
+function makeNode(n){
+  const isSvc=!!n.cl&&!n.ghost, isGhost=!!n.ghost, destMode=DEST();
+  const role = roleOf(n);
+  const ringCat = destMode ? (isGhost?n.cat:(isSvc?NODEMAP[n.cl].cat:n.cat)) : role;
+  const el=document.createElement('div');
+  el.className='node'+(isSvc?' svc hidden':'')+(isGhost?' ghost hidden':'')+(n.nested?' svc hidden':'')+(n.big?' big':'')+(n.expand?' exp':'');
+  el.style.left=n.x+'px';el.style.top=n.y+'px';el.style.width=n.w+'px';el.style.height=n.h+'px';
+  el.style.setProperty('--ac',CATCOL[ringCat]);
+  el.dataset.role=role;
+  if(isGhost){
+    el.innerHTML=`<div class="c-inner"><div class="c-title">${n.title}</div><div class="c-tag">${n.tag}</div></div>`;
+  }else{
+    const tc = destMode ? (TITLE_TO[n.id]?CATCOL[TITLE_TO[n.id]]:CATCOL[ringCat]) : CATCOL[role];
+    const pill = CONFIG.showStatus?`<div class="c-pill" style="--sc:${cssvar(STAT[n.st].c)}"><span class="sdot"></span>${STAT[n.st].label}</div>`:'';
+    el.innerHTML=`<div class="c-inner"><div class="c-title" style="color:${tc}">${n.title}</div>${pill}</div>`;
+    el.addEventListener('click',ev=>{ev.stopPropagation();onNodeClick(n);});
+  }
+  if(n.cl)el.dataset.cluster=n.cl;el.dataset.id=n.id;
+  scene.appendChild(el);els[n.id]=el;
+
+  if(!n.cl){ // captions for L1 + nested sub-hubs — keeps service clusters clean
+    const cap=document.createElement('div');cap.className='cap'+(n.nested?' hidden':'');
+    const cw=Math.max(150,n.w+40);
+    cap.style.left=(n.x+n.w/2-cw/2)+'px';cap.style.top=(n.y+n.h+10)+'px';cap.style.width=cw+'px';
+    cap.innerHTML=n.sub||'';scene.appendChild(cap);caps[n.id]=cap;
+  }
+}
+NODES.forEach(makeNode);CLUSTERNODES.forEach(makeNode);
+
+/* ===================== VIEW ===================== */
+let tx=0,ty=0,scale=1;
+function apply(anim){scene.classList.toggle('anim',!!anim);scene.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;}
+function fit(bx,by,bw,bh,anim=true){
+  const vw=stage.clientWidth,vh=stage.clientHeight,rightPad=vw>860?360:20,availW=vw-rightPad-40,availH=vh-40,pad=1.16;
+  let s=Math.max(.16,Math.min(Math.min(availW/(bw*pad),availH/(bh*pad)),1.5));
+  scale=s;tx=(40+(availW-bw*s)/2)-bx*s;ty=(20+(availH-bh*s)/2)-by*s;apply(anim);
+}
+function bboxOf(ids){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  ids.forEach(id=>{const n=NODEMAP[id];x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x+n.w);y1=Math.max(y1,n.y+n.h+(n.cl?8:52));});
+  return[x0,y0,x1-x0,y1-y0];}
+const OVERVIEW_IDS=TOPNODES.map(n=>n.id);   // overview shows Seed / Lead Profile / HubSpot only
+const clusterKids=id=>[...CLUSTERNODES.filter(s=>s.cl===id),...NESTNODES.filter(s=>s.nested===id)].map(s=>s.id);
+
+let openCluster=null;
+function setCluster(id){
+  openCluster=id;
+  CLUSTERNODES.forEach(s=>{els[s.id].classList.toggle('hidden',s.cl!==id);});
+  // nested sub-hubs: shown inside their parent cluster, and also as the header hub when they are the open cluster
+  NESTNODES.forEach(n=>{const show=(n.nested===id)||(n.id===id);els[n.id].classList.toggle('hidden',!show);if(caps[n.id])caps[n.id].classList.toggle('hidden',!show);});
+  wires.querySelectorAll('path[data-cluster]').forEach(p=>p.classList.toggle('hidden',p.dataset.cluster!==id));
+  scene.querySelectorAll('.wlabel[data-cluster]').forEach(l=>l.classList.toggle('hidden',l.dataset.cluster!==id));
+  mainWires.forEach(w=>w.classList.toggle('hidden',!!id));
+  mainLabels.forEach(l=>l.classList.toggle('hidden',!!id));
+  TOPNODES.forEach(n=>{const hide=!!id&&n.id!==id;els[n.id].classList.toggle('hidden',hide);if(caps[n.id])caps[n.id].classList.toggle('hidden',hide);});
+}
+function clearSel(){Object.values(els).forEach(e=>e.classList.remove('sel'));}
+function overview(){setCluster(null);clearSel();fit(...bboxOf(OVERVIEW_IDS));renderExec();}
+
+function onNodeClick(n){
+  clearSel();els[n.id].classList.add('sel');
+  if(n.expand){setCluster(n.id);fit(...bboxOf([n.id,...clusterKids(n.id)]));}
+  else if(n.cl){const b=bboxOf([n.id]);fit(b[0]-170,b[1]-130,b[2]+340,b[3]+260);}
+  else{setCluster(null);const b=bboxOf([n.id]);fit(b[0]-260,b[1]-200,b[2]+520,b[3]+420);}
+  renderInfo(n);
+}
+
+/* ===================== INFO ===================== */
+const info=document.getElementById('info');
+function catChip(cat){const c=CATCOL[cat];return `<div class="pchip" style="color:${c};border-color:color-mix(in srgb,${c} 35%,#fff)"><span class="swatch" style="color:${c};background:${c}"></span>${CAT[cat].label}</div>`;}
+function statChip(st){const c=cssvar(STAT[st].c);return `<div class="pchip" style="color:${c};border-color:color-mix(in srgb,${c} 35%,#fff)"><span class="sdot" style="background:${c}"></span>${STAT[st].label}</div>`;}
+function renderExec(){
+  info.innerHTML=`
+    <div class="crumb">LQABR · GCP CLOUD DEPLOYMENT · DEV</div>
+    <h2>One project, one public door, everything else private</h2>
+    <div class="exec"><ul>
+      <li><b>Trust boundary:</b> external SaaS (HubSpot, Mailgun, Vapi) on top; everything else lives inside GCP project <b>ldqfingsrv-dev</b>. The ONLY public Cloud Run endpoints are the <span style="color:var(--gateway);font-weight:700">Agent Gateway</span> and the two webhook receivers — each verifies a signature on every request. Agents and the MCP server are internal, OIDC-only.</li>
+      <li><b>HubSpot is the orchestrator this sprint</b> (deliberate choice — no orchestrator agent): its workflow triggers call the Gateway, which routes to the right <span style="color:var(--agent);font-weight:800;font-style:italic">agent</span> over an OIDC ID-token call.</li>
+      <li><b>The HubSpot MCP Server is ONE shared, project-scope service</b> — stateless streamable-HTTP, scale-to-zero. It "loads at runtime": the first agent call after idle cold-starts it. It is the single read/write path to HubSpot.</li>
+      <li><b>Every service scales to zero</b> and scales out per request. Cold-start stacking (Gateway → agent → MCP) is accepted for dev; min-instances=1 on Gateway + MCP is the lever if the voice path needs it.</li>
+      <li><b>IAM in one line:</b> swaroop@ grants once → ai2d@/aidcld@ builds + deploys → <b>lqabr-agent-dev</b> is what everything runs as (actAs is the only link). Explode <b>IAM &amp; Identity</b> for the chain.</li>
+    </ul></div>
+    <div>
+      <div class="sumline"><span class="sdot" style="background:var(--live)"></span> Gateway — <b>live</b> in dev (allUsers + signature, verified)</div>
+      <div class="sumline"><span class="sdot" style="background:var(--built)"></span> Lead Profile + Email — <b>images built</b>, deploy pending</div>
+      <div class="sumline"><span class="sdot" style="background:var(--plan)"></span> MCP · Voice (Vapi) · Pub/Sub · Scheduler — <b>planned</b></div>
+    </div>
+    <div class="svcnote">${DEST()
+      ? `<b>Colour = destination:</b> arrows take the colour of what they point to`
+      : `<b>Colour = role:</b> <span style="color:var(--agent);font-weight:900;font-style:italic">Agent</span> (bold italic), <span style="color:var(--gateway);font-weight:700">Public edge</span>, <span style="color:var(--service);font-weight:700">GCP platform</span>, <span style="color:var(--proc);font-weight:700">Sub-process</span>, <span style="color:var(--hub);font-weight:700">HubSpot</span>, <span style="color:var(--dep);font-weight:700">External SaaS</span>. Flow arrows are one neutral grey`}${CONFIG.showStatus?'; the pill shows readiness':''}.</div>
+    <div class="footer">LQABR · GCP deployment map · SP-2 design review · 10 Aug 2026 · project ldqfingsrv-dev · us-central1.</div>`;
+}
+function renderInfo(n){
+  const parent=n.cl?NODEMAP[n.cl]:null;
+  const gp=n.cl?NODEMAP[n.cl]:(n.nested?NODEMAP[n.nested]:null);
+  const crumb=gp?`LQABR · ${gp.title.toUpperCase()}`:'LQABR · CLOUD DEPLOYMENT MAP';
+  const cat=roleOf(n);
+  const detail=n.detail||(n.sub||'').replace(/<[^>]+>/g,'');
+  const svcCount=n.expand?CLUSTERNODES.filter(s=>s.cl===n.id&&!s.ghost).length:0;
+  const ghostCount=n.expand?CLUSTERNODES.filter(s=>s.cl===n.id&&s.ghost).length:0;
+  const nestKids=n.expand?NESTNODES.filter(s=>s.nested===n.id):[];
+  const nestCount=nestKids.length;
+  const nestWord=nestCount?(nestKids[0].role==='agent'?`expandable <b style="color:var(--agent)">agent${nestCount>1?'s':''}</b>`:`the <b style="color:var(--future)">Future State</b> tile`):'';
+  const back=n.nested?`Press <b>Esc</b> to go back to ${NODEMAP[n.nested].title}, or <b>Overview</b> to reset.`:'Press <b>Overview</b> to zoom out.';
+  const note=n.expand?`<div class="svcnote">Showing <b>${svcCount}</b> ${n.cl||n.nested?'sub-processes':'services'}${ghostCount?` + <b>${ghostCount}</b> ghosted dependenc${ghostCount>1?'ies':'y'} (blurred — the external system${ghostCount>1?'s':''} it reads &amp; writes)`:''}${nestCount?` + <b>${nestCount}</b> ${nestWord}`:''}. ${back}</div>`:'';
+  info.innerHTML=`
+    <div class="crumb">${crumb}</div>
+    <h2>${n.title}</h2>
+    <div class="chips">${catChip(cat)}${n.st?statChip(n.st):''}</div>
+    <div class="desc">${detail}</div>
+    ${n.kind?`<div class="mrow"><b>Type</b><span>${n.kind}</span></div>`:''}
+    ${note}
+    <div class="footer">LQABR · GCP deployment map · 10 Aug 2026</div>`;
+}
+
+/* ===================== LEGEND ===================== */
+document.body.classList.toggle('emph-agents',CONFIG.emphasizeAgents);
+document.getElementById('legend').innerHTML=`
+  <div class="legrp"><span class="cap">Type</span>
+    ${['agent','gateway','service','proc','hub','dep'].map(k=>`<span class="lg"><span class="swatch" style="color:${CATCOL[k]};background:${CATCOL[k]}"></span>${CAT[k].label}</span>`).join('')}
+  </div>
+  ${CONFIG.showStatus?`<div class="legrp"><span class="cap">Status</span>
+    ${['live','built','plan','ext'].map(k=>`<span class="lg"><span class="sdot" style="background:${cssvar(STAT[k].c)}"></span>${STAT[k].label}</span>`).join('')}
+  </div>`:''}
+  ${DEST()?'':`<div class="legrp"><span class="cap">Flow</span>
+    <span class="lg"><span class="sdot" style="background:${FLOW}"></span>data / control</span>
+  </div>`}`;
+
+/* ===================== INTERACTION ===================== */
+stage.addEventListener('wheel',e=>{e.preventDefault();
+  const r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,f=e.deltaY<0?1.12:1/1.12;
+  let ns=Math.max(.16,Math.min(scale*f,2.4));const wx=(mx-tx)/scale,wy=(my-ty)/scale;tx=mx-wx*ns;ty=my-wy*ns;scale=ns;apply(false);
+},{passive:false});
+let dragging=false,moved=false,sx=0,sy=0,stx=0,sty=0;
+stage.addEventListener('pointerdown',e=>{if(e.target.closest('.node')||e.target.closest('.ctrls')||e.target.closest('#info')||e.target.closest('#hero'))return;
+  dragging=true;moved=false;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;stage.classList.add('grabbing');stage.setPointerCapture(e.pointerId);});
+stage.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)+Math.abs(dy)>4)moved=true;tx=stx+dx;ty=sty+dy;apply(false);});
+stage.addEventListener('pointerup',()=>{stage.classList.remove('grabbing');if(dragging&&!moved)overview();dragging=false;});
+document.getElementById('reset').addEventListener('click',overview);
+function zoomBtn(f){const vw=stage.clientWidth/2,vh=stage.clientHeight/2;let ns=Math.max(.16,Math.min(scale*f,2.4));
+  const wx=(vw-tx)/scale,wy=(vh-ty)/scale;tx=vw-wx*ns;ty=vh-wy*ns;scale=ns;apply(true);}
+document.getElementById('zin').addEventListener('click',()=>zoomBtn(1.25));
+document.getElementById('zout').addEventListener('click',()=>zoomBtn(1/1.25));
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){const cur=openCluster&&NODEMAP[openCluster];if(cur&&cur.nested)onNodeClick(NODEMAP[cur.nested]);else overview();}});
+window.addEventListener('resize',()=>{if(openCluster)onNodeClick(NODEMAP[openCluster]);else overview();});
+
+/* ===================== HERO ===================== */
+const hero=document.getElementById('hero');
+function enterOverview(){hero.classList.add('hide');overview();}
+document.getElementById('heroRing').addEventListener('click',enterOverview);
+document.getElementById('heroCta').addEventListener('click',enterOverview);
+document.getElementById('brandBtn').addEventListener('click',()=>{hero.classList.remove('hide');});
+
+renderExec();requestAnimationFrame(()=>overview());
+</script>
+</body>
+</html>

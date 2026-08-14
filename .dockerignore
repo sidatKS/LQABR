@@ -1,8 +1,111 @@
+# Build context exclusions for infra/gcp/cloud-run/Dockerfile.
+# The context is the REPO ROOT, so without this file Docker uploads .venv,
+# .git and every local .env to the daemon on every build.
+#
+# Two reasons this matters, not one:
+#   size  — .venv alone is hundreds of MB and is rebuilt inside the image
+#           anyway from requirements.txt; sending it is pure waste.
+#   leak  — agents/*/.env hold live API keys. A COPY that catches one bakes
+#           a credential into a layer that ships to the registry.
+#
+# Markdown is deliberately NOT excluded: the email agent's skills ARE .md
+# files read at runtime (skills/*/SKILL.md, skills/DRAFTING_RULES.md). An
+# image without them starts fine and then fails at step 6 with SkillError.
+# The few KB of stray README files are not worth that risk.
+
+# --- credentials: never in an image ---------------------------------
+**/.env
+**/.env.*
+
+# --- VCS and editor ---------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+.claude
+.vscode
+.vscode-shared
+
+# --- local Python environments and artefacts --------------------------
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+.pytest_cache
+
+# --- runtime state: never bake it into an image ------------------------
+# agents/email/.runstate holds live run records — lead email addresses,
+# HubSpot contact ids, subject lines. It is git-ignored, so it is invisible
+# in a diff but very much present in the build context. Baking it in ships
+# prospect PII to the registry AND seeds every new instance with a previous
+# developer's run state, which step 8 would then try to resolve events
+# against.
+**/.runstate
+**/.logs
+**/*_log.jsonl
+**/mailgun_sync_state.json
+
+# --- not needed at runtime -------------------------------------------
+**/tests
+conftest.py
+pytest.ini
+data
+docs
+_to_delete
+*.tgz
+*.tar.gz
+# =====================================================================
+# Build context exclusions.
+# ---------------------------------------------------------------------
+# The build context is the REPO ROOT (infra/docker-compose.yml uses context: ..),
+# because the Dockerfiles reference agents/<component>/... paths. Without
+# this file every build packages and uploads the entire repo — including
+# the virtualenv, git history, and data/, which holds real lead records.
+#
+# None of that reaches the image; it is all transmitted as context. This
+# keeps builds fast and keeps production data out of the build service.
+# =====================================================================
+
+# --- Version control and CI -------------------------------------------
 # VCS / IDE
 .git
 .github
 .gitignore
 
+# --- Virtualenvs and Python caches ------------------------------------
+.venv
+venv
+__pycache__
+**/__pycache__
+.pytest_cache
+*.pyc
+*.pyo
+*.egg-info
+
+# --- Real lead data: never needed in any image ------------------------
+# data/seeds/b2b/output/lead_profiles_decision_makers.json contains 263
+# production contacts with names, emails and phone numbers.
+data/
+
+# --- Docs, tests and infra: not part of any runtime image -------------
+docs/
+tests/
+infra/
+conftest.py
+pytest.ini
+
+# --- Secrets: belt and braces -----------------------------------------
+# The gateway's HubSpot client secret lives in
+# agents/gateway/config/.env. This guarantees no .env can ever enter a
+# build context, even by accident. .env.example is kept.
+**/.env
+!**/.env.example
+
+# --- Local scratch -----------------------------------------------------
+*.log
+.DS_Store
+REMOVE-STRAY-BRANCH.bat
 # Python caches & envs
 __pycache__/
 *.py[cod]

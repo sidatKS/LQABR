@@ -37,6 +37,7 @@ gcloud pubsub topics list --project $PROJECT_ID | grep lqabr
 # HubSpot: Settings -> Properties -> filter group "LQABR" -> 19 properties.
 ```
 
-Local: `python3 -m pytest -q` passes (64 tests, no credentials needed).
+Local: `python3 -m pytest -c tests/pytest.ini -q` passes (64 tests, no
+credentials needed).
 
 **Exit:** Phase 1 (ingestion → profile → HubSpot) can start.

@@ -35,6 +35,11 @@ class CRMClient(ABC):
         """Fetch a lead by email, or None."""
 
     @abstractmethod
+    def find_lead_by_phone(self, phone: str) -> Optional[LeadProfile]:
+        """Fetch a lead by phone number, or None — used to resolve inbound
+        SMS/call webhooks, which only ever carry the caller's number."""
+
+    @abstractmethod
     def leads_in_stage(self, stage: LeadStage, min_probability: int = 0, limit: int = 100) -> List[LeadProfile]:
         """Leads currently owned by a pipeline stage, optionally above a
         probability floor — the orchestrator's work queue query."""

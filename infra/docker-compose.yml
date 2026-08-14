@@ -1,0 +1,150 @@
+# =====================================================================
+# docker-compose.yml — build the LQABR Email Agent images and push them to
+# Google Artifact Registry.
+#
+# SCOPE: email component only. ONE image, one Cloud Run service, one endpoint
+# (Platform Engineering, 2026-08-04). The email-webhook image was removed —
+# Mailgun pushes to the SAME service the gateway reaches.
+#
+# BUILD/PUSH ONLY. These services are not meant to be started with
+# `docker compose up`: they are Cloud Run containers that expect injected
+# secrets and a runtime service account. Compose is used here purely as the
+# build+push driver, per the platform-engineering ask (2026-08-03).
+#
+#   Spec:       docs/IMAGE_BUILD_SPEC.md
+#   Dockerfile: infra/gcp/cloud-run/Dockerfile  (already parameterised)
+#   One-shot:   bash infra/gcp/compose_build_push.sh email-agent
+#
+# Manual equivalent:
+#   gcloud auth configure-docker us-central1-docker.pkg.dev
+#   docker compose -f infra/docker-compose.yml build email-agent
+#   docker compose -f infra/docker-compose.yml push email-agent
+#
+# Overridable at build time (defaults target the dev project):
+#   IMAGE_BASE    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr
+#   IMAGE_PREFIX  lqabr-dev          <project code>-<environment>
+#   VERSION       0.1.0              semantic version -> the immutable tag
+#
+#   VERSION=0.2.0 docker compose -f infra/docker-compose.yml build email-agent
+#
+# Naming: ${IMAGE_PREFIX}-<component>-<kind>:${VERSION}, plus :latest — e.g.
+# lqabr-dev-email-agent:0.1.0.
+# =====================================================================
+
+name: lqabr
+
+# Repo root as context (`..` — this file lives in infra/), the shared
+# parameterised Dockerfile. `dockerfile:` is resolved against the context,
+# so those paths stay repo-root-relative.
+x-image-build: &image-build
+  context: ..
+  dockerfile: infra/gcp/cloud-run/Dockerfile
+
+services:
+
+  # ------------------------------------------------------------------- agent
+  # The agent's OWN domain surface — POST /hubspot/campaign, the Mailgun
+  # route, and both health spellings. This is what the gateway calls.
+  #
+  # CHANGED 2026-08-04: SERVICE_KIND was `agent` (the generic ADK
+  # api_server). That image only speaks ADK — POST /run with an
+  # {appName:"src", userId, sessionId, newMessage} envelope, after a session
+  # has been created — so a gateway dispatching a domain call the way it
+  # does to text_voice could never reach it, and the two agents did not even
+  # agree on the health path. See agents/email/src/service_app.py.
+  #
+  # The IMAGE NAME is deliberately unchanged: the Cloud Run service
+  # lqabr-dev-email-agent keeps its URL, so LQABR_EMAIL_AGENT_URL and any
+  # gateway config stay valid. Only the contract inside the container moves.
+  # 2026-08-04: this one service now serves the Mailgun push too
+  # (LQABR_EMAIL_ROUTES=all). The second image is gone.
+
+  email-agent:
+    image: ${IMAGE_BASE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr}/${IMAGE_PREFIX:-lqabr-dev}-email-agent:${VERSION:-0.1.0}
+    build:
+      <<: *image-build
+      args:
+        AGENT_DIR: email
+        SERVICE_KIND: service
+      tags:
+        - ${IMAGE_BASE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr}/${IMAGE_PREFIX:-lqabr-dev}-email-agent:latest
+
+# ---------------------------------------------------------------------------
+#
+# Mailgun is now configured with the email-agent service's own URL — the same
+# one the gateway reaches — and the event handling is business logic inside
+# the agent (agents/email/src/service_app.py -> events.py). One image, one
+# Cloud Run service, one endpoint, zero instances at rest.
+#
+# agents/email/src/webhook_app.py is deleted, so `SERVICE_KIND=webhook` can no
+# longer produce an email image even by accident.
+# ---------------------------------------------------------------------------
+# LQABR — container image build & push
+# ---------------------------------------------------------------------
+# This file is NOT for running the stack. It builds each component into an
+# image and pushes it to Artifact Registry — no ports, no networks, no
+# volumes, no depends_on, on purpose.
+#
+#   docker compose -f infra/docker-compose.yml build gtwy
+#   docker compose -f infra/docker-compose.yml push  gtwy
+#
+# Build context is the REPO ROOT for every service, because the Dockerfiles
+# reference agents/<component>/... paths. See .dockerignore for what is kept
+# out of that context.
+#
+# Image naming (approved 3 Aug 2026):
+#   <project>-<env>-<component>:<version>   and   :latest
+# =====================================================================
+
+services:
+
+  # --- Agent Gateway (SP-1) ------------------------------------------
+  # Uses its own Dockerfile rather than the shared parametrised one: it
+  # additionally installs the agentgateway binary and runs
+  # docker-entrypoint.sh. Version 0.1.0 matches gateway.version in
+  # agents/gateway/config/config.yaml and agents/gateway/VERSION.
+  gtwy:
+    build:
+      context: ..
+      dockerfile: agents/gateway/Dockerfile
+      tags:
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-gtwy:0.1.0"
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-gtwy:latest"
+    image: "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-gtwy:0.1.0"
+# LQABR — lead_profile agent — image build & push (Docker Compose only, no CI/CD).
+# Spec: docs/IMAGE_SPEC.md — review that first.
+#
+# Builds with the repo's shared parametrized image (infra/gcp/cloud-run/Dockerfile):
+# lqabr_core installed first, then the agent's requirements; the entrypoint runs
+# `adk api_server agents/lead_profile/src`.
+#
+# IMAGE NAME = the LIVE Cloud Run service's image (verified 04 Aug 2026):
+#   service  lqabr-dev-ldpf
+#   image    us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
+# `image:` below is that exact repo:tag, so `docker compose -f infra/docker-compose.yml push ldpf` updates the
+# tag the running service resolves. The live platform convention is
+# lqabr-dev-<component> (email->lqabr-dev-email-agent, gtwy->lqabr-dev-gtwy,
+# txtv->lqabr-dev-txtv). NOTE: infra/gcp/05_deploy_agents.sh uses a DIFFERENT
+# scheme (lqabr-<agent>-<kind>) that does NOT match live — do not run it as-is or
+# it creates duplicate services.
+#
+# Cloud Run does NOT auto-pull :latest — after pushing you MUST redeploy a new
+# revision to pick up the image:
+#   gcloud run deploy lqabr-dev-ldpf --region us-central1 --project ldqfingsrv-dev \
+#     --image us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest
+#
+#   docker compose -f infra/docker-compose.yml build ldpf
+#   docker compose -f infra/docker-compose.yml push ldpf     # pushes lqabr-dev-ldpf:latest (the live service's tag)
+
+services:
+  ldpf:
+    build:
+      context: ..
+      dockerfile: infra/gcp/cloud-run/Dockerfile
+      args:
+        AGENT_DIR: lead_profile
+        SERVICE_KIND: agent
+      tags:
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:0.1.0"
+        - "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest"
+    image: "us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-ldpf:latest"

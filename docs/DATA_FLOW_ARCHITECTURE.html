@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQABR — High-Level Data Flow Architecture</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#0f1b2d; --muted:#5b6b82;
+    --line:#c9d4e3; --line-strong:#8ea4c2;
+    --ingest:#6b7280; --profile:#7c3aed; --crm:#f59e0b; --crmink:#7a4a00;
+    --email:#2563eb; --voice:#0d9488; --sched:#db2777; --orch:#4f46e5;
+    --human:#16a34a; --ext:#334155; --shadow:0 1px 2px rgba(16,32,60,.08),0 6px 18px rgba(16,32,60,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0b1220; --panel:#111a2b; --ink:#e8eef7; --muted:#93a4bd;
+      --line:#2a3a54; --line-strong:#43597e;
+      --crmink:#ffdca8; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px;}
+  header h1{margin:0 0 4px;font-size:26px;letter-spacing:-.02em;}
+  header p{margin:0;color:var(--muted);max-width:70ch;}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin:22px 0 8px;font-size:12.5px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block;}
+
+  .flow{display:flex;flex-direction:column;align-items:center;gap:0;margin-top:14px;}
+  .row{display:flex;gap:16px;justify-content:center;align-items:stretch;width:100%;flex-wrap:wrap;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;box-shadow:var(--shadow);position:relative;min-width:210px;max-width:340px;flex:1;}
+  .card .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    display:inline-block;padding:2px 8px;border-radius:999px;color:#fff;margin-bottom:8px;}
+  .card h3{margin:0 0 4px;font-size:16px;letter-spacing:-.01em;}
+  .card p{margin:0;color:var(--muted);font-size:13px;}
+  .card .io{margin-top:9px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;}
+  .card .io b{color:var(--ink);font-weight:600;}
+  .card .edge-left{border-left:4px solid var(--l,var(--line-strong));}
+
+  .arrow{display:flex;flex-direction:column;align-items:center;color:var(--muted);
+    font-size:12px;font-weight:600;padding:8px 0;}
+  .arrow .stem{width:2px;height:16px;background:var(--line-strong);}
+  .arrow .lbl{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    padding:2px 10px;margin:4px 0;color:var(--ink);box-shadow:var(--shadow);}
+  .arrow .head{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:8px solid var(--line-strong);}
+
+  .hub{background:linear-gradient(180deg,rgba(245,158,11,.14),rgba(245,158,11,.05));
+    border:2px solid var(--crm);border-radius:16px;max-width:760px;width:100%;}
+  .hub h3{color:var(--crmink);}
+  .hub .props{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .chip{font-size:11.5px;background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.5);
+    color:var(--crmink);padding:2px 8px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+  .band{width:100%;border:1px dashed var(--line-strong);border-radius:14px;padding:14px;margin:0;
+    background:color-mix(in srgb,var(--panel) 88%,transparent);}
+  .band .band-hd{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin-bottom:12px;text-align:center;}
+
+  .side{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:26px;}
+  .infra{flex:1;min-width:260px;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:16px;box-shadow:var(--shadow);}
+  .infra h4{margin:0 0 8px;font-size:14px;}
+  .infra ul{margin:0;padding-left:18px;color:var(--muted);font-size:13px;}
+  .infra code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink);}
+
+  .note{margin-top:26px;font-size:12.5px;color:var(--muted);text-align:center;}
+  @media print{body{background:#fff}.card,.infra{box-shadow:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>LQABR — High-Level Data Flow Architecture</h1>
+    <p>AI lead-qualification &amp; outreach. Leads enter from two sources, get profiled, and are
+      progressively qualified by three outreach agents. <b>HubSpot is the system of record</b> —
+      every stage and probability change is written back to the contact.</p>
+  </header>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ingest)"></i>Ingestion</span>
+    <span><i class="dot" style="background:var(--profile)"></i>Profiling</span>
+    <span><i class="dot" style="background:var(--crm)"></i>CRM / system of record</span>
+    <span><i class="dot" style="background:var(--email)"></i>Email stage</span>
+    <span><i class="dot" style="background:var(--voice)"></i>Text/Voice stage</span>
+    <span><i class="dot" style="background:var(--sched)"></i>Scheduling stage</span>
+    <span><i class="dot" style="background:var(--orch)"></i>Orchestration</span>
+    <span><i class="dot" style="background:var(--ext)"></i>External service</span>
+  </div>
+
+  <div class="flow">
+
+    <!-- SOURCES -->
+    <div class="row">
+      <div class="card edge-left" style="--l:var(--ingest)">
+        <span class="tag" style="background:var(--ingest)">Source · manual</span>
+        <h3>CSV folder load</h3>
+        <p>Operator drops seed CSVs (<code>data/seeds/b2b/</code>).</p>
+      </div>
+      <div class="card edge-left" style="--l:var(--ingest)">
+        <span class="tag" style="background:var(--ingest)">Source · automatic</span>
+        <h3>ZoomInfo API</h3>
+        <p>Contact search pull, default batch of 20.</p>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="stem"></div><div class="lbl">operator-initiated trigger</div><div class="head"></div></div>
+
+    <!-- INGESTION -->
+    <div class="row">
+      <div class="card edge-left" style="--l:var(--ingest)">
+        <span class="tag" style="background:var(--ingest)">E1 · Ingestion Agent</span>
+        <h3>Normalize to raw-record contract</h3>
+        <p>Single dual-source entry point. Bad/messy records are flagged with a reason, never dropped.</p>
+        <div class="io"><b>Out →</b> normalized raw records</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="stem"></div><div class="lbl">normalized raw records</div><div class="head"></div></div>
+
+    <!-- PROFILE -->
+    <div class="row">
+      <div class="card edge-left" style="--l:var(--profile)">
+        <span class="tag" style="background:var(--profile)">E2 · Lead Profile Agent</span>
+        <h3>Build the 9-pointer profile</h3>
+        <p>name · title · company · email · phone · industry · size/revenue · location+timezone · LinkedIn.
+          Starting probability = <b>10</b>.</p>
+        <div class="io"><b>Out →</b> 9-pointer profile → upsert to CRM</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="stem"></div><div class="lbl">contact upsert</div><div class="head"></div></div>
+
+    <!-- HUBSPOT HUB -->
+    <div class="row">
+      <div class="card hub">
+        <span class="tag" style="background:var(--crm)">E3 · HubSpot — central lead-profile source &amp; system of record</span>
+        <h3>Every lead's canonical state lives here</h3>
+        <p>Agents hold no canonical state; all reads/writes go through
+          <code>lqabr_core.crm</code> (vendor-neutral <code>CRMClient</code> → <code>HubSpotClient</code>).
+          On conflict, <b>CRM wins</b>.</p>
+        <div class="props">
+          <span class="chip">lqabr_stage</span>
+          <span class="chip">lqabr_probability</span>
+          <span class="chip">email counters</span>
+          <span class="chip">sms / voicemail counters</span>
+          <span class="chip">answered-call counter</span>
+          <span class="chip">meeting_scheduled</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="stem"></div><div class="lbl">orchestrator reads stage queues ↕ agents write back</div><div class="head"></div></div>
+
+    <!-- OUTREACH BAND -->
+    <div class="band">
+      <div class="band-hd">Outreach stages — probability gated · promotion happens only via CRM writeback</div>
+
+      <!-- EMAIL -->
+      <div class="row">
+        <div class="card edge-left" style="--l:var(--email)">
+          <span class="tag" style="background:var(--email)">E4 · Email Agent</span>
+          <h3>Personalized outreach</h3>
+          <p>One tracked email per lead with a listed address (via Mailgun).</p>
+          <div class="io"><b>+2</b> delivered · <b>+5</b> opened · <b>+10</b> clicked
+            &nbsp;→&nbsp; <b>≥ 30</b> promotes</div>
+        </div>
+      </div>
+
+      <div class="arrow"><div class="stem"></div><div class="lbl">probability ≥ 30</div><div class="head"></div></div>
+
+      <!-- TEXT/VOICE -->
+      <div class="row">
+        <div class="card edge-left" style="--l:var(--voice)">
+          <span class="tag" style="background:var(--voice)">E5 · Text/Voice Agent</span>
+          <h3>SMS + voice (Twilio)</h3>
+          <p>Flow A — no answer → custom voicemail + custom SMS (Reply STOP opt-out).<br>
+             Flow B — answered → conversational Q&amp;A pattern.</p>
+          <div class="io"><b>+3</b> SMS · <b>+2</b> voicemail · <b>+15</b> answered · <b>+15</b> engaged
+            &nbsp;→&nbsp; <b>≥ 60</b> promotes</div>
+        </div>
+      </div>
+
+      <div class="arrow"><div class="stem"></div><div class="lbl">probability ≥ 60</div><div class="head"></div></div>
+
+      <!-- SCHEDULING -->
+      <div class="row">
+        <div class="card edge-left" style="--l:var(--sched)">
+          <span class="tag" style="background:var(--sched)">E6 · Scheduling Agent</span>
+          <h3>Zoom Scheduler invite</h3>
+          <p>Emails booking link across EST / CST / PST / IST.</p>
+          <div class="io">Booking pins probability to <b>95</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="stem"></div><div class="lbl">meeting_scheduled</div><div class="head"></div></div>
+
+    <!-- HUMAN -->
+    <div class="row">
+      <div class="card edge-left" style="--l:var(--human)">
+        <span class="tag" style="background:var(--human)">Handoff</span>
+        <h3>Human rep</h3>
+        <p>Qualified lead with a booked meeting is handed to a person.</p>
+      </div>
+    </div>
+
+  </div><!-- /flow -->
+
+  <!-- CROSS-CUTTING -->
+  <div class="side">
+    <div class="infra">
+      <h4>Event feedback loop (webhooks)</h4>
+      <ul>
+        <li><code>Mailgun</code> → delivered / opened / clicked</li>
+        <li><code>Twilio</code> → SMS status, answer, gather</li>
+        <li><code>Zoom</code> → meeting booked</li>
+        <li>Every receiver verifies provider signatures; engagement is
+          recorded by webhooks, <b>never fabricated</b>.</li>
+      </ul>
+    </div>
+    <div class="infra">
+      <h4>Orchestration &amp; runtime</h4>
+      <ul>
+        <li><b>E7</b> Orchestrator dispatches via Google <code>A2A</code> (message/send)</li>
+        <li><code>Cloud Scheduler</code> drives dispatch cycles</li>
+        <li><code>Pub/Sub</code> carries triggers &amp; event fan-out</li>
+        <li><b>E8</b> Google ADK agents on <code>Cloud Run</code> (Gemini, config-driven)</li>
+      </ul>
+    </div>
+    <div class="infra">
+      <h4>Foundation (E0)</h4>
+      <ul>
+        <li>Secrets from Google <code>Secret Manager</code> only</li>
+        <li>Runtime SA + least-privilege IAM</li>
+        <li>Idempotent <code>infra/gcp/</code> scripts 00–06</li>
+        <li>Shared logic in <code>packages/lqabr_core/</code>; no cross-agent imports</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="note">Probability rules are the single source of truth in
+    <code>lqabr_core/probability.py</code> · Thresholds: 30 → Text/Voice, 60 → Scheduling, 95 → booked.</p>
+</div>
+</body>
+</html>

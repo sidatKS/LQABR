@@ -43,5 +43,5 @@ probability model is evaluated before outreach volume scales.
   `meeting_scheduled` purely via scheduled dispatch cycles.
 - Orchestrator failures alert (Cloud Logging-based alerting) and are
   re-dispatched the next cycle.
-- Full suite green: `python3 -m pytest -q` (64 tests) + e2e checklist from
+- Full suite green: `python3 -m pytest -c tests/pytest.ini -q` (64 tests) + e2e checklist from
   Phases 1–4 rerun against the deployed services.

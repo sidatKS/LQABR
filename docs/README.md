@@ -10,9 +10,11 @@ then three agents work each lead's probability up:
 meeting booked (95) → human rep.
 
 Google ADK agents on Cloud Run, orchestrated via A2A, credentials in
-Secret Manager. Full map: `docs/EPICS.md` (E0–E10).
+Secret Manager. Full map: `EPICS.md` (E0–E10).
 
 ## Quick start
+
+All commands below are run from the repo root (one level up from `docs/`).
 
 ```bash
 # 1. Dev setup
@@ -21,7 +23,7 @@ pip install -r agents/lead_profile/requirements.txt
 pip install pytest fastapi httpx python-multipart
 
 # 2. Prove the code works (no credentials needed — everything mocked)
-python3 -m pytest -q          # 64 tests
+python3 -m pytest -c tests/pytest.ini -q          # 64 tests
 
 # 3. Dry-run the pipeline entry against the bundled CSV seeds
 python agents/ingestion/src/ingestion_agent.py --source csv --dry-run
@@ -29,15 +31,15 @@ python agents/ingestion/src/ingestion_agent.py --source csv --dry-run
 
 ## Going live
 
-1. `docs/PREREQUISITES.md` — accounts + credentials (HubSpot, Mailgun,
+1. `PREREQUISITES.md` — accounts + credentials (HubSpot, Mailgun,
    Twilio, ZoomInfo, Zoom, GCP).
-2. `infra/gcp/README.md` — provision & deploy (`config.sh`, then scripts
+2. `../infra/gcp/README.md` — provision & deploy (`config.sh`, then scripts
    `00` → `06`).
-3. `docs/PHASE1_PLAN.md` … `PHASE5_PLAN.md` — verified rollout, phase by
+3. `PHASE1_PLAN.md` … `PHASE5_PLAN.md` — verified rollout, phase by
    phase.
 
 ## Where things live
 
-Agents in `agents/<name>/` (six of them), shared logic in
-`packages/lqabr_core/`, provisioning in `infra/gcp/`, seed CSVs in
-`data/seeds/b2b/`. Folder rationale: `READ_PRJSTRC_ME.md`.
+Agents in `agents/<name>/`, shared logic in `packages/lqabr_core/`,
+provisioning in `infra/gcp/`, seed CSVs in `data/seeds/b2b/`. Folder
+rationale: `READ_PRJSTRC_ME.md`.

@@ -44,7 +44,7 @@ Version comes from `packages/lqabr_core/pyproject.toml` (`version = "0.1.0"`).
 
 ## 4. The compose file
 
-`docker-compose.yml` at the repo root:
+`infra/docker-compose.yml` (build contexts are `..`, i.e. the repo root):
 
 ```yaml
 services:

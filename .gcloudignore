@@ -1,0 +1,46 @@
+# =====================================================================
+# What `gcloud builds submit` uploads as the build context.
+# ---------------------------------------------------------------------
+# IMPORTANT: gcloud does NOT read .dockerignore when deciding what to
+# upload. If this file is absent, gcloud falls back to .gitignore — which
+# does not exclude data/, so 263 real lead records would be uploaded to
+# Cloud Build on every run.
+#
+# .dockerignore still applies *inside* the build, when Docker assembles the
+# image. This file governs the earlier step: what leaves your machine.
+# =====================================================================
+
+# --- Version control ---------------------------------------------------
+.git
+.github
+.gitignore
+
+# --- Virtualenvs and Python caches ------------------------------------
+.venv
+venv
+__pycache__
+**/__pycache__
+.pytest_cache
+*.pyc
+*.pyo
+*.egg-info
+
+# --- Real lead data: must never leave the machine ----------------------
+# data/seeds/b2b/output/lead_profiles_decision_makers.json holds 263
+# production contacts with names, emails and phone numbers.
+data/
+
+# --- Not part of any image --------------------------------------------
+docs/
+tests/
+conftest.py
+pytest.ini
+
+# --- Secrets: belt and braces -----------------------------------------
+# agents/gateway/config/.env holds the HubSpot client secret.
+**/.env
+
+# --- Local scratch ------------------------------------------------------
+*.log
+.DS_Store
+REMOVE-STRAY-BRANCH.bat

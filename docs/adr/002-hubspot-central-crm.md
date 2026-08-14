@@ -1,6 +1,6 @@
 # ADR 002 — HubSpot as the central lead-profile source; retire the BigLake data platform
 
-**Status:** Accepted (2026-07) — supersedes [ADR 001](001-biglake-architecture.md)
+**Status:** Accepted (2026-07) — supersedes ADR 001 (the retired BigLake data-platform plan, since removed)
 
 ## Context
 

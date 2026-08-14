@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Agent — High-Level Data Flow</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#0f1b2d; --muted:#5b6b82;
+    --line:#c9d4e3; --line-strong:#8ea4c2;
+    --agent:#2563eb; --crm:#f59e0b; --crmink:#7a4a00; --mail:#c026d3;
+    --hook:#0d9488; --actor:#4f46e5; --next:#16a34a; --warn:#dc2626;
+    --shadow:0 1px 2px rgba(16,32,60,.08),0 6px 18px rgba(16,32,60,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0b1220; --panel:#111a2b; --ink:#e8eef7; --muted:#93a4bd;
+      --line:#2a3a54; --line-strong:#43597e; --crmink:#ffdca8;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px 64px;}
+  header h1{margin:0 0 4px;font-size:26px;letter-spacing:-.02em;}
+  header p{margin:0;color:var(--muted);max-width:78ch;}
+  header .meta{margin-top:8px;font-size:12.5px;color:var(--muted);}
+  header .meta code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin:20px 0 6px;font-size:12.5px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block;}
+
+  .lane{border:1px dashed var(--line-strong);border-radius:16px;padding:16px 16px 20px;margin-top:20px;
+    background:color-mix(in srgb,var(--panel) 88%,transparent);}
+  .lane-hd{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:14px;}
+  .lane-hd .pill{font-size:11px;color:#fff;padding:2px 10px;border-radius:999px;letter-spacing:.02em;}
+
+  .flow{display:flex;flex-direction:column;align-items:center;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:13px 15px;box-shadow:var(--shadow);position:relative;width:100%;max-width:560px;}
+  .card.edge{border-left:4px solid var(--l,var(--line-strong));}
+  .card .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    display:inline-block;padding:2px 8px;border-radius:999px;color:#fff;margin-bottom:7px;}
+  .card h3{margin:0 0 3px;font-size:15.5px;letter-spacing:-.01em;}
+  .card p{margin:0;color:var(--muted);font-size:13px;}
+  .card code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink);}
+  .tools{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
+  .tool{font-size:11.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.45);color:var(--agent);
+    padding:2px 8px;border-radius:6px;}
+  @media (prefers-color-scheme:dark){.tool{color:#8fb4ff}}
+
+  .step{display:flex;flex-direction:column;align-items:center;padding:7px 0;color:var(--muted);font-size:12px;}
+  .step .stem{width:2px;height:14px;background:var(--line-strong);}
+  .step .lbl{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:3px 10px 3px 4px;margin:4px 0;color:var(--ink);box-shadow:var(--shadow);
+    max-width:520px;text-align:left;}
+  .step .n{background:var(--s,var(--line-strong));color:#fff;font-weight:700;border-radius:999px;
+    min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;}
+  .step .head{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:8px solid var(--line-strong);}
+  .step.dashed .stem,.step.dashed .head{opacity:.5}
+
+  .duo{display:flex;gap:14px;width:100%;max-width:560px;}
+  .duo .card{max-width:none}
+
+  .hub{background:linear-gradient(180deg,rgba(245,158,11,.14),rgba(245,158,11,.05));border:2px solid var(--crm);}
+  .hub h3{color:var(--crmink)}
+  .hub .props{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .chip{font-size:11.5px;background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.5);
+    color:var(--crmink);padding:2px 8px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+  .side{display:flex;gap:16px;flex-wrap:wrap;margin-top:24px;}
+  .box{flex:1;min-width:270px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px;box-shadow:var(--shadow);}
+  .box.warnbox{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 7%,var(--panel));}
+  .box h4{margin:0 0 8px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .box ul{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
+  .box code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink)}
+  .badge{font-size:10.5px;font-weight:700;color:#fff;background:var(--warn);padding:1px 7px;border-radius:999px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Email Agent — High-Level Data Flow</h1>
+    <p>First outreach stage (E4). Two responsibilities: <b>draft &amp; send</b> one personalized
+      first-touch email per profiled lead, and <b>listen for engagement</b> (delivered / opened / clicked)
+      to raise the lead's probability in HubSpot. It writes the signal; the orchestrator decides promotion.</p>
+    <div class="meta">Dir <code>agents/email/</code> · Agent <code>email_agent.py</code> ·
+      Webhook <code>webhook_app.py</code> · CRM <code>lqabr_core.crm.HubSpotClient</code> ·
+      Mail <code>lqabr_core.mailgun.MailgunClient</code> · Scores <code>lqabr_core/probability.py</code></div>
+  </header>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--actor)"></i>Orchestrator / operator</span>
+    <span><i class="dot" style="background:var(--agent)"></i>Email Agent (LLM + tools)</span>
+    <span><i class="dot" style="background:var(--crm)"></i>HubSpot (system of record)</span>
+    <span><i class="dot" style="background:var(--mail)"></i>Mailgun</span>
+    <span><i class="dot" style="background:var(--hook)"></i>Webhook service</span>
+    <span><i class="dot" style="background:var(--next)"></i>Next stage</span>
+  </div>
+
+  <!-- OUTBOUND -->
+  <div class="lane">
+    <div class="lane-hd"><span class="pill" style="background:var(--agent)">Outbound</span> Draft &amp; send</div>
+    <div class="flow">
+
+      <div class="card edge" style="--l:var(--actor)">
+        <span class="tag" style="background:var(--actor)">Trigger</span>
+        <h3>Orchestrator / operator</h3>
+        <p>“Work leads in <code>email_outreach</code>” — or name one specific email address.</p>
+      </div>
+
+      <div class="step" style="--s:var(--agent)"><div class="stem"></div>
+        <div class="lbl"><span class="n">1</span>invoke the agent</div><div class="head"></div></div>
+
+      <div class="card edge" style="--l:var(--agent)">
+        <span class="tag" style="background:var(--agent)">root_agent · LLM</span>
+        <h3>Email Agent decides what &amp; when</h3>
+        <p>Typed, deterministic tools — HubSpot reads + one HubSpot-gated Mailgun send.
+           Model is config-driven (<code>LQABR_EMAIL_MODEL</code> → <code>build_model()</code>).</p>
+        <div class="tools">
+          <span class="tool">list_email_queue()</span>
+          <span class="tool">get_lead_status(email)</span>
+          <span class="tool">send_outreach_email(email, subject, html_body, cta_url)</span>
+        </div>
+      </div>
+
+      <div class="step" style="--s:var(--agent)"><div class="stem"></div>
+        <div class="lbl"><span class="n">2</span>read lead profile fields (name, company, title, industry, status, probability)</div><div class="head"></div></div>
+
+      <div class="card edge hub" style="--l:var(--crm)">
+        <span class="tag" style="background:var(--crm)">HubSpot</span>
+        <h3>Read — the profile is the ground truth</h3>
+        <p><code>list_email_queue</code> / <code>get_lead_status</code> pull the 9-pointer profile.
+           Nothing about the lead is invented.</p>
+      </div>
+
+      <div class="step" style="--s:var(--agent)"><div class="stem"></div>
+        <div class="lbl"><span class="n">3</span>LLM drafts subject + HTML grounded only in real profile fields</div><div class="head"></div></div>
+      <div class="step" style="--s:var(--agent)"><div class="stem"></div>
+        <div class="lbl"><span class="n">4</span><code>send_outreach_email(...)</code> called</div><div class="head"></div></div>
+
+      <div class="card edge" style="--l:var(--agent)">
+        <span class="tag" style="background:var(--agent)">Inside the send tool</span>
+        <h3>Gate → format → send → mark</h3>
+        <p><b>5</b> <code>find_lead_by_email()</code> re-verifies the contact exists in HubSpot
+           (the real gate — independent of step 2).<br>
+           <b>6</b> <code>_safe_format()</code> fills <code>{first_name}/{company}/…</code>;
+           falls back to <code>DEFAULT_SUBJECT/HTML</code> so a send never fails for lack of copy.</p>
+      </div>
+
+      <div class="duo">
+        <div class="step" style="--s:var(--mail)"><div class="stem"></div>
+          <div class="lbl"><span class="n">6</span>POST /messages — tracking on + <code>hubspot_contact_id</code> tag</div><div class="head"></div></div>
+        <div class="step" style="--s:var(--crm)"><div class="stem"></div>
+          <div class="lbl"><span class="n">7</span>first send only → <code>lqabr_email_status = SENT</code></div><div class="head"></div></div>
+      </div>
+
+      <div class="duo">
+        <div class="card edge" style="--l:var(--mail)">
+          <span class="tag" style="background:var(--mail)">Mailgun API</span>
+          <h3>Sends the email</h3>
+          <p><code>o:tracking-opens</code> / <code>o:tracking-clicks</code> enabled; the
+             <code>hubspot_contact_id</code> user-variable is the correlation key for later.</p>
+        </div>
+        <div class="card edge" style="--l:var(--crm)">
+          <span class="tag" style="background:var(--crm)">HubSpot</span>
+          <h3>Marks SENT</h3>
+          <p>Tool returns <code>{status:"sent"}</code> or a verbatim <code>{error}</code> —
+             Mailgun/CRM failures are never swallowed.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INBOUND -->
+  <div class="lane">
+    <div class="lane-hd"><span class="pill" style="background:var(--hook)">Inbound</span> Engagement → probability</div>
+    <div class="flow">
+
+      <div class="card edge" style="--l:var(--mail)">
+        <span class="tag" style="background:var(--mail)">Mailgun</span>
+        <h3>Fires a signed engagement event</h3>
+        <p><code>delivered</code> · <code>opened</code> · <code>clicked</code> — one event per POST.</p>
+      </div>
+
+      <div class="step" style="--s:var(--hook)"><div class="stem"></div>
+        <div class="lbl"><span class="n">8</span>POST <code>/webhooks/mailgun</code></div><div class="head"></div></div>
+
+      <div class="card edge" style="--l:var(--hook)">
+        <span class="tag" style="background:var(--hook)">webhook_app.py · separate FastAPI service</span>
+        <h3>Verify → map → correlate → record</h3>
+        <p><b>9a</b> HMAC-SHA256 signature check — forged/unsigned → <code>401</code>.<br>
+           <b>9b</b> <code>EVENT_MAP</code>: <b>+2</b> delivered · <b>+5</b> opened · <b>+10</b> clicked;
+              anything else → <code>200 ignored</code>.<br>
+           <b>9c</b> pull <code>hubspot_contact_id</code> from user-variables — missing → loud <code>422</code>.</p>
+      </div>
+
+      <div class="step" style="--s:var(--crm)"><div class="stem"></div>
+        <div class="lbl"><span class="n">10</span><code>record_event()</code> → one PATCH: <code>probability</code> + <code>lqabr_email_status</code></div><div class="head"></div></div>
+
+      <div class="card edge hub" style="--l:var(--crm)">
+        <span class="tag" style="background:var(--crm)">HubSpot</span>
+        <h3>Engagement becomes state</h3>
+        <p>Probability recomputed via <code>apply_event()</code> (capped 0–100). CRM write failure →
+           <code>500</code> on purpose, so Mailgun retries and no event is lost.</p>
+        <div class="props">
+          <span class="chip">probability</span>
+          <span class="chip">lqabr_email_status</span>
+        </div>
+      </div>
+
+      <div class="step dashed" style="--s:var(--next)"><div class="stem"></div>
+        <div class="lbl"><span class="n">11</span>probability ≥ 30 (<code>TEXT_VOICE_THRESHOLD</code>) — orchestrator infers promotion</div><div class="head"></div></div>
+
+      <div class="card edge" style="--l:var(--next)">
+        <span class="tag" style="background:var(--next)">Handoff</span>
+        <h3>Text/Voice Agent (E5)</h3>
+        <p>Promotion is <b>read from probability</b>, not a stored stage field — the Email Agent only writes the signal.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SIDE -->
+  <div class="side">
+    <div class="box">
+      <h4>Guardrails</h4>
+      <ul>
+        <li>Only emails real HubSpot contacts — verified inside the send tool, not trusted from the LLM.</li>
+        <li>Never fabricates profile facts, prior contact, or engagement.</li>
+        <li>Engagement is recorded <b>only</b> by the webhook processing a real Mailgun event.</li>
+        <li>Mailgun/HubSpot failures surfaced verbatim; retries are bounded backoff, never silent.</li>
+      </ul>
+    </div>
+    <div class="box warnbox">
+      <h4>Known gap <span class="badge">not deployed</span></h4>
+      <ul>
+        <li><code>webhook_app.py</code> isn't stood up on Cloud Run yet — Mailgun has nowhere to push events.</li>
+        <li>Until then, sync manually via <code>manual_mailgun_send.py</code> (<code>status</code>/<code>watch</code>).</li>
+        <li>No HubSpot property persists cross-agent stage — it's inferred from <code>probability</code> everywhere.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

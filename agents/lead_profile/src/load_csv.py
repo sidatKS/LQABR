@@ -72,7 +72,7 @@ class RawFeed:
 
 
 def default_incoming_dir() -> Path:
-    return Path(os.getenv("LQABR_INCOMING_DIR", "data/seeds/b2b"))
+    return Path(os.getenv("LQABR_INCOMING_DIR", "data/incoming"))
 
 
 def _read_one(path: Path, required: tuple[str, ...]) -> list[dict[str, str]]:
@@ -142,7 +142,7 @@ def load_csvs(
 ) -> RawFeed:
     """Read the three CSVs into memory.
 
-    Paths are overridable per file so the future BigQuery ``fct_lead`` source
+    Paths are overridable per file so a future alternate lead source
     can be swapped in without touching Step 3.
     """
     obs = get_obs()
