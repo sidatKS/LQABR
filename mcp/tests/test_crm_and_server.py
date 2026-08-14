@@ -1,5 +1,7 @@
 """The MCP's HubSpot REST surface (steps 5 and 9)."""
 
+from dataclasses import replace
+
 import pytest
 
 from mcp_fakes import FakeResponse, FakeSession, RecordingObs
@@ -28,13 +30,16 @@ class StubHubSpotClient:
     lead = LeadProfile(full_name="Jane Smith", external_employee_id="E00002",
                        email="jane@acme.example", company="Acme",
                        job_title="VP Engineering", industry="Software",
-                       external_company_id="C-1", probability=10, hubspot_contact_id="42")
+                       external_company_id="C-1", probability=10, object_id="42")
 
     def __init__(self, access_token=None, session=None):
         self.access_token = access_token
 
     def get_lead(self, object_id):
-        return self.lead
+        # A COPY: the real client builds a fresh profile per call, and the
+        # company walk fills the profile in place — handing out the shared
+        # class attribute would leak one test's enrichment into the next.
+        return replace(self.lead)
 
     def find_lead_by_email(self, email):
         return self.lead if email == self.lead.email else None
@@ -57,6 +62,87 @@ def test_get_lead_profile_validates_and_logs_the_validation():
     assert profile.first_name == "Jane" and profile.last_name == "Smith"
     assert obs.processes[0]["event"] == "schema_validated"
     assert obs.processes[0]["step"] == 5
+
+
+# --------------------------------------------- step 5: the company walk
+class NoIndustryClient(StubHubSpotClient):
+    """A contact as HubSpot actually returns one: `industry`, `company_id`
+    and revenue are COMPANY columns, so a contact GET never carries them."""
+
+    lead = replace(StubHubSpotClient.lead, industry=None,
+                   external_company_id=None, company_size_revenue=None)
+
+
+def crm_with(client, responses):
+    session = FakeSession(responses)
+    obs = RecordingObs()
+    return HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
+                      client_factory=client, backoff_seconds=0), session, obs
+
+
+def events(obs):
+    return [p["event"] for p in obs.processes]
+
+
+def test_industry_is_read_off_the_associated_company_not_the_contact():
+    crm_, session, obs = crm_with(NoIndustryClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(200, {"properties": {"industry": "Financial Services",
+                                          "company_id": "C-77",
+                                          "annualrevenue": "12000000"}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.industry == "Financial Services"
+    assert profile.company_id == "C-77"
+    assert profile.company_size_revenue == "12000000"
+    # the whole point: this is what step 6 selects the skill on
+    assert "industry" not in profile.missing_pointers
+
+    assert "company_enriched" in events(obs)
+    assert session.calls[0]["url"].endswith(
+        "/crm/v4/objects/contacts/42/associations/companies")
+    assert session.calls[1]["url"].endswith("/crm/v3/objects/companies/9001")
+
+
+def test_a_profile_that_already_carries_an_industry_costs_no_extra_hops():
+    crm_, session, _ = crm_with(StubHubSpotClient, [])
+    profile = crm_.get_lead_profile("42")
+    assert profile.industry == "Software"
+    assert session.calls == []
+
+
+def test_a_contact_with_no_associated_company_still_validates():
+    crm_, _, obs = crm_with(NoIndustryClient, [FakeResponse(200, {"results": []})])
+    profile = crm_.get_lead_profile("42")
+
+    # best-effort: the lead is still worked, and the gap is named, not fatal
+    assert profile.industry == ""
+    assert "industry" in profile.missing_pointers
+    assert "company_association_absent" in events(obs)
+    assert "schema_validated" in events(obs)
+
+
+def test_a_failing_company_read_never_guesses_the_industry():
+    crm_, _, obs = crm_with(NoIndustryClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(404, text="company not found"),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.industry == ""
+    assert "company_read_failed" in events(obs)
+
+
+def test_several_associated_companies_are_flagged_rather_than_picked_silently():
+    crm_, _, obs = crm_with(NoIndustryClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}, {"toObjectId": 9002}]}),
+        FakeResponse(200, {"properties": {"industry": "Construction"}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.industry == "Construction"
+    assert "company_association_ambiguous" in events(obs)
 
 
 def test_the_read_path_is_bound_to_the_current_run_bearer():
@@ -82,7 +168,7 @@ def test_leads_for_trigger_searches_on_the_trigger_property():
                         client_factory=StubHubSpotClient, backoff_seconds=0)
 
     leads = client.leads_for_trigger("trg-1", limit=25)
-    assert [lead.hubspot_contact_id for lead in leads] == ["42"]
+    assert [lead.object_id for lead in leads] == ["42"]
     assert leads[0].full_name == "Jane Smith"
     body = session.calls[0]["json"]
     assert body["filterGroups"][0]["filters"][0]["value"] == "trg-1"
@@ -242,7 +328,7 @@ def test_get_lead_profile_details_returns_a_tool_shaped_dict():
 
 def test_an_unworkable_lead_comes_back_as_an_error_not_an_exception():
     class NoEmailClient(StubHubSpotClient):
-        lead = LeadProfile(external_employee_id="E00002", hubspot_contact_id="42")
+        lead = LeadProfile(external_employee_id="E00002", object_id="42")
 
     inner = HubSpotCRM(tokens=StubTokens(), obs=RecordingObs(), session=FakeSession(),
                        client_factory=NoEmailClient, backoff_seconds=0)

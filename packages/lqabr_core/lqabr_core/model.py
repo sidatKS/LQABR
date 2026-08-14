@@ -7,7 +7,7 @@ the `litellm` library to the matching provider — Anthropic today, others
 later without touching agent code). The provider's API key is bridged from
 Secret Manager into the env var the provider's SDK actually expects, since
 that name never matches our `lqabr-*` secret naming convention.
-"""Shared model-provider wiring — one place to swap Gemini <-> another
+Shared model-provider wiring — one place to swap Gemini <-> another
 provider, so agents never hardcode a provider-specific model object.
 
 A bare Gemini model string (e.g. "gemini-2.0-flash") passes straight
