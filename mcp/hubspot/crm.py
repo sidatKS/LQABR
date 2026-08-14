@@ -5,12 +5,13 @@ is recorded on the caller's audit_log (endpoint, direction, method, status
 code, which bearer, retries, failures) — never the token value.
 
 Reuse note: the read path delegates to `lqabr_core.crm.HubSpotClient`,
-which already owns the confirmed property mapping, the contact<->company
-association walk and the retry policy (3 tries, exponential backoff on
-429/5xx). Reimplementing it here would fork a tested mapping for no gain.
-What HubSpotClient does not know about — selecting a campaign's leads by
-`object_id`, and writing the campaign-complete column — is implemented
-directly below against the same REST API with the same retry contract.
+which already owns the confirmed contact property mapping and the retry
+policy (3 tries, exponential backoff on 429/5xx). Reimplementing it here
+would fork a tested mapping for no gain. What HubSpotClient does not know
+about — selecting a campaign's leads by `object_id`, walking the
+contact<->company association, and writing the campaign-complete column —
+is implemented directly below against the same REST API with the same
+retry contract.
 """
 
 from __future__ import annotations
@@ -38,6 +39,13 @@ from mcp.hubspot.schema import (
 BASE_URL = "https://api.hubapi.com"
 _RETRYABLE = (429, 500, 502, 503, 504)
 _SEARCH_PAGE_MAX = 200
+
+#: Company-owned columns, per the confirmed schema in schema.py's header:
+#: `companies  company_id, industry, annualrevenue, frequency_of_purchase`.
+#: None of these live on the contact, so the step-5 contact GET cannot see
+#: them however many properties it asks for.
+_COMPANY_PROPERTIES = ("company_id", "industry", "annualrevenue",
+                       "frequency_of_purchase")
 
 
 class HubSpotCRM:
@@ -105,9 +113,96 @@ class HubSpotCRM:
             f"HubSpot {method} {path} failed after {self._max_retries} retries: {last_error}")
 
     # ------------------------------------------------------------- step 5 read
+    def _enrich_from_company(self, profile: LeadProfile) -> None:
+        """Fill the company-owned pointers on a contact-shaped profile.
+
+        `industry` is a COMPANY column, not a contact one, and step 6 selects
+        the email skill from the industry with no default. So a profile built
+        from the contact GET alone always carries `industry=None`, always
+        misses the skill, and is always written back FAILED — for every lead,
+        regardless of what HubSpot actually holds on the associated company.
+        This walks contact -> company and fills the gap before validation, so
+        `missing_pointers` reports the real gaps rather than this one.
+
+        Best-effort by design, and mutating in place: a contact with no
+        associated company, an association read that fails, or a company read
+        that fails all leave the pointers as they were and log a named reason.
+        None of them abort the run — the lead is still validated and worked
+        with whatever it has, exactly as before this method existed.
+
+        Only walks when `industry` is absent. A profile that already carries
+        one costs no extra hops.
+        """
+        if profile.industry:
+            return
+
+        object_id = str(profile.object_id)
+        try:
+            assoc = self._request(
+                "GET", f"/crm/v4/objects/contacts/{object_id}/associations/companies",
+                step=5)
+        except CRMError as exc:
+            self._obs.process(
+                step=5, event="company_association_unavailable", object_id=object_id,
+                error=str(exc),
+                detail="industry stays empty; the lead falls through skill selection")
+            return
+
+        results = (assoc or {}).get("results") or []
+        if not results:
+            self._obs.process(
+                step=5, event="company_association_absent", object_id=object_id,
+                detail=("contact is associated with no company — industry, company_id "
+                        "and revenue are unavailable for this lead"))
+            return
+
+        company_hs_id = str(results[0].get("toObjectId") or results[0].get("id") or "")
+        if len(results) > 1:
+            self._obs.process(
+                step=5, event="company_association_ambiguous", object_id=object_id,
+                company_count=len(results), company_hs_id=company_hs_id,
+                detail="contact is associated with several companies; using the first")
+        if not company_hs_id:
+            self._obs.process(
+                step=5, event="company_association_absent", object_id=object_id,
+                detail="association row carried no company id")
+            return
+
+        try:
+            company = self._request(
+                "GET", f"/crm/v3/objects/companies/{company_hs_id}", step=5,
+                params={"properties": ",".join(_COMPANY_PROPERTIES)})
+        except CRMError as exc:
+            self._obs.process(
+                step=5, event="company_read_failed", object_id=object_id,
+                company_hs_id=company_hs_id, error=str(exc),
+                detail="company fields stay unpopulated; never guessed from the contact")
+            return
+
+        props = (company or {}).get("properties") or {}
+        filled = []
+        for attr, column in (("industry", "industry"),
+                             ("external_company_id", "company_id"),
+                             ("company_size_revenue", "annualrevenue")):
+            if not getattr(profile, attr, None) and props.get(column):
+                setattr(profile, attr, props[column])
+                filled.append(attr)
+
+        self._obs.process(
+            step=5, event="company_enriched", object_id=object_id,
+            company_hs_id=company_hs_id, filled=filled,
+            industry=profile.industry,
+            detail=("company-owned pointers read off the associated company; "
+                    "an empty `filled` means the company itself holds none"))
+
     def get_lead_profile(self, object_id: str) -> ValidatedProfile:
-        """One lead's schema-validated 9-parameter profile."""
+        """One lead's schema-validated 9-parameter profile.
+
+        The contact GET is only half the profile — the company-owned pointers
+        are walked in before validation so `missing_pointers` describes the
+        lead, not the fetch."""
         profile = self._client().get_lead(str(object_id))
+        self._enrich_from_company(profile)
         validated = validate_profile(profile)
         self._obs.process(step=5, event="schema_validated", object_id=validated.object_id,
                           missing_pointers=validated.missing_pointers)

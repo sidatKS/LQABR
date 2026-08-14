@@ -29,7 +29,7 @@ class FakeCRM(CRMClient):
     def upsert_lead(self, profile):
         if profile.email in self.fail_emails:
             raise CRMError("boom")
-        profile.contact_id = f"hs-{len(self.upserts)}"
+        profile.object_id = f"hs-{len(self.upserts)}"
         self.upserts.append(profile)
         return profile
 

@@ -27,8 +27,8 @@ class CRMClient(ABC):
         the CRM contact id populated."""
 
     @abstractmethod
-    def get_lead(self, contact_id: str) -> LeadProfile:
-        """Fetch one lead by CRM contact id."""
+    def get_lead(self, object_id: str) -> LeadProfile:
+        """Fetch one lead by CRM object id."""
 
     @abstractmethod
     def find_lead_by_email(self, email: str) -> Optional[LeadProfile]:
@@ -51,5 +51,5 @@ class CRMClient(ABC):
         updated lead."""
 
     @abstractmethod
-    def set_stage(self, contact_id: str, stage: LeadStage, reason: Optional[str] = None) -> None:
+    def set_stage(self, object_id: str, stage: LeadStage, reason: Optional[str] = None) -> None:
         """Explicit stage transition writeback."""
