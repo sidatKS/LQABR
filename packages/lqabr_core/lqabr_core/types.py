@@ -84,9 +84,12 @@ class LeadProfile:
     external_company_id: Optional[str] = None
     stage: LeadStage = LeadStage.INGESTED
     probability: int = 0
-    # Renamed from `hubspot_contact_id` -> `contact_id` (2026-08-06, user
-    # request, extended from the Text/Voice-only rename to every agent).
-    contact_id: Optional[str] = None
+    # Renamed hubspot_contact_id -> contact_id (2026-08-06), then contact_id
+    # -> object_id (2026-08-14, user request) to match HubSpot's own webhook
+    # vocabulary (their subscription payloads use `objectId`) and what
+    # mcp/hubspot/schema.py + the email agent already expect. `contact_id`
+    # below is kept as a read/write alias for anything not yet updated.
+    object_id: Optional[str] = None
     opted_out: bool = False        # real HubSpot field: opted_out
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -113,6 +116,19 @@ class LeadProfile:
     def is_contactable(self) -> bool:
         """A lead must have at least one channel (email or phone) to be worked."""
         return bool(self.email or self.phone)
+
+    @property
+    def contact_id(self) -> Optional[str]:
+        """Deprecated alias for object_id, kept for any caller not yet
+        updated to the 2026-08-14 rename. Read AND write both work through
+        this property, so existing `.contact_id` access keeps functioning
+        unchanged; only LeadProfile(...) *construction* call sites needed
+        updating to the object_id= keyword."""
+        return self.object_id
+
+    @contact_id.setter
+    def contact_id(self, value: Optional[str]) -> None:
+        self.object_id = value
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
