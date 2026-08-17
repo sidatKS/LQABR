@@ -49,18 +49,17 @@ SCHEDULING_THRESHOLD = 60    # Text/Voice Agent -> Scheduling Agent
 
 MAX_PROBABILITY = 100
 
-# HubSpot counter property each event increments (see infra/gcp/04_hubspot_properties.py).
-EVENT_COUNTERS: Dict[EventType, str] = {
-    EventType.EMAIL_DELIVERED: "lqabr_email_delivered_count",
-    EventType.EMAIL_OPENED: "lqabr_email_opened_count",
-    EventType.EMAIL_CLICKED: "lqabr_email_clicked_count",
-    EventType.SMS_DELIVERED: "lqabr_sms_delivered_count",
-    EventType.VOICEMAIL_LEFT: "lqabr_voicemail_count",
-    EventType.CALL_ANSWERED: "lqabr_call_answered_count",
-    EventType.CALL_ENGAGED: "lqabr_call_engaged_count",
-    EventType.CALL_NOT_ANSWERED: "lqabr_call_not_answered_count",
-    EventType.MEETING_SCHEDULED: "lqabr_meeting_count",
-}
+# HubSpot counter property each event increments, if one exists.
+#
+# SCHEMA NOTE (confirmed live 2026-07-23): the real HubSpot account has
+# NO counter properties at all -- no email_sent/email_opened/
+# call_started/call_completed, no per-event counts of any kind. Email
+# engagement is tracked purely via the single current-value
+# `lqabr_email_status` field (see hubspot.py), and there is nothing
+# equivalent yet for SMS/voicemail/calls/meetings. EVENT_COUNTERS is left
+# empty until/unless a real counter property is added to the account --
+# currently unused (nothing reads it), kept for when one is added.
+EVENT_COUNTERS: Dict[EventType, str] = {}
 
 
 def apply_event(current_probability: int, event_type: EventType) -> int:
