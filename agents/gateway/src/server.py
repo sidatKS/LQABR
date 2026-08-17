@@ -338,20 +338,30 @@ def create_app(
             for decision in result.decisions:
                 router.dedupe.remember(decision.event_id)
 
-            outcomes = dispatcher.dispatch_all(result.decisions, run_id)
+            # dispatch.mode is a deployment variable. grouped sends one call
+            # per agent per chunk; per_lead keeps today's one-call-per-lead.
+            if dispatcher.mode == "grouped":
+                outcomes = dispatcher.dispatch_grouped(result.decisions, run_id)
+            else:
+                outcomes = dispatcher.dispatch_all(result.decisions, run_id)
+
             dispatched: List[Dict[str, Any]] = []
             ok_count = failed_count = 0
-            for decision, outcome in zip(result.decisions, outcomes):
+            # Each outcome carries the eventIds it covers — one when per_lead,
+            # up to batch_size when grouped — so both modes share this loop and
+            # neither can drift out of step with the reservations above.
+            for outcome in outcomes:
                 dispatched.append(outcome.as_dict())
                 if outcome.ok:
                     ok_count += 1
-                    # Reservation stands: a redelivery of this event is a
+                    # Reservation stands: a redelivery of these events is a
                     # duplicate from here on.
                 else:
                     failed_count += 1
-                    # Release it, so HubSpot's redelivery gets a real second
+                    # Release them, so HubSpot's redelivery gets a real second
                     # attempt instead of being deduped away.
-                    router.dedupe.forget(decision.event_id)
+                    for event_id in outcome.event_ids:
+                        router.dedupe.forget(event_id)
 
             summary = gateway_audit.record_run_summary(
                 run_id, result, ok_count, failed_count,

@@ -277,6 +277,56 @@ class GatewayAudit:
             agent=decision.agent,
         )
 
+    def record_batch_dispatch(self, run_id: str, head: RoutingDecision, *,
+                             batch_id: str, batch_size: int, ok: bool,
+                             status_code: Optional[int], latency_ms: float,
+                             attempts: int, payload_size_bytes: int,
+                             error: Optional[str] = None) -> None:
+        """Step 4 for a grouped hand-off: N leads in one call.
+
+        Same three streams as ``record_dispatch``, with the batch id in place
+        of a single trigger id and ``batch_size`` on the record — which is what
+        makes "20 routed, 2 dispatched" visible at a glance. Still ids only:
+        the object ids stay in the payload, never in the log line.
+        """
+        retries = max(0, attempts - 1)
+        self.metrics.retries += retries
+        self.metrics.dispatch_latency_ms_total += latency_ms
+        if ok:
+            self.metrics.dispatched_ok += 1
+        else:
+            self.metrics.dispatched_failed += 1
+
+        self._hooks.audit(
+            "agent_batch_dispatch" if ok else "agent_batch_dispatch_failed",
+            run_id=run_id,
+            trigger_id=batch_id,
+            direction="outbound",
+            agent=head.agent,
+            endpoint=head.endpoint,
+            batch_size=batch_size,
+            status=status_code,
+            latency_ms=latency_ms,
+            retry_count=retries,
+            error=error,
+        )
+        self._hooks.process(
+            "protocol_conversion",
+            run_id=run_id,
+            trigger_id=batch_id,
+            conversion="https_ingress -> a2a_message_send",
+            payload_size_bytes=payload_size_bytes,
+            payload_contents="batch_id + object_ids only",
+            agent=head.agent,
+            route_id=head.route_id,
+            batch_size=batch_size,
+            outcome="dispatched" if ok else "failed",
+        )
+        self._hooks.system(
+            "dispatch_resources", run_id=run_id, trigger_id=batch_id,
+            agent=head.agent, batch_size=batch_size,
+        )
+
     # ---------------------------------------------------------------- wrap-up
     def record_run_summary(self, run_id: str, result: RoutingResult,
                            dispatched_ok: int, dispatched_failed: int,

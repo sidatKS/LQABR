@@ -57,6 +57,13 @@ class PayloadGuardError(RuntimeError):
 #: if it looks like a lead field), not on the wire.
 ALLOWED_METADATA_KEYS = frozenset({
     "trigger_id", "object_id", "run_id", "route_id", "source", "gateway_version",
+    # Grouped hand-off (dispatch.mode = grouped). One call carries N leads, so
+    # the singular ids become lists and the batch gets its own correlation id.
+    #
+    # These are ids and counts ONLY. Every lead-profile field stays excluded,
+    # which is the whole point of this guard: a list of object ids is not lead
+    # data, and the agent still resolves each profile from HubSpot itself.
+    "batch_id", "object_ids", "batch_size", "trigger_ids",
 })
 
 
@@ -142,6 +149,15 @@ class A2AClient:
         if object_id is not None:
             envelope["object_id"] = object_id
             envelope["objectId"] = object_id
+        # Grouped hand-off: the same mirroring for the plural form.
+        object_ids = metadata.get("object_ids")
+        if object_ids is not None:
+            envelope["object_ids"] = list(object_ids)
+            envelope["objectIds"] = list(object_ids)
+        batch_id = metadata.get("batch_id")
+        if batch_id is not None:
+            envelope["batch_id"] = batch_id
+            envelope["batchId"] = batch_id
 
         return envelope
 

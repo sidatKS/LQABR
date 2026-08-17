@@ -536,3 +536,63 @@ class TestIngressDoesNotBlockTheEventLoop:
         # Serialised would be >= 1.6s; overlapped is ~0.4s. A generous bound so
         # this asserts "not serialised" rather than a specific speed.
         assert elapsed < 1.2, f"requests serialised: {elapsed:.2f}s for 4x0.4s"
+
+
+class TestGroupedMode:
+    """dispatch.mode = grouped, end to end through the ingress."""
+
+    def _app(self, config_dir, registry, session, monkeypatch, batch_size=20):
+        monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
+        monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
+        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        audit = gw_audit.GatewayAudit(hooks)
+        dispatcher = gw_dispatch.Dispatcher(
+            A2AClient(session=session, backoff_seconds=0, sleep=lambda _s: None),
+            audit, mode="grouped", batch_size=batch_size)
+        return gw_server.create_app(config=load_config(config_dir / "config.yaml"),
+                                    registry=registry, dispatcher=dispatcher,
+                                    audit=audit), audit
+
+    def test_twenty_events_produce_two_agent_calls(
+            self, config_dir, registry, fake_session_factory, monkeypatch):
+        session = fake_session_factory()
+        app, _ = self._app(config_dir, registry, session, monkeypatch)
+        events = ([make_event("decision_maker", "true", event_id=f"g{i}")
+                   for i in range(14)]
+                  + [make_event("lqabr_email_status", "OPENED", event_id=f"h{i}")
+                     for i in range(6)])
+        body, headers = signed(events)
+        with TestClient(app) as client:
+            response = client.post("/hubspot/events", content=body, headers=headers)
+
+        assert response.status_code == 200
+        assert response.json()["routed"] == 20
+        assert len(session.calls) == 2, "20 routed, 2 dispatched"
+        assert sorted(d["batch_size"] for d in response.json()["dispatched"]) == [6, 14]
+
+    def test_a_failed_batch_releases_every_member_for_retry(
+            self, config_dir, registry, fake_session_factory, fake_response_factory,
+            monkeypatch):
+        """The bookkeeping that matters: one failed call must free ALL of its
+        leads, or HubSpot's retry is deduped away and they are never contacted."""
+        session = fake_session_factory([
+            fake_response_factory(500, text="down"),   # attempt 1
+            fake_response_factory(500, text="down"),   # retry
+            fake_response_factory(500, text="down"),   # retry
+            fake_response_factory(200),                # the redelivery succeeds
+        ])
+        app, _ = self._app(config_dir, registry, session, monkeypatch)
+        events = [make_event("decision_maker", "true", event_id=f"f{i}")
+                  for i in range(3)]
+        with TestClient(app) as client:
+            body, headers = signed(events)
+            assert client.post("/hubspot/events", content=body,
+                               headers=headers).status_code == 503
+            retry = [make_event("decision_maker", "true", event_id=f"f{i}",
+                                attempt_number=1) for i in range(3)]
+            retry_body, retry_headers = signed(retry)
+            second = client.post("/hubspot/events", content=retry_body,
+                                 headers=retry_headers)
+
+        assert second.status_code == 200
+        assert second.json()["routed"] == 3, "none of the three was deduped away"
