@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Before running anything, read §11 (Session Setup & Environment)** — which surface
+you're on, how the repo folder is connected, and the preflight that must pass first.
+
 ## 1. Project Overview
 
 LQABR is an AI lead-qualification and outreach platform. Leads enter from
@@ -45,9 +48,6 @@ Node/npm toolchain anywhere. What exists and runs today:
   orchestrator}/` — six core ADK agents, each with `src/` + `tests/`,
   `requirements.txt`, `.env.example`. Email/text_voice/scheduling also ship
   a FastAPI `webhook_app.py` receiving Mailgun/Twilio/Zoom events.
-- `agents/enrichment/` — the Lead Profile tool (`build_lead_profiles`)
-  re-exposed as a standalone MCP server; a thin ADK agent alongside its
-  MCP entry point, deterministic (no model call).
 - `agents/gateway/` — the HubSpot-event ingress/routing service (not an
   ADK agent): a single ingress that decides which agent owns a trigger and
   hands off only a trigger id + the contact's record id.
@@ -94,8 +94,8 @@ HubSpot is the system of record for lead data — see
 
 `docs/READ_PRJSTRC_ME.md` has the full rationale; the short version:
 
-- `agents/` — the six core ADK agents plus the `enrichment` MCP server and
-  the `gateway` routing service (see §1). Unit tests co-located.
+- `agents/` — the six core ADK agents plus the `gateway` routing service
+  (see §1). Unit tests co-located.
 - `packages/lqabr_core/` — the only shared code path; agents never import
   from each other.
 - `infra/gcp/` — numbered provisioning/deploy scripts + `cloud-run/`
@@ -171,7 +171,9 @@ source ./config.sh && bash 00_enable_apis.sh   # ... through 06, see infra/gcp/R
 
 - Never push to a remote or open a PR without explicit confirmation from the user.
 - Stage and commit locally if asked; stop before any `git push` or PR creation and wait.
-- **Branching strategy:** `main` is the always-deployable trunk and receives only reviewed Epic merges — never direct commits. Each Epic has a long-lived integration branch `epic/LQABR-<N>-<slug>` cut from `main`. Story/Task work branches off its Epic branch as `LQABR-<ticket>-<short-slug>`; Sub-tasks branch off their Story or commit on it. Flow per Epic: branch from latest `main` → Stories PR into the Epic branch → when all children are Done and the Epic AC is met, PR the Epic branch into `main` and tag a release. Merge `main` into the active Epic branch whenever `main` advances.
+- **Branching strategy:** `leadq-dev` is the **default branch on the remote** (changed from `main` on 2026-08-15). It is the shared integration branch: new clones check it out, new PRs target it by default, and it is what `origin/HEAD` resolves to. `main` remains the always-deployable release trunk and receives only reviewed Epic merges — never direct commits. Each Epic has a long-lived integration branch `epic/LQABR-<N>-<slug>` cut from `leadq-dev`. Story/Task work branches off its Epic branch as `LQABR-<ticket>-<short-slug>`; Sub-tasks branch off their Story or commit on it. Flow per Epic: branch from latest `leadq-dev` → Stories PR into the Epic branch → when all children are Done and the Epic AC is met, PR the Epic branch into `leadq-dev`; releases promote `leadq-dev` → `main` and tag. Merge `leadq-dev` into the active Epic branch whenever it advances.
+- **After the default-branch change**, each clone must repoint its own pointer once — `git remote set-head origin -a`. This does not propagate.
+- **Known gap:** neither `leadq-dev` nor `main` currently has branch protection, so nothing mechanically enforces the PR/review flow above — anyone with push access can commit straight to the default branch. Treat the rules here as convention until a ruleset is added under Settings → Branches.
 - **Commit messages:** `LQABR-<ticket>: <imperative summary>`. One logical change per commit.
 - **PR description:** link the Jira ticket, summarize what changed and why, list how it was tested, and call out any outreach-content or webhook-security surface.
 - Keep PRs scoped to a single Story/Task or Sub-task where possible.
@@ -216,3 +218,70 @@ A ticket is complete (ready for review / Testing) when:
 - Do not redefine probability increments or thresholds outside
   `lqabr_core/probability.py`.
 - Do not disable webhook signature checks outside local development.
+
+## 11. Session Setup & Environment
+
+**This file cannot attach a folder or open a connection.** Mounting the repo is a
+client-side action taken in the Claude app before a session starts. What follows is
+what must already be true, and how to verify it in the first minute.
+
+Canonical dev machine: **`desktop-vmn01k1`**. Repo root: `<REPO_ROOT>` (set this
+path once and keep it stable — every instruction below assumes it).
+
+### 11.1 Surfaces — what each one can and cannot do
+
+| Surface | Local file access | Use it for |
+|---|---|---|
+| **Claude Code** (terminal on `desktop-vmn01k1`) | Yes, direct | code changes, tests, git, `infra/gcp/` scripts |
+| **Cowork** (desktop project bound to `<REPO_ROOT>`) | Yes, for connected folders, while Claude Desktop is open on `desktop-vmn01k1` | multi-file work, docs, generated deliverables |
+| **Web Claude** (cloud sandbox) | **No** — only read-only project-knowledge copies under `/mnt/project/` | design review, planning, Jira edits, architecture reasoning |
+
+**Session boundary rule:** file I/O belongs to Claude Code and Cowork. The web
+session has no path to this repo. If a web session is asked to read, edit, or
+create a repo file, it must say so plainly rather than simulate the result or
+work from a stale pasted copy.
+
+### 11.2 One-time: bind the repo to a desktop project
+
+1. Claude Desktop → sidebar → **New Project** → *use an existing folder on your
+   computer* → select `<REPO_ROOT>`.
+2. Approve the OS folder-permission prompt.
+3. Project → **Folder instructions**: "Read `CLAUDE.md` at the repo root before any
+   code change and follow it — especially §7 (never push or open a PR without
+   explicit confirmation) and §6 (stage discipline, probability rules)."
+4. Start **every** Cowork session from inside that project. The folder mounts
+   automatically; there is no per-session re-attach.
+
+Caveat: Cowork sessions run in the cloud and reach local files **only while Claude
+Desktop is open on `desktop-vmn01k1`**. A closed app leaves the session running with
+no repo underneath it.
+
+### 11.3 Preflight — run before touching anything
+
+```bash
+cd <REPO_ROOT>
+ls CLAUDE.md packages/lqabr_core agents infra   # is the right root actually mounted?
+git status -sb                                  # branch + clean tree before any edit
+git branch --show-current                       # must be epic/… or LQABR-<ticket>-… , never main
+python3 -m pytest -c tests/pytest.ini -q         # 64 tests green as the baseline
+```
+
+**If the `ls` fails, stop.** The folder is not connected. Do not create
+`agents/`, `packages/`, or `infra/` from scratch in a scratch directory — that
+produces a parallel tree that silently diverges from the real repo. Fix the
+connection first (§11.2), then re-run the preflight.
+
+If the baseline test run is already red, report that before making changes so a
+pre-existing failure is never attributed to this session's work.
+
+### 11.4 Before making changes
+
+- Move the Jira ticket to **In Progress** (§8) and branch per §7 — never commit on `main`.
+- Per-agent config comes from `agents/<name>/.env`, copied from `.env.example` and
+  git-ignored. Credentials come from Secret Manager or that `.env` — never from the
+  session, never pasted into chat (§3, §6).
+- **Local runs hit real GCP.** ADK orchestration runs locally in dev, but Vertex AI,
+  BigQuery, Pub/Sub, and Secret Manager calls go to the live authenticated project and
+  incur real cost. Prefer mocked tests and `--dry-run` on ingestion before any live run.
+- End of session: leave the tree committed locally or explicitly dirty-and-noted —
+  never mid-refactor with no record of intent.
