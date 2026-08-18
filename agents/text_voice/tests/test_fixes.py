@@ -29,9 +29,33 @@ def _lead(**kw):
 # (The transient-assistant counterpart of this test was deleted 2026-08-07 with
 # the transient path itself — there is only one call path now.)
 def test_assistantid_branch_server_url_matches_report_callback(monkeypatch):
+    # The callback URL must be pinned to a REACHABLE value. Since 2026-08-18
+    # _report_server() returns None for an unreachable target (unset/localhost/
+    # 127.0.0.1) and build_call_payload omits the override entirely, so with the
+    # default (http://localhost:8082/...) there is no "server" key to assert on.
     monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
+    monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL",
+                        "https://example.test/voice_agent/vapi_report")
     payload = tools.build_call_payload(_lead())
     assert payload["assistantOverrides"]["server"]["url"] == tools.VAPI_REPORT_CALLBACK_URL
+
+
+def test_localhost_callback_omits_the_server_override_entirely(monkeypatch):
+    """The report-delivery fix, guarded.
+
+    A per-call `server` object REPLACES the dashboard assistant's server config
+    wholesale. Sending a localhost URL therefore replaces a working public
+    target with a dead one and the call outcome is lost in silence — which is
+    exactly what happened live, on every call, until 2026-08-18. Omitting the
+    override lets Vapi fall back to the dashboard config.
+    """
+    monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
+    for dead in ("http://localhost:8082/voice_agent/vapi_report",
+                 "http://127.0.0.1:8082/voice_agent/vapi_report",
+                 ""):
+        monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL", dead)
+        payload = tools.build_call_payload(_lead())
+        assert "server" not in payload["assistantOverrides"], dead
 
 
 def test_report_callback_default_path_is_voice_agent_vapi_report():
@@ -50,6 +74,8 @@ def test_report_callback_default_path_is_voice_agent_vapi_report():
 # ------------------------------------------------------------- B3 backoffPlan
 def test_assistantid_branch_server_has_retries(monkeypatch):
     monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
+    monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL",
+                        "https://example.test/voice_agent/vapi_report")
     payload = tools.build_call_payload(_lead())
     assert payload["assistantOverrides"]["server"]["backoffPlan"]["maxRetries"] == 2
     assert 0 <= payload["assistantOverrides"]["server"]["backoffPlan"]["baseDelaySeconds"] <= 10

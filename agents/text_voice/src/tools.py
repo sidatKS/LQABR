@@ -79,7 +79,6 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from lqabr_core import observability as obs
 from lqabr_core.types import VoiceLead
 
-logger = logging.getLogger("lqabr.text_voice.tools")
 
 # --------------------------------------------------------------------------
 # Config. Everything swappable is env/config-driven (CLAUDE.md): no hard-coded
@@ -144,12 +143,18 @@ VAPI_ASSISTANT_ID = os.environ.get("LQABR_VAPI_ASSISTANT_ID", "")
 
 SENDER_NAME = os.environ.get("LQABR_SENDER_NAME", "the LQABR team")
 
-# Vapi's voice/model/transcriber providers, config-driven per CLAUDE.md.
-VAPI_VOICE_PROVIDER = os.environ.get("LQABR_VAPI_VOICE_PROVIDER", "vapi")
-VAPI_VOICE_ID = os.environ.get("LQABR_VAPI_VOICE_ID", "Elliot")
-VAPI_CALL_MODEL_PROVIDER = os.environ.get("LQABR_VAPI_CALL_MODEL_PROVIDER", "openai")
-VAPI_CALL_MODEL = os.environ.get("LQABR_VAPI_CALL_MODEL", "gpt-4o-mini")
-VAPI_MAX_CALL_SECONDS = int(os.environ.get("LQABR_VAPI_MAX_CALL_SECONDS", "300"))
+# SP-2 FR4 — the per-lead context the assistant opens on (the subject of the
+# email already sent). Read from the real HubSpot contact property
+# `lead_context` (type string, label "lead_context", verified live against
+# portal 246777241 on 2026-08-17 via the properties API — not trusted from the
+# UI label) and capped HERE rather than at the read, because this is the last
+# line before the value goes on the wire.
+#
+# The cap exists because the value is free text a human types into HubSpot and
+# it lands inside the assistant's system prompt: an unbounded value is both a
+# token-cost and a prompt-stability problem. Truncation is on a word boundary
+# so the assistant never opens on half a word.
+LEAD_CONTEXT_MAX_CHARS = int(os.environ.get("LQABR_LEAD_CONTEXT_MAX_CHARS", "1000"))
 
 
 class VapiError(RuntimeError):
@@ -161,7 +166,21 @@ class VapiError(RuntimeError):
 # ==========================================================================
 
 
-def _report_server() -> Dict[str, Any]:
+def _is_unreachable(url: str) -> bool:
+    """True when Vapi could not possibly POST to this URL from the internet.
+
+    Deliberately narrow: unset, or pointed at this machine. Anything else is
+    assumed reachable rather than guessed at — a private hostname we cannot
+    resolve from here is the deployer's call, not ours.
+    """
+    if not url:
+        return True
+    lowered = url.lower()
+    return any(host in lowered for host in
+               ("localhost", "127.0.0.1", "0.0.0.0", "[::1]"))
+
+
+def _report_server() -> Optional[Dict[str, Any]]:
     """The per-call Vapi `server` object — the end-of-call report target.
 
     `assistant.server` is the highest-precedence webhook target, and setting it
@@ -183,7 +202,25 @@ def _report_server() -> Dict[str, Any]:
         secret the Agent Gateway verifies. A CUSTOM header name on purpose — an
         `Authorization` header here would override credentialId and is a
         documented Vapi anti-pattern.
+
+    Returns **None** when the configured callback URL is not something Vapi
+    could ever reach — unset, localhost, or 127.0.0.1. In that case the caller
+    omits the override entirely and Vapi uses the dashboard assistant's own
+    server config, which is where a working URL usually already lives. Sending
+    a local URL here is strictly worse than sending nothing: it replaces a good
+    target with a dead one and the call's outcome is lost in silence.
     """
+    if _is_unreachable(VAPI_REPORT_CALLBACK_URL):
+        obs.log_system("config.incomplete", level=logging.ERROR,
+                       detail=f"report callback URL is not reachable "
+                              f"({VAPI_REPORT_CALLBACK_URL or 'unset'}) — the "
+                              "per-call server override is being OMITTED so "
+                              "Vapi falls back to the dashboard assistant's "
+                              "server. Set LQABR_GATEWAY_BASE_URL (or "
+                              "LQABR_VAPI_REPORT_CALLBACK_URL) to a public URL "
+                              "to restore retries and the x-vapi-secret header")
+        return None
+
     server: Dict[str, Any] = {
         "url": VAPI_REPORT_CALLBACK_URL,
         "timeoutSeconds": VAPI_REPORT_TIMEOUT_SECONDS,
@@ -201,13 +238,43 @@ def _report_server() -> Dict[str, Any]:
 # silently drifted far out of sync with the live dashboard assistant
 # (4f00be12-203d-468f-a11d-f45798165983), which is now the only place the Q&A
 # script, first message and voicemail message live. A dashboard assistant is
-# therefore mandatory, and an unset id fails loudly below rather than shipping a
-# partial payload.
-def build_call_payload(lead: VoiceLead) -> Dict[str, Any]:
+# therefore mandatory, and an unset id fails loudly in build_call_payload below
+# rather than shipping a partial payload.
+def cap_lead_context(raw: Optional[str]) -> str:
+    """Trim `lead_context` to LEAD_CONTEXT_MAX_CHARS on a word boundary.
+
+    Returns "" for None/blank so the caller can always send the key (see
+    build_call_payload for why an absent key is worse than an empty one).
+    """
+    text = " ".join((raw or "").split())
+    if len(text) <= LEAD_CONTEXT_MAX_CHARS:
+        return text
+    cut = text[:LEAD_CONTEXT_MAX_CHARS]
+    boundary = cut.rfind(" ")
+    # Only back off to the boundary if one exists reasonably near the end —
+    # a single 1000-character "word" should still be cut, not returned whole.
+    if boundary > 0:
+        cut = cut[:boundary]
+    return cut.rstrip() + "…"
+
+
+def build_call_payload(lead: VoiceLead, lead_context: Optional[str] = None) -> Dict[str, Any]:
     """The POST /call body: destination, assistant id, personalization,
-    and the report callback URL (Rev 5 Step 4, process substeps 1 and 3)."""
+    and the report callback URL (Rev 5 Step 4, process substeps 1 and 3).
+
+    `lead_context` (SP-2 FR4) is always sent, even when empty. Vapi leaves an
+    unknown `{{variable}}` in the prompt untouched, so omitting the key when a
+    contact has no context would put the literal string "{{lead_context}}" into
+    the assistant's instructions. Sending "" instead is what makes the
+    dashboard prompt's LiquidJS `{% if lead_context %}` fallback take the
+    generic-intro branch deterministically. That branch is the COMMON path
+    today, not an edge case: the `lead_context` property exists on every
+    contact in portal 246777241 and is populated on none of them (verified
+    2026-08-17 — a HAS_PROPERTY search returned 0 of 0).
+    """
     variables = lead.personalization()
     variables["sender_name"] = SENDER_NAME
+    variables["lead_context"] = cap_lead_context(lead_context)
     # Carried on the call so Step 8 can resolve the contact from the report
     # directly. Without it the only identifier Vapi guarantees to send back is
     # the dialled number, which costs a CRM search and fails for any contact
@@ -238,7 +305,21 @@ def build_call_payload(lead: VoiceLead) -> Dict[str, Any]:
         # A dashboard-managed assistant: send only the id, and let the
         # overrides personalize it.
         payload["assistantId"] = VAPI_ASSISTANT_ID
-        payload["assistantOverrides"]["server"] = _report_server()
+        # Only override the report target when we actually have a reachable
+        # one. The per-call `server` object REPLACES the dashboard assistant's
+        # server config wholesale, so shipping the localhost default would
+        # silently overwrite a correctly-configured dashboard URL with a dead
+        # one — every call runs and no result is ever recorded.
+        #
+        # Verified live: two calls on 2026-08-18 carried
+        # `http://localhost:8082/voice_agent/vapi_report` and their reports
+        # went nowhere, while the dashboard held the right ngrok URL the whole
+        # time. Omitting the override lets Vapi fall back to the dashboard's
+        # value, which is the safe direction — a missing env var now costs the
+        # retry/secret config, not the entire result.
+        server = _report_server()
+        if server is not None:
+            payload["assistantOverrides"]["server"] = server
     else:
         raise VapiError(
             "LQABR_VAPI_ASSISTANT_ID is unset. The call script now lives only in the "
@@ -343,7 +424,7 @@ def reset_vapi_client() -> None:
     _shared_vapi = None
 
 
-def place_call(lead: VoiceLead) -> Dict[str, Any]:
+def place_call(lead: VoiceLead, lead_context: Optional[str] = None) -> Dict[str, Any]:
     """STEP 4 — dial this lead through Vapi and return the call reference.
 
     Preconditions are the caller's job (Step 3 in text_voice.py) except the
@@ -371,10 +452,18 @@ def place_call(lead: VoiceLead) -> Dict[str, Any]:
                          "Vapi has no number to dial from",
                 "contact_id": lead.contact_id}
 
-    payload = build_call_payload(lead)
+    payload = build_call_payload(lead, lead_context=lead_context)
     call = _vapi().create_call(payload)
     call_id = call.get("id")
     obs.bind(call_id=call_id)
+    # The value as it actually went on the wire — post-cap, post-whitespace
+    # normalisation — not the raw property. That distinction matters: when a
+    # call opens on the wrong thing, the question is always "what did Vapi
+    # actually receive", and the raw CRM value can differ from it.
+    # Returned (rather than only counted) so the caller can put it on
+    # process_log; `lead_context_chars` is kept alongside it so truncation is
+    # visible at a glance without diffing the text. 2026-08-17, user request.
+    sent_context = payload["assistantOverrides"]["variableValues"]["lead_context"]
     return {
         "status": "initiated",
         "call_id": call_id,
@@ -382,6 +471,8 @@ def place_call(lead: VoiceLead) -> Dict[str, Any]:
         "contact_id": lead.contact_id,
         "to": lead.phone_number,
         "assistant": "dashboard" if VAPI_ASSISTANT_ID else "transient",
+        "lead_context": sent_context,
+        "lead_context_chars": len(sent_context),
     }
 
 
@@ -621,6 +712,6 @@ def _handoff_call_report(message: Dict[str, Any], correlation_id: str) -> None:
 
 
 __all__ = [
-    "app", "place_call", "build_call_payload",
+    "app", "place_call", "build_call_payload", "cap_lead_context",
     "VapiClient", "VapiError", "reset_vapi_client",
 ]

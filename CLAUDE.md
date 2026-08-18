@@ -65,6 +65,13 @@ HubSpot is the system of record for lead data — see
 
 - **Agents:** Google ADK on Cloud Run; each agent exposes `root_agent` via
   an `agent.py` shim so `adk web/run/api_server agents/<name>/src` works.
+  **Exception — `text_voice` (2026-08-18):** ADK was removed from it entirely.
+  It has no `agent.py`, no `adk_agent.py`, no `root_agent`, and no
+  `requirements-dev.txt`. It is a plain FastAPI service (`uvicorn tools:app`);
+  the orchestrator's A2A JSON-RPC `message/send` envelope is parsed by
+  `tools.py`'s `/voice_agent/lead` directly. Local end-to-end testing uses
+  `agents/text_voice/push_test.sh`, not the `adk web` `test <id>` console.
+  `infra/gcp/config.sh` has NOT been updated to match — see §10.
   Deterministic tool logic stays typed/mockable and separate from the
   ADK/model wrapper.
 - **Orchestration:** Google A2A (JSON-RPC `message/send`) between the
@@ -218,6 +225,16 @@ A ticket is complete (ready for review / Testing) when:
 - Do not redefine probability increments or thresholds outside
   `lqabr_core/probability.py`.
 - Do not disable webhook signature checks outside local development.
+- **Do not run `infra/gcp/05_deploy_agents.sh` for `text_voice` as it stands.**
+  `config.sh` still lists text_voice in both `ADK_AGENTS` and `WEBHOOK_AGENTS`,
+  so it would deploy `lqabr-text-voice-agent` via `adk api_server` (no
+  `root_agent` exists any more) and `lqabr-text-voice-webhook` via
+  `uvicorn webhook_app:app` (retired in Rev 5). The shared
+  `infra/gcp/cloud-run/entrypoint.sh` `webhook` branch also hardcodes
+  `webhook_app:app` and ignores `${APP_MODULE}`. The Rev 5 service that
+  actually serves `/voice_agent/lead` and `/voice_agent/vapi_report`
+  (`tools:app`) is not deployed by that script at all. Fix the infra before
+  the next deploy — see `claude/deleted-files-audit-2026-08-18.md`.
 
 ## 11. Session Setup & Environment
 

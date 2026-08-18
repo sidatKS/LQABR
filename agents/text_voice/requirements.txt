@@ -1,13 +1,14 @@
 # agents/text_voice — RUNTIME dependencies (what the production image installs).
 #
-# google-adk is NOT here on purpose (removed 2026-08-03, verified by booting
-# the webhook with google-adk/google-genai uninstalled and exercising
-# /healthz + /voice_agent/lead end-to-end — zero imports of it in the prod path):
-# the production service is `uvicorn tools:app` behind the Agent Gateway;
-# only adk_agent.py/agent.py import ADK and nothing imports THEM at runtime
-# (the entrypoint imports `tools` top-level, so src/__init__.py never runs).
-# ADK lives in requirements-dev.txt for the `adk web` dev/test runtime.
-# Cuts roughly 200-300 MB from the image.
+# google-adk is gone entirely (2026-08-18). It was dropped from the runtime on
+# 2026-08-03 — verified by booting the webhook with google-adk/google-genai
+# uninstalled and exercising /healthz + /voice_agent/lead end-to-end — and the
+# last dev-only users (adk_agent.py, agent.py, requirements-dev.txt, the
+# `adk web` console) were retired on 2026-08-18. The production service is
+# `uvicorn tools:app` behind the Agent Gateway, and the orchestrator's A2A
+# JSON-RPC envelope is parsed by tools.py itself, so nothing in or around this
+# agent speaks ADK any more. Saved roughly 200-300 MB on the image.
+# There is no requirements-dev.txt — this file is the whole dependency set.
 litellm>=1.50
 requests>=2.31
 fastapi>=0.111

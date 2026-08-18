@@ -77,14 +77,57 @@ def test_build_call_payload_carries_ids_for_step_8(tv_tools, monkeypatch):
 
 def test_build_call_payload_dashboard_assistant_sends_id_and_own_server(tv_tools, monkeypatch):
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL",
+                        "https://gw.example.com/voice_agent/vapi_report")
     payload = tv_tools.build_call_payload(_lead())
     assert payload["assistantId"] == "asst-1"
     assert "assistant" not in payload
     assert payload["assistantOverrides"]["server"] == {
-        "url": tv_tools.VAPI_REPORT_CALLBACK_URL,
+        "url": "https://gw.example.com/voice_agent/vapi_report",
         "timeoutSeconds": tv_tools.VAPI_REPORT_TIMEOUT_SECONDS,
         "backoffPlan": {"maxRetries": 2, "baseDelaySeconds": 1},
     }
+
+
+# ----------------------------- the report-delivery failure of 2026-08-18
+#
+# Two live calls carried `http://localhost:8082/voice_agent/vapi_report` as a
+# per-call override while the dashboard held the correct public ngrok URL the
+# whole time. The override REPLACES the dashboard's server config, so both
+# calls ran and neither result was ever recorded.
+
+def test_no_server_override_when_the_callback_url_is_local(tv_tools, monkeypatch):
+    """Sending a local URL is strictly worse than sending nothing: it replaces
+    a working dashboard target with a dead one. Omit it instead."""
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL",
+                        "http://localhost:8082/voice_agent/vapi_report")
+    payload = tv_tools.build_call_payload(_lead())
+    assert "server" not in payload["assistantOverrides"]
+    assert payload["assistantId"] == "asst-1"      # the call still goes out
+
+
+def test_no_server_override_when_the_callback_url_is_unset(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL", "")
+    assert "server" not in tv_tools.build_call_payload(_lead())["assistantOverrides"]
+
+
+def test_unreachable_url_detection(tv_tools):
+    for bad in ("", "http://localhost:8082/x", "http://127.0.0.1:8082/x",
+                "http://0.0.0.0:8082/x", "https://LOCALHOST/x"):
+        assert tv_tools._is_unreachable(bad) is True, bad
+    for good in ("https://gw.example.com/x",
+                 "https://irregular-thread-uninstall.ngrok-free.dev/voice_agent/vapi_report"):
+        assert tv_tools._is_unreachable(good) is False, good
+
+
+def test_secret_header_rides_on_the_override_when_configured(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL", "https://gw.example.com/r")
+    monkeypatch.setattr(tv_tools, "VAPI_WEBHOOK_SECRET", "s3cret")
+    server = tv_tools.build_call_payload(_lead())["assistantOverrides"]["server"]
+    assert server["headers"] == {"x-vapi-secret": "s3cret"}
 
 
 def test_build_call_payload_omits_hubspot_ids_when_absent(tv_tools, monkeypatch):
@@ -219,12 +262,81 @@ def test_place_call_success_returns_call_id_and_dials_once(tv_tools, monkeypatch
     # mandatory since 2026-08-07 (build_call_payload raises without it) and it
     # is what place_call reports as "dashboard".
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    result = tv_tools.place_call(_lead())
+    result = tv_tools.place_call(_lead(), lead_context="Follow-up on the cloud migration email")
     assert result == {
         "status": "initiated", "call_id": "call-9", "call_status": "queued",
         "contact_id": "123", "to": "+15550001111", "assistant": "dashboard",
+        "lead_context": "Follow-up on the cloud migration email",
+        "lead_context_chars": 38,
     }
     assert len(fake.payloads) == 1
+
+
+# ------------------------------------------------------------ SP-2 FR4: lead_context
+
+def test_build_call_payload_always_sends_lead_context_even_when_empty(tv_tools, monkeypatch):
+    """Vapi leaves an unknown {{variable}} in the prompt verbatim, so omitting
+    the key would put the literal "{{lead_context}}" into the assistant's
+    instructions. An empty string is what makes the dashboard prompt's
+    LiquidJS `{% if lead_context %}` fallback take the generic-intro branch."""
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-abc")
+    variables = tv_tools.build_call_payload(_lead())["assistantOverrides"]["variableValues"]
+    assert variables["lead_context"] == ""
+
+    variables = tv_tools.build_call_payload(_lead(), lead_context=None)[
+        "assistantOverrides"]["variableValues"]
+    assert variables["lead_context"] == ""
+
+
+def test_build_call_payload_passes_lead_context_through(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-abc")
+    payload = tv_tools.build_call_payload(
+        _lead(), lead_context="We emailed you about cutting cloud spend.")
+    variables = payload["assistantOverrides"]["variableValues"]
+    assert variables["lead_context"] == "We emailed you about cutting cloud spend."
+
+
+def test_cap_lead_context_normalises_whitespace_and_leaves_short_text_alone(tv_tools):
+    assert tv_tools.cap_lead_context("  cloud   migration\n email ") == "cloud migration email"
+    assert tv_tools.cap_lead_context(None) == ""
+    assert tv_tools.cap_lead_context("") == ""
+
+
+def test_cap_lead_context_truncates_on_a_word_boundary(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "LEAD_CONTEXT_MAX_CHARS", 20)
+    capped = tv_tools.cap_lead_context("alpha bravo charlie delta echo foxtrot")
+    assert capped == "alpha bravo charlie…"
+    assert len(capped) <= 21          # 20 chars + the ellipsis
+    assert not capped.startswith("alpha bravo charlie d")   # no half word
+
+
+def test_cap_lead_context_still_cuts_a_single_oversized_token(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "LEAD_CONTEXT_MAX_CHARS", 10)
+    assert tv_tools.cap_lead_context("x" * 50) == "x" * 10 + "…"
+
+
+def test_place_call_caps_lead_context_at_the_boundary(tv_tools, monkeypatch):
+    """The cap is enforced HERE, on the last line before the wire — not only
+    wherever the value happened to be read."""
+    class FakeVapi:
+        def __init__(self):
+            self.payloads = []
+
+        def create_call(self, payload):
+            self.payloads.append(payload)
+            return {"id": "call-1", "status": "queued"}
+
+    fake = FakeVapi()
+    monkeypatch.setattr(tv_tools, "_vapi", lambda: fake)
+    monkeypatch.setattr(tv_tools, "VAPI_PHONE_NUMBER_ID", "phone-1")
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setattr(tv_tools, "LEAD_CONTEXT_MAX_CHARS", 12)
+
+    result = tv_tools.place_call(_lead(), lead_context="one two three four five")
+    sent = fake.payloads[0]["assistantOverrides"]["variableValues"]["lead_context"]
+    assert sent == "one two…"
+    # The log field reports what was actually SENT, not what was passed in.
+    assert result["lead_context_chars"] == len(sent)
 
 
 # ============================================================================ routes
@@ -245,10 +357,13 @@ def client(tv_tools, monkeypatch):
 
 
 def test_lead_route_accepts_and_schedules_handoff(client):
-    """`objectId` is HubSpot's own field for the enrolled record's real
-    contact id (confirmed against HubSpot's custom-workflow-action docs) —
-    the gateway forwards it under that name, not the old `employee_id`."""
-    resp = client.post("/voice_agent/lead", json={"objectId": "904"})
+    """The id is HubSpot's own internal contact id for the enrolled record
+    (confirmed against HubSpot's custom-workflow-action docs), not the old
+    `employee_id`. The wire key is snake_case `object_id` only —
+    `_extract_object_id` deliberately does not accept camelCase `objectId`,
+    per explicit instruction, so this test used to assert the opposite of
+    what the code guarantees (corrected 2026-08-17)."""
+    resp = client.post("/voice_agent/lead", json={"object_id": "904"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "accepted"
@@ -258,7 +373,7 @@ def test_lead_route_accepts_and_schedules_handoff(client):
 
 
 def test_lead_route_reuses_inbound_correlation_id(client):
-    resp = client.post("/voice_agent/lead", json={"objectId": "904"},
+    resp = client.post("/voice_agent/lead", json={"object_id": "904"},
                         headers={"x-correlation-id": "abc-123"})
     assert resp.json()["correlation_id"] == "abc-123"
     assert client.recorded["lead"] == [("904", "abc-123")]

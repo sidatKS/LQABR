@@ -6,9 +6,10 @@
                                 decides what actually happened on the call.
     STEP 8  push_to_mcp()       Write the outcome back so HubSpot reflects it.
 
-    adk web  agents/text_voice/src
-    adk run  agents/text_voice/src
-    adk api_server agents/text_voice/src    # Cloud Run
+    uvicorn tools:app --port 8082          # from agents/text_voice/src
+    ./push_test.sh                          # local end-to-end push test
+
+    (ADK was removed from this agent on 2026-08-18 — no `adk web/run/api_server`.)
 
 Two entrypoints, one per inbound route
 --------------------------------------
@@ -37,6 +38,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
@@ -50,10 +52,9 @@ from lqabr_core.types import (EngagementEvent, EventType, LeadStage, VoiceLead,
 
 try:
     from .tools import VapiError, place_call
-except ImportError:  # pragma: no cover - `adk run` puts src/ on sys.path
+except ImportError:  # pragma: no cover - uvicorn/pytest put src/ on sys.path
     from tools import VapiError, place_call  # type: ignore
 
-logger = logging.getLogger("lqabr.text_voice.agent")
 
 MODEL = os.environ.get("LQABR_TEXT_VOICE_MODEL", "anthropic/claude-sonnet-5")
 
@@ -108,6 +109,18 @@ _CONTACT_PROPERTIES = (
     "firstname", "lastname", "jobtitle", "company", "email", "email_id", "phone",
     "employee_id", "decision_maker", "opted_out", "probability",
     "lqabr_voice_status", "lqabr_email_status",
+    # When this agent last wrote a voice status. Real API name, typo included
+    # (confirmed from the portal's own property definition). Step 3 uses it to
+    # age out a lead stuck in an in-flight state — see STUCK_IN_FLIGHT_MINUTES.
+    "last_modfied_voice",
+    # SP-2 FR4. A real contact property on portal 246777241 (type string,
+    # label "lead_context", description "Lead context notes") — verified
+    # 2026-08-17 via the properties API, not read off the UI label. It is
+    # deliberately NOT a VoiceLead field: VoiceLead lives in
+    # packages/lqabr_core/types.py, and lead_context is a Vapi-call concern
+    # rather than part of the lead profile. It travels as its own value from
+    # get_lead() -> handle_new_lead() -> place_call().
+    "lead_context",
 )
 
 # Company properties Step 3 reads from the associated company. Verified the
@@ -120,7 +133,37 @@ _COMPANY_PROPERTIES = ("company_id", "industry", "annualrevenue",
 # else is a 400 from HubSpot, so it is rejected here first with a message that
 # names the valid values.
 _VOICE_STATUS_VALUES = ("PENDING", "INITIATED", "COMPLETED", "FAILED",
-                        "VOICEMAIL_LEFT")
+                        "VOICEMAIL_LEFT", "CALL_PLACED")
+
+# The in-flight lifecycle (decision, Rao, 2026-08-10). The pre-dial state is
+# split in two so "we have claimed this lead" and "Vapi has actually accepted
+# the call" are distinguishable:
+#
+#     PENDING -> INITIATED    (request received, written BEFORE the dial)
+#             -> CALL_PLACED  (Vapi accepted and returned a call id)
+#             -> COMPLETED | VOICEMAIL_LEFT | FAILED   (end-of-call report)
+#
+# Both in-flight states block a re-dial. They are defined HERE rather than
+# extended onto `VoiceLead.IN_FLIGHT_VOICE_STATUSES`, which lives in
+# packages/lqabr_core/types.py — shared code this agent does not own. Step 3
+# layers this check on top of `lead.blocking_reason()` instead.
+_IN_FLIGHT_VOICE_STATUSES = ("INITIATED", "CALL_PLACED")
+
+# Terminal states an in-flight write must never overwrite. A call that fails
+# fast can produce its end-of-call report within a second, so the CALL_PLACED
+# write issued just after the dial can otherwise land AFTER the report's
+# COMPLETED and leave a finished call showing CALL_PLACED forever. HubSpot has
+# no conditional update (no ETag/If-Match), so this is a read-then-write guard,
+# not an atomic one — it closes the common case, not the last millisecond.
+_TERMINAL_VOICE_STATUSES = ("COMPLETED", "VOICEMAIL_LEFT", "FAILED")
+
+# How long a lead may sit in an in-flight state before a new request is allowed
+# to re-dial it. Without this a lost end-of-call report (a crashed revision, a
+# webhook that never arrives) strands the lead forever: INITIATED is blocking
+# and nothing ever clears it. Measured against `last_modfied_voice`, which this
+# agent stamps on every write it makes.
+STUCK_IN_FLIGHT_MINUTES = int(
+    os.environ.get("LQABR_STUCK_IN_FLIGHT_MINUTES", "15"))
 
 # Step 7 outcome -> voice_status. Only five enum options exist, so both
 # answered outcomes land on COMPLETED — the call happened either way. What
@@ -146,6 +189,33 @@ _EVENTS_FOR_OUTCOME = {
 }
 
 
+def _epoch_ms(raw: Any) -> Optional[int]:
+    """Parse `last_modfied_voice` into epoch milliseconds, or None.
+
+    Two shapes on purpose. This agent WRITES the property as an epoch-ms
+    string (`str(int(time.time() * 1000))`), but HubSpot types it as a
+    datetime and READS it back as ISO 8601 — a real GET on contact
+    533963448041 returned `"2026-08-17T14:44:32.633Z"`, not digits. Handling
+    only one of the two would silently return None and disable the stuck-lead
+    age window, which fails open (the lead is never re-dialled) rather than
+    loudly.
+
+    Anything unparseable is None, and callers treat None as "no timestamp, do
+    not age this lead out" — the conservative direction.
+    """
+    if raw in (None, ""):
+        return None
+    text = str(raw).strip()
+    if text.isdigit():
+        return int(text)
+    try:
+        # HubSpot's trailing Z is not accepted by fromisoformat before 3.11.
+        return int(datetime.fromisoformat(
+            text.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
 class _MCPAdapter:
     """Stand-in for the Step 5 tool surface, over today's HubSpotClient.
 
@@ -169,10 +239,34 @@ class _MCPAdapter:
 
     # ------------------------------------------------------------ read
     def get_lead(self, object_id: str) -> Optional[VoiceLead]:
+        lead, _ = self.get_lead_with_extras(object_id)
+        return lead
+
+    def get_lead_with_extras(
+            self, object_id: str) -> tuple[Optional[VoiceLead], Dict[str, Any]]:
+        """The lead plus the contact properties `VoiceLead` cannot carry.
+
+        Returns `(lead, extras)` where extras holds:
+            lead_context           str  — SP-2 FR4's per-lead opening context
+            voice_status_written_ms int|None — `last_modfied_voice` as epoch ms,
+                                    used to age out a stuck in-flight lead
+
+        Both come from the SAME GET Step 3 already makes — no second CRM call.
+        They live in a dict rather than on `VoiceLead` because that dataclass
+        is in packages/lqabr_core, shared code this agent does not own; adding
+        fields there would change a type the email, scheduling and orchestrator
+        agents all import.
+        """
         contact = self._contact_by_id(object_id)
         if contact is None:
-            return None
-        return self._to_voice_lead(contact, self._primary_company(contact))
+            return None, {"lead_context": "", "voice_status_written_ms": None}
+        properties = contact.get("properties") or {}
+        lead = self._to_voice_lead(contact, self._primary_company(contact))
+        return lead, {
+            "lead_context": str(properties.get("lead_context") or ""),
+            "voice_status_written_ms": _epoch_ms(
+                properties.get("last_modfied_voice")),
+        }
 
     def _contact_by_id(self, object_id: str) -> Optional[Dict[str, Any]]:
         """One GET by HubSpot's own contact id.
@@ -361,6 +455,58 @@ mcp = _resolve_mcp()
 # STEP 3 — Read the Lead
 # ==========================================================================
 
+def _blocking_reason(lead: VoiceLead, status_written_ms: Optional[int],
+                     outcome: Dict[str, Any]) -> Optional[str]:
+    """Step 3's stop conditions, extending `VoiceLead.blocking_reason()`.
+
+    Two things this adds, both from the 2026-08-10 state-machine decision, and
+    both done HERE because `VoiceLead` lives in packages/lqabr_core:
+
+    1. **CALL_PLACED also blocks.** The base method only knows about
+       INITIATED, so without this a duplicate gateway request arriving after
+       Vapi accepted the call would dial the same person twice.
+    2. **An age window on the in-flight states.** A lead whose end-of-call
+       report never arrives is otherwise stranded forever — the status is
+       blocking and nothing clears it. After STUCK_IN_FLIGHT_MINUTES the lead
+       becomes dialable again.
+
+    The age window deliberately fails CLOSED when there is no usable
+    timestamp: no `last_modfied_voice` means the lead stays blocked rather
+    than being re-dialled on a guess. A real person's phone is on the other
+    end of guessing wrong.
+    """
+    status = (lead.voice_status or "").upper()
+
+    if status in _IN_FLIGHT_VOICE_STATUSES:
+        if status_written_ms is None:
+            return (f"in-flight: voice_status={lead.voice_status} "
+                    "(no last_modfied_voice — cannot age it out)")
+        age_minutes = (time.time() * 1000 - status_written_ms) / 60000
+        if age_minutes < STUCK_IN_FLIGHT_MINUTES:
+            return (f"in-flight: voice_status={lead.voice_status} "
+                    f"({age_minutes:.1f} min old, window is "
+                    f"{STUCK_IN_FLIGHT_MINUTES} min)")
+        obs.log_process(obs.STEP_READ_LEAD, "degraded",
+                        "in-flight claim is stale — its end-of-call report "
+                        "never arrived, so this lead is being released for a "
+                        "re-dial",
+                        level=logging.WARNING, contact_id=lead.contact_id,
+                        voice_status=lead.voice_status,
+                        age_minutes=round(age_minutes, 1))
+        outcome["released_stale_claim"] = True
+        # Fall through to the base checks: a stale claim releases the in-flight
+        # block, it does not excuse a missing phone number.
+
+    base = lead.blocking_reason()
+    # The base method blocks INITIATED unconditionally; that decision now
+    # belongs to the branch above, so drop its verdict for the in-flight case
+    # only. Every other reason it gives (no phone, opted out, already
+    # complete) still stands.
+    if base and base.startswith("in-flight:"):
+        return None
+    return base
+
+
 def get_lead(object_id: str) -> Dict[str, Any]:
     """STEP 3 — fetch the lead by its HubSpot object id and decide whether to
     dial.
@@ -392,7 +538,18 @@ def get_lead(object_id: str) -> Dict[str, Any]:
     """
     with obs.step(obs.STEP_READ_LEAD, object_id=object_id) as outcome:
         try:
-            lead = mcp.get_lead(object_id)
+            # `get_lead_with_context` returns FR4's lead_context from the same
+            # GET. Guarded with getattr because `mcp` may resolve to the real
+            # Step 5 tool module (see _resolve_mcp), which only promises the
+            # five names in _MCP_TOOL_NAMES — a lead is still callable without
+            # context, it just opens on the generic intro.
+            reader = getattr(mcp, "get_lead_with_extras", None)
+            if reader is not None:
+                lead, extras = reader(object_id)
+            else:
+                lead, extras = mcp.get_lead(object_id), {}
+            lead_context = str(extras.get("lead_context") or "")
+            status_written_ms = extras.get("voice_status_written_ms")
         except CRMError as exc:
             outcome["status"] = "error"
             return {"callable": False, "reason": f"crm-error: {exc}",
@@ -424,7 +581,7 @@ def get_lead(object_id: str) -> Dict[str, Any]:
             return {"callable": False, "reason": reason, "lead": lead.to_dict(),
                     "contact_id": lead.contact_id}
 
-        reason = lead.blocking_reason()
+        reason = _blocking_reason(lead, status_written_ms, outcome)
 
         if reason:
             outcome["status"] = "stopped"
@@ -433,8 +590,16 @@ def get_lead(object_id: str) -> Dict[str, Any]:
                     "contact_id": lead.contact_id}
 
         outcome["probability"] = lead.probability
+        # The raw property value as read from HubSpot, on process_log (user
+        # request 2026-08-17). Step 4 logs the capped value it actually sent —
+        # comparing the two is how you tell a truncation problem from a
+        # wrong-content problem. `lead_context_chars` of 0 is the signal that
+        # this call will open on the generic intro rather than on FR4's context.
+        outcome["lead_context"] = lead_context
+        outcome["lead_context_chars"] = len(lead_context)
         return {"callable": True, "lead": lead.to_dict(),
-                "contact_id": lead.contact_id}
+                "contact_id": lead.contact_id,
+                "lead_context": lead_context}
 
 
 # ==========================================================================
@@ -650,8 +815,8 @@ def _model_classify(ended_reason: str, transcript: str) -> Dict[str, Any]:
     # (ANTHROPIC_API_KEY for Anthropic), while ops mounts/stores keys under the
     # lqabr-* convention (LQABR_ANTHROPIC_API_KEY / Secret Manager's
     # lqabr-anthropic-api-key). ensure_provider_key() is the single place that
-    # knows that mapping (shared with model.py's build_model(), the
-    # `adk web`/`adk run` path) — env var wins if already set, else it checks
+    # knows that mapping (shared with model.py's build_model()) — env var
+    # wins if already set, else it checks
     # LQABR_ANTHROPIC_API_KEY, else it fetches from Secret Manager.
     ensure_provider_key(model)
 
@@ -816,9 +981,11 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
                         level=logging.WARNING, error=str(exc)[:300],
                         contact_id=lead.contact_id)
 
+    lead_context = read.get("lead_context") or ""
+
     with obs.step(obs.STEP_PLACE_CALL, contact_id=lead.contact_id) as step_result:
         try:
-            placed = place_call(lead)
+            placed = place_call(lead, lead_context=lead_context)
         except VapiError as exc:
             step_result["status"] = "error"
             _release_claim(lead.contact_id, f"vapi-error: {exc}")
@@ -848,10 +1015,71 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
                     "reason": placed["error"]}
 
         step_result["call_id"] = placed.get("call_id")
+        # What Vapi actually received, not what HubSpot held — see place_call.
+        step_result["lead_context"] = placed.get("lead_context")
+        step_result["lead_context_chars"] = placed.get("lead_context_chars")
+        step_result["voice_status"] = _mark_call_placed(lead.contact_id)
 
     return {"status": "initiated", "step": "4",
             "contact_id": lead.contact_id,
-            "call_id": placed.get("call_id"), "to": placed.get("to")}
+            "call_id": placed.get("call_id"), "to": placed.get("to"),
+            "lead_context_chars": placed.get("lead_context_chars")}
+
+
+def _mark_call_placed(contact_id: Optional[str]) -> str:
+    """Advance INITIATED -> CALL_PLACED now that Vapi has accepted the call.
+
+    The no-downgrade guard (2026-08-10 decision) lives here rather than in the
+    CRM layer, and it guards THIS write specifically. INITIATED is always the
+    first write of a call's life, so it can never land out of order; a retry
+    writing INITIATED over a previous call's FAILED is a legitimate re-claim
+    and must be allowed. CALL_PLACED is the only in-flight write that races a
+    terminal one — a call that fails fast (customer-busy, a call.start.error-*)
+    can have its end-of-call report, and Step 8's COMPLETED/FAILED write,
+    land within a second of the dial.
+
+    HubSpot has no conditional update — no ETag, no If-Match — so this is
+    read-then-write. It closes the common case; two writes inside the same
+    few milliseconds can still interleave. Recording that residual race here
+    rather than pretending it is solved.
+
+    Never raises: the call is already in flight, and losing the CALL_PLACED
+    marker must not look like a failed dial. Returns the status it settled on,
+    for the step log.
+    """
+    if not contact_id:
+        return "unknown"
+    try:
+        current = mcp.get_lead(contact_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort guard; a failed
+        # pre-check must not stop the marker being written.
+        current = None
+        obs.log_process(obs.STEP_PLACE_CALL, "degraded",
+                        "could not re-read voice_status before the CALL_PLACED "
+                        "write — writing without the no-downgrade guard",
+                        level=logging.WARNING, error=str(exc)[:200],
+                        contact_id=contact_id)
+
+    if current is not None and (current.voice_status or "").upper() in _TERMINAL_VOICE_STATUSES:
+        obs.log_process(obs.STEP_PLACE_CALL, "skipped",
+                        "end-of-call report already wrote a terminal status — "
+                        "skipping the CALL_PLACED write so it cannot overwrite "
+                        "the real outcome",
+                        contact_id=contact_id,
+                        voice_status=current.voice_status)
+        return current.voice_status or "unknown"
+
+    try:
+        mcp.upsert_lead(contact_id, voice_status="CALL_PLACED")
+        return "CALL_PLACED"
+    except CRMError as exc:
+        obs.log_process(obs.STEP_PLACE_CALL, "degraded",
+                        "call was placed but the CALL_PLACED write failed — "
+                        "the lead stays on INITIATED and will age out of the "
+                        "in-flight window normally",
+                        level=logging.WARNING, error=str(exc)[:300],
+                        contact_id=contact_id)
+        return "INITIATED"
 
 
 def _release_claim(contact_id: Optional[str], reason: str) -> None:
@@ -1003,7 +1231,16 @@ def _contact_id_for_report(report: Dict[str, Any]) -> Optional[str]:
                         "contact lookup by phone failed", level=logging.ERROR,
                         error=str(exc)[:300])
         return None
-    return lead.contact_id if lead else None
+    # `find_lead_by_phone` returns a **LeadProfile**, not the VoiceLead the
+    # rest of this file works with, and LeadProfile's id field is `object_id`
+    # — it has no `contact_id` at all (dataclasses.fields(LeadProfile),
+    # verified 2026-08-17). Reading `.contact_id` here raised AttributeError,
+    # which is not a CRMError, so it escaped this function's own guard and was
+    # only ever caught by the catch-all in tools._handoff_call_report — Step 8
+    # never ran and the call's outcome was silently lost. Latent until now
+    # because Step 4 always puts `contact_id` in variableValues, which the
+    # loop above resolves first; this is the fallback for when it doesn't.
+    return lead.object_id if lead else None
 
 
 # ==========================================================================
@@ -1035,14 +1272,14 @@ def list_text_voice_queue(limit: int = 25) -> Dict[str, Any]:
 obs.configure()
 
 
-# `root_agent` (a custom google.adk.agents.BaseAgent — see adk_agent.py) is
-# deliberately NOT built in this file. This module is what the production
-# webhook (tools.py's /voice_agent/lead and /voice_agent/vapi_report handlers) actually imports and
-# calls into — nothing here should require `google-adk`/`google-genai` to be
-# installed just to run the real pipeline. `adk_agent.py` imports the plain
-# functions below (get_lead, handle_new_lead, handle_call_report,
-# list_text_voice_queue) and wraps them for `adk web`/`adk run` use; this
-# file has no idea that wrapper exists.
+# There is no `root_agent` here, and none anywhere in this agent. ADK was
+# removed on 2026-08-18: `adk_agent.py` (the custom BaseAgent wrapper) and
+# `agent.py` (the discovery shim) are retired, so `adk web`/`adk run` no longer
+# apply to this directory. This module is what the production service
+# (tools.py's /voice_agent/lead and /voice_agent/vapi_report handlers) imports
+# and calls into, and it has never required `google-adk`/`google-genai` to run
+# the real pipeline. The plain functions below (get_lead, handle_new_lead,
+# handle_call_report, list_text_voice_queue) are now called only from tools.py.
 
 __all__ = [
     "get_lead", "summarise_report", "push_to_mcp",
