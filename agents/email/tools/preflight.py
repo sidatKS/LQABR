@@ -245,13 +245,6 @@ def _click_tracking() -> str:
     return "opens and clicks tracked"
 
 
-# --------------------------------------------------------------- 4. run state
-@check("run-state directory writable")
-def _runstate() -> str:
-    from runstate import RunStateStore
-    return str(RunStateStore().ensure_writable())
-
-
 @check("CTA url set", required=False)
 def _cta() -> str:
     url = os.environ.get("LQABR_CTA_URL", "")
@@ -274,7 +267,7 @@ def main() -> int:
     for fn in (_mailgun_live, _click_tracking):
         fn()
     print("\n runtime")
-    for fn in (_runstate, _cta):
+    for fn in (_cta,):
         fn()
 
     failed = [n for n, ok, req in _results if not ok and req]

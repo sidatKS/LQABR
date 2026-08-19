@@ -4,24 +4,22 @@ agents/email/src` finds this directory as a single-agent module.
 This module has one job beyond re-exporting: putting THIS directory on
 `sys.path` before anything else is imported.
 
-Three things load the code in this folder, and they set the path up
+Two things load the code in this folder, and they set the path up
 differently:
 
   adk web agents/email/src   imports it as a PACKAGE (`src.agent`), which
                              puts `agents/email/` on sys.path — but not
                              `agents/email/src/`.
   uvicorn service_app:app    is run FROM this directory, so cwd covers it.
-  pytest                     conftest.py adds this directory explicitly.
 
-Every module in here imports its siblings flat (`import observability`,
-`import outreach`, `from runstate import ...`), which the last two satisfy
-and the first does not. Without the insert below, `adk web` fails at
-`email_agent.py` with ModuleNotFoundError: No module named 'observability'
-— and no test catches it, because the test path setup is one of the two
-that already works.
+Every module in here imports its siblings flat (`import outreach`,
+`import events`). Without the insert below, `adk web` fails at
+`email_agent.py` with ModuleNotFoundError on a sibling module, because the
+`adk web` path is the only one that does not already put this directory on
+sys.path.
 
 Inserting here rather than converting every sibling to a relative import
-keeps one import style across all three entry points.
+keeps one import style across both entry points.
 """
 
 from __future__ import annotations
