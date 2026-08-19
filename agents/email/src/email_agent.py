@@ -1,33 +1,19 @@
-"""Email Agent — the ADK wrapper. v2.
+"""Email Agent — the ADK (model-facing) wrapper.
 
     adk web  agents/email/src
     adk run  agents/email/src
-    adk api_server agents/email/src     # what Cloud Run serves
+    adk api_server agents/email/src
 
-One process, one container, one run ID, four log streams. This module is
-only the model-facing surface: the deterministic work lives in typed,
-mockable modules beside it, and every HubSpot hop goes through the central
-MCP at the project root.
-
-    STEP 3    _bind_run (inline)           run start, correlation token
-    STEP 4    mcp/hubspot/auth.py          machine-to-machine bearer
-    STEP 5    mcp/hubspot/server.py        profile + lead_context
-    STEP 6    skills/ + one model call     construct the email
-    STEP 7    outreach.py                  send, one email per lead
-    STEP 8/9  events.py + service_app.py   engagement events, write-back
-    STEP 10   the campaign-complete column hands the lead to text/voice
-
-Those are the log `step=` keys, in the rev-7 numbering; the FRD v4 numbering
-for the same work is 8-14. `outreach.py`'s module docstring carries the
-mapping table.
+Only the tool surface lives here. The deterministic work is in ``outreach.py``
+(trigger -> HubSpot profile + lead_context -> skill + one model call -> Mailgun)
+and ``events.py`` (Mailgun event -> HubSpot write-back); every HubSpot hop goes
+through the central MCP at the project root.
 
 The gateway invokes this agent with a trigger ID and nothing more; no profile
-payload passes through it, and agents never call each other.
-
-REV 8 (v4): research is a SEPARATE agent. It builds each lead's knowledge
-graph and persists `lead_context` to HubSpot, and that write is what triggers
-this agent. This agent does no research: it loads that context, frames
-construction with it, and skips any lead that has none.
+payload passes through it, and agents never call each other. Research is a
+SEPARATE agent: it writes each lead's ``lead_context`` to HubSpot, and that
+write is what triggers this one. This agent does no research — it loads that
+context, frames construction with it, and skips any lead that has none.
 """
 
 from __future__ import annotations
@@ -39,74 +25,11 @@ from typing import Any, Dict
 
 from google.adk.agents import Agent
 
-# --------------------------------------------------------------- logging
-# One JSON line per event, stamped with object_id + run_id so a whole run
-# greps back together. Inlined per module (no shared observability file); the
-# MCP is handed `MCPObservability` because mcp/hubspot/ cannot import agent code.
-import json as _json
-import logging as _logging
-import hashlib as _hashlib
-import uuid as _uuid
-from dataclasses import dataclass as _dataclass
-from datetime import datetime as _datetime, timezone as _timezone
-
-_LOG = _logging.getLogger("lqabr.email")
-
-
-@_dataclass(frozen=True)
-class RunContext:
-    object_id: str
-    run_id: str
-
-
-def _emit(stream, ctx, **fields):
-    _LOG.info(_json.dumps(
-        {"stream": stream, "ts": _datetime.now(_timezone.utc).isoformat(),
-         "agent": "email_agent",
-         "object_id": ctx.object_id if ctx else None,
-         "run_id": ctx.run_id if ctx else None, **fields}, default=str))
-
-
-def _log_process(ctx, *, step=None, event, **f):
-    _emit("process_log", ctx, step=step, event=event, **f)
-
-
-def _log_audit(ctx, *, step=None, direction, endpoint, method="", status_code=None,
-               bearer=None, **f):
-    fp = _hashlib.sha256(bearer.encode()).hexdigest()[:12] if bearer else "none"
-    _emit("audit_log", ctx, step=step, direction=direction, endpoint=endpoint,
-          method=method, status_code=status_code, bearer_fingerprint=fp, **f)
-
-
-
-def _log_system(**f):
-    import os
-    f.setdefault("host", os.environ.get("K_REVISION") or os.environ.get("HOSTNAME", "local"))
-    _emit("system_log", None, **f)
-
-
-def _bind_run(object_id, run_id=None):
-    if not object_id:
-        raise ValueError("object_id is required — a run cannot be logged without it")
-    ctx = RunContext(str(object_id), run_id or _uuid.uuid4().hex)
-    _log_process(ctx, step=3, event="run_started")
-    return ctx
-
-
-def _configure_logging(level=_logging.INFO):
-    _LOG.setLevel(level)
-    if not _LOG.handlers:
-        h = _logging.StreamHandler(); h.setFormatter(_logging.Formatter("%(message)s"))
-        _LOG.addHandler(h)
-    _LOG.propagate = False
-
-
-class MCPObservability:
-    def __init__(self, ctx=None): self.ctx = ctx
-    def process(self, **f): _log_process(self.ctx, **f)
-    def audit(self, **f): _log_audit(self.ctx, **f)
-
 import outreach
+from outreach import (
+    MCPObservability, MissingLeadContext, SkillError, bind_run, configure_logging,
+    log_system,
+)
 
 from lqabr_core.crm import CRMError
 from lqabr_core.model import build_model
@@ -120,22 +43,37 @@ from mcp.hubspot.server import build_session  # noqa: E402
 
 MODEL = os.environ.get("LQABR_EMAIL_MODEL", "gemini-2.0-flash")
 
-_configure_logging()
-_log_system(event="container_started", component="email-agent", model=MODEL)
+configure_logging()
+log_system(event="container_started", component="email-agent", model=MODEL)
 
 
-# --------------------------------------------------------------------- tools
+# ------------------------------------------------------------------ helpers
+def _read_profile(object_id: str):
+    """Bind a read-only run, open a session, read one lead. Returns
+    ``(ctx, session, profile, error)`` — ``error`` is the tool-shaped dict to
+    return when the read failed, else None."""
+    ctx = bind_run(str(object_id))
+    session = build_session(obs=MCPObservability(ctx))
+    try:
+        return ctx, session, session.crm.get_lead_profile(str(object_id)), None
+    except SchemaValidationError as exc:
+        return ctx, session, None, {"error": str(exc), "object_id": str(object_id)}
+    except CRMError as exc:
+        return ctx, session, None, {"error": f"crm-error: {exc}", "object_id": str(object_id)}
+
+
+# -------------------------------------------------------------------- tools
 def run_email_campaign(object_id: str, limit: int = 0, dry_run: bool = False) -> Dict[str, Any]:
     """Run one outreach campaign for a HubSpot campaign trigger — the agent's
     main entry point.
 
     Args:
-        object_id: the ID the HubSpot campaign fired at the gateway. The
-            lead profiles are chunked under it and stay in HubSpot; this is
-            the only thing the trigger carries.
+        object_id: the ID the HubSpot campaign fired at the gateway. The lead
+            profiles are chunked under it and stay in HubSpot; this is the only
+            thing the trigger carries.
         limit: max leads to work this run (0 = the configured batch size).
-        dry_run: construct every email and report it, but send nothing.
-            Use this when the operator asks to preview a campaign.
+        dry_run: construct every email and report it, but send nothing. Use
+            this when the operator asks to preview a campaign.
 
     Returns per-lead results plus an `unresolved` list — any lead that could
     not be worked is there with an explicit reason, never dropped. Delivery,
@@ -149,35 +87,21 @@ def run_email_campaign(object_id: str, limit: int = 0, dry_run: bool = False) ->
 
 def preview_email(object_id: str, cta_url: str = "") -> Dict[str, Any]:
     """Show which skill a lead would get and what the email would say, for one
-    HubSpot object id — no send, no run state, read-only.
+    HubSpot object id — no send, read-only.
 
-    `object_id` is the lead's HubSpot record id (the same id the gateway
-    forwards). The profile is read straight from HubSpot by that id; there is
-    no email lookup.
-
-    Reports `awaiting-research` for a lead with no lead_context, because that
-    is what the campaign would do with it. A preview that invented copy the
-    campaign would refuse to send would be worse than no preview at all."""
-    ctx = _bind_run(object_id=str(object_id))
-    session = build_session(obs=MCPObservability(ctx))
+    `object_id` is the lead's HubSpot record id. Reports `awaiting-research`
+    for a lead with no lead_context, because that is what the campaign would
+    do with it; the draft needs the model, so a model that cannot be reached
+    is reported rather than replaced with copy the campaign would never send."""
+    ctx, _session, profile, error = _read_profile(object_id)
+    if error:
+        return error
     try:
-        profile = session.crm.get_lead_profile(str(object_id))
-    except SchemaValidationError as exc:
-        return {"error": str(exc), "object_id": str(object_id)}
-    except CRMError as exc:
-        return {"error": f"crm-error: {exc}", "object_id": str(object_id)}
-
-    # Construction is instruction-based, so a preview must draft with the
-    # model too — there is no template to render without one. A preview that
-    # could not reach the model reports that rather than showing copy the
-    # campaign would never actually send.
-    try:
-        subject, html_body, skill = outreach.construct_email(
-            ctx, profile, model_fn=outreach.build_model_fn(ctx), cta_url=cta_url)
-    except outreach.MissingLeadContext as exc:
+        subject, html_body, skill = outreach.construct_email(ctx, profile, cta_url=cta_url)
+    except MissingLeadContext as exc:
         return {"error": f"awaiting-research: {exc}", "object_id": profile.object_id,
                 "lead_context": ""}
-    except outreach.skills.SkillError as exc:
+    except SkillError as exc:
         return {"error": f"construction: {exc}", "object_id": profile.object_id,
                 "skill": outreach.skills.select_skill(profile.industry)[0].name}
     return {"object_id": profile.object_id, "to": profile.email_id, "skill": skill,
@@ -186,16 +110,11 @@ def preview_email(object_id: str, cta_url: str = "") -> Dict[str, Any]:
 
 def send_outreach_email(object_id: str, cta_url: str = "") -> Dict[str, Any]:
     """Send one outreach email to one lead, by HubSpot object id, through the
-    full step 4-7 path (bearer, MCP profile read, skill selection, Mailgun
-    send, run state).
+    full path (bearer, MCP profile read, skill selection, model draft, Mailgun
+    send, SENT write-back).
 
-    `object_id` is the lead's HubSpot record id and the ONLY input. The run is
-    correlated under that same object id, so a returning Mailgun event resolves
-    straight back to it. There is no email argument and no email lookup.
-
-    The result carries object_id and run_id (the send's identity). The Mailgun
-    message id is recorded in run state for event matching but is not returned
-    here.
+    `object_id` is the lead's HubSpot record id and the ONLY input. The result
+    carries object_id and run_id (the send's identity).
 
     Args:
         object_id: the lead's HubSpot object (record) id.
@@ -210,54 +129,38 @@ def send_outreach_email(object_id: str, cta_url: str = "") -> Dict[str, Any]:
         return {"error": f"crm-error: {exc}", "object_id": str(object_id)}
 
     try:
-        subject, html_body, skill = outreach.construct_email(
-            ctx, profile, model_fn=outreach.build_model_fn(ctx), cta_url=cta_url)
-    except outreach.MissingLeadContext as exc:
-        # Nothing is written back and nothing is sent: the lead is waiting on
-        # the research agent, not broken. It stays at its current status so a
-        # later campaign picks it up untouched.
+        subject, html_body, skill = outreach.construct_email(ctx, profile, cta_url=cta_url)
+    except MissingLeadContext as exc:
+        # Nothing written back, nothing sent: the lead is waiting on research,
+        # not broken. It stays where it is for a later campaign.
         return {"error": f"awaiting-research: {exc}", "object_id": profile.object_id}
-    except outreach.skills.SkillError as exc:
+    except SkillError as exc:
         return {"error": f"construction: {exc}", "object_id": profile.object_id}
+
     result = outreach.send_one(ctx, session, profile, subject, html_body, skill)
-    # A send is identified by object id + run id here. The Mailgun message id
-    # is persisted in run state (for event matching) but is not part of this
-    # tool's result — the operator's process keys on object id and run id only.
+    # The operator keys on object id + run id; the Mailgun message id is an
+    # internal detail and not part of this tool's result.
     result.pop("message_id", None)
-    result["object_id"] = ctx.object_id
-    result["run_id"] = ctx.run_id
+    result.update(object_id=ctx.object_id, run_id=ctx.run_id)
     return result
 
 
 def get_lead_status(object_id: str) -> Dict[str, Any]:
     """One lead's current email status and probability, by HubSpot object id.
-    Read-only.
-
-    Never claim an email was opened or clicked unless this says so."""
-    ctx = _bind_run(object_id=str(object_id))
-    session = build_session(obs=MCPObservability(ctx))
-    try:
-        profile = session.crm.get_lead_profile(str(object_id))
-    except SchemaValidationError as exc:
-        return {"error": str(exc), "object_id": str(object_id)}
-    except CRMError as exc:
-        return {"error": f"crm-error: {exc}"}
-    return {
-        "object_id": profile.object_id,
-        "email": profile.email_id,
-        "email_status": profile.email_status,
-        "probability": profile.probability,
-        "company": profile.company,
-        "job_title": profile.job_title,
-    }
+    Read-only. Never claim an email was opened or clicked unless this says so."""
+    _ctx, _session, profile, error = _read_profile(object_id)
+    if error:
+        return error
+    return {"object_id": profile.object_id, "email": profile.email_id,
+            "email_status": profile.email_status, "probability": profile.probability,
+            "company": profile.company, "job_title": profile.job_title}
 
 
 def list_email_queue(object_id: str = "", limit: int = 25) -> Dict[str, Any]:
-    """The leads chunked under a campaign trigger and awaiting outreach.
-
-    With no object_id, falls back to the not-yet-emailed queue so an
-    operator can still see what is outstanding."""
-    ctx = _bind_run(object_id=object_id or "queue-inspection")
+    """The leads chunked under a campaign trigger and awaiting outreach. With no
+    object_id, falls back to the not-yet-emailed queue so an operator can still
+    see what is outstanding."""
+    ctx = bind_run(object_id or "queue-inspection")
     session = build_session(obs=MCPObservability(ctx))
     try:
         leads = session.crm.leads_for_trigger(object_id or ctx.object_id, limit=limit)
@@ -268,37 +171,15 @@ def list_email_queue(object_id: str = "", limit: int = 25) -> Dict[str, Any]:
 
 
 def get_lead_profile(object_id: str) -> Dict[str, Any]:
-    """One lead's full HubSpot profile, read directly by its object id.
-
-    On the manual send path the object id IS the lead's numeric HubSpot
-    object (contact) id, so this returns that contact's schema-validated
-    9-pointer profile straight from HubSpot — no email lookup, no send, no
-    run state. Read-only.
-
-    The campaign path uses object_id differently: there it is the trigger
-    value many leads are chunked under (the HubSpot `object_id` contact
-    property), so use list_email_queue for that — this tool reads a single
-    contact record by its id."""
-    ctx = _bind_run(object_id=str(object_id))
-    session = build_session(obs=MCPObservability(ctx))
-    try:
-        profile = session.crm.get_lead_profile(str(object_id))
-    except SchemaValidationError as exc:
-        return {"error": str(exc)}
-    except CRMError as exc:
-        return {"error": f"crm-error: {exc}"}
-    # The record id, then EXACTLY the construction fields, in the agreed order.
-    #
-    # This deliberately mirrors what the email is built from rather than
-    # listing a different set: an operator reading this is checking the inputs
-    # behind a draft, and a profile view that showed `employee_id` and
-    # `company_id` — which construction never sees, and which must never reach
-    # an email — while hiding the company name, industry group, About-Us,
-    # website and revenue that it DOES see would be reviewing a different lead
-    # than the one being written to.
-    #
-    # `CONSTRUCTION_FIELDS` is the single source of truth, shared with
-    # `as_context()`, so the two cannot drift apart again.
+    """One lead's full HubSpot profile, read directly by its object id — the
+    record id followed by EXACTLY the construction fields, in the agreed order
+    (`CONSTRUCTION_FIELDS` is the single source of truth, shared with
+    `as_context()`, so what an operator reviews is what the email is built
+    from). Read-only, no send. For a campaign trigger's batch use
+    list_email_queue; this reads a single contact record."""
+    _ctx, _session, profile, error = _read_profile(object_id)
+    if error:
+        return {"error": error["error"]}
     view = {"object_id": profile.object_id}
     view.update(profile.construction_view())
     return view
