@@ -13,7 +13,6 @@ should fail on a missing credential, not silently place a phone call.
 
 import importlib.util
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -62,6 +61,15 @@ def _activate_src() -> None:
 
 
 def _load(module_name: str, filename: str):
+    # _activate_src() must run BEFORE the module body executes. text_voice.py
+    # falls back to a bare `from tools import ...` when its relative import
+    # fails (which it always does here — _load gives the module no package
+    # context), so without SRC on sys.path every fixture that loads it dies
+    # with ModuleNotFoundError: No module named 'tools'. This call was missing:
+    # _activate_src was defined and never invoked, which errored 60 of the 87
+    # tests in this suite at setup. Verified by running the suite before and
+    # after (2026-08-17).
+    _activate_src()
     spec = importlib.util.spec_from_file_location(module_name, SRC / filename)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -69,119 +77,14 @@ def _load(module_name: str, filename: str):
     return module
 
 
-def _ensure_adk_stub() -> None:
-    """Make `google.adk`/`google.genai` importable when the real SDKs are absent.
-
-    `text_voice.py` builds `root_agent` at module scope as a `TextVoiceAgent`
-    (a custom `google.adk.agents.BaseAgent` subclass — no model, no template
-    or graph workflow, see its docstring for why). That needs, at import
-    time: `BaseAgent` itself, `InvocationContext` (the `_run_async_impl`
-    parameter type), `Event` (what it yields), and `google.genai.types`'
-    `Content`/`Part` (what a reply's `content=` is built from). None of
-    Steps 3/7/8's logic under test actually drives the ADK runtime — no test
-    here instantiates a real `InvocationContext` or runs `_run_async_impl`
-    end-to-end — but the bare imports are enough to make the whole module
-    uncollectable wherever `google-adk`/`google-genai` were never installed,
-    and pulling in the real packages plus their transitive deps just to
-    satisfy an import is unnecessary here.
-
-    If the real `google.adk`/`google.genai` genuinely resolve (installed,
-    e.g. in CI/prod), each piece below is skipped and the real class is used —
-    this only fills gaps, it never shadows a real install.
-    """
-    google_mod = sys.modules.get("google")
-    if google_mod is None:
-        google_mod = types.ModuleType("google")
-        google_mod.__path__ = []  # namespace package
-        sys.modules["google"] = google_mod
-
-    adk_mod = sys.modules.get("google.adk")
-    if adk_mod is None:
-        adk_mod = types.ModuleType("google.adk")
-        adk_mod.__path__ = []
-        sys.modules["google.adk"] = adk_mod
-        google_mod.adk = adk_mod
-
-    try:
-        import google.adk.agents  # noqa: F401
-    except ImportError:
-        agents_mod = types.ModuleType("google.adk.agents")
-
-        class _StubBaseAgent:
-            """Mimics enough of BaseAgent for TextVoiceAgent to subclass.
-
-            Never executed as a real ADK runtime by these tests — just needs
-            to accept `super().__init__(name=..., description=...)` and set
-            `self.name`, since `TextVoiceAgent._run_async_impl` reads it.
-            """
-
-            def __init__(self, *args, **kwargs):
-                self.args = args
-                self.kwargs = kwargs
-                self.name = kwargs.get("name", "")
-                self.description = kwargs.get("description", "")
-
-        agents_mod.BaseAgent = _StubBaseAgent
-        adk_mod.agents = agents_mod
-        sys.modules["google.adk.agents"] = agents_mod
-
-    try:
-        import google.adk.agents.invocation_context  # noqa: F401
-    except ImportError:
-        ctx_mod = types.ModuleType("google.adk.agents.invocation_context")
-
-        class _StubInvocationContext:
-            """Never instantiated by these tests — they build their own fake
-            ctx-like object with a `.user_content` attribute directly; this
-            only needs to exist so `from ... import InvocationContext`
-            (used purely as a type hint in text_voice.py) resolves."""
-
-        ctx_mod.InvocationContext = _StubInvocationContext
-        sys.modules["google.adk.agents"].invocation_context = ctx_mod
-        sys.modules["google.adk.agents.invocation_context"] = ctx_mod
-
-    try:
-        import google.adk.events  # noqa: F401
-    except ImportError:
-        events_mod = types.ModuleType("google.adk.events")
-
-        class _StubEvent:
-            """Records author/content; never executed by these tests."""
-
-            def __init__(self, *args, **kwargs):
-                self.args = args
-                self.kwargs = kwargs
-                self.author = kwargs.get("author")
-                self.content = kwargs.get("content")
-
-        events_mod.Event = _StubEvent
-        adk_mod.events = events_mod
-        sys.modules["google.adk.events"] = events_mod
-
-    try:
-        import google.genai.types  # noqa: F401
-    except ImportError:
-        genai_mod = sys.modules.get("google.genai")
-        if genai_mod is None:
-            genai_mod = types.ModuleType("google.genai")
-            genai_mod.__path__ = []
-            sys.modules["google.genai"] = genai_mod
-            google_mod.genai = genai_mod
-
-        genai_types_mod = types.ModuleType("google.genai.types")
-
-        class _StubPart:
-            def __init__(self, *args, **kwargs):
-                self.text = kwargs.get("text")
-
-        class _StubContent:
-            def __init__(self, *args, **kwargs):
-                self.parts = kwargs.get("parts", [])
-
-        genai_types_mod.Part = _StubPart
-        genai_types_mod.Content = _StubContent
-        genai_mod.types = genai_types_mod
-        sys.modules["google.genai.types"] = genai_types_mod
+# Activate at conftest IMPORT time as well as inside _load(). test_fixes.py does
+# a bare `import tools` / `import text_voice` at module scope, which pytest
+# executes during COLLECTION — before any fixture runs — so without this the
+# module is uncollectable (ModuleNotFoundError: No module named 'tools') and
+# pytest aborts the whole run with "Interrupted: 1 error during collection".
+# _activate_src() is idempotent and re-runnable by design, so calling it here
+# does not weaken the sibling-agent module eviction it performs per _load().
+_activate_src()
 
 
 @pytest.fixture(scope="session")
@@ -194,30 +97,12 @@ def tv_tools():
 def tv_agent():
     """agents/text_voice/src/text_voice.py — Steps 3, 7 and 8.
 
-    No `google.adk`/`google.genai` imports at all — `root_agent` lives in
-    `adk_agent.py` instead, specifically so production's import chain
-    (tools.py -> text_voice.py) never needs `google-adk` installed. No ADK
-    stub needed for this fixture any more.
+    No `google.adk`/`google.genai` imports at all. ADK was removed from this
+    agent entirely on 2026-08-18 — the only surface that ever used it
+    (`adk_agent.py`/`agent.py`, the `adk web` console) is retired, and the
+    production path is `uvicorn tools:app`. No ADK stub is needed anywhere.
     """
     return _load("tv_text_voice", "text_voice.py")
-
-
-@pytest.fixture(scope="session")
-def tv_adk_agent(tv_agent):
-    """agents/text_voice/src/adk_agent.py — root_agent, the custom BaseAgent.
-
-    Depends on `tv_agent` and aliases `sys.modules["text_voice"]` to that
-    same already-loaded module object *before* importing `adk_agent.py`, so
-    `adk_agent.py`'s `import text_voice` fallback (its relative import fails
-    here the same way it does under `adk run`, since `_load()`'s modules
-    have no real package context) resolves to the exact module these tests
-    monkeypatch — not a second, independent load of the same file under the
-    plain name "text_voice" (which `SRC` being on `sys.path` would otherwise
-    make possible, and which would silently defeat every monkeypatch below).
-    """
-    _ensure_adk_stub()
-    sys.modules.setdefault("text_voice", tv_agent)
-    return _load("tv_adk_agent", "adk_agent.py")
 
 
 @pytest.fixture(autouse=True)
@@ -227,10 +112,10 @@ def _isolate_shared_clients(monkeypatch):
     It is a memoised singleton holding a requests.Session (see
     `tools.reset_vapi_client`), so a client built with one test's fake
     credentials would otherwise leak into the next test. HubSpot has no
-    equivalent module-level singleton to reset: `HubSpotClient` instances are
-    owned by whoever constructs them (a test's `make_client`, or
-    `_MCPAdapter._crm()`), so tests isolate HubSpot by injecting their own
-    fake client/session rather than resetting a shared one.
+    equivalent module-level singleton to reset: since the 2026-08-19 MCP
+    switchover this agent holds no HubSpot client at all — tests monkeypatch
+    `text_voice.mcp` (the StepFiveMCPClient instance) with a fake, and the
+    client itself opens no connection until its first tool call.
     """
     monkeypatch.setenv("LQABR_LOG_JSON", "0")
     yield
