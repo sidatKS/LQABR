@@ -48,6 +48,8 @@ gw_audit = _load("gw_audit", "audit.py")
 sys.modules["audit"] = gw_audit
 gw_dispatch = _load("gw_dispatch", "dispatch.py")
 sys.modules["dispatch"] = gw_dispatch
+gw_audience = _load("gw_audience", "audience.py")
+sys.modules["audience"] = gw_audience
 # server.py imports call_report by flat name, same as the others.
 gw_call_report = _load("gw_call_report", "call_report.py")
 sys.modules["call_report"] = gw_call_report
@@ -78,6 +80,7 @@ def agent_env() -> Dict[str, str]:
     return {
         "LQABR_EMAIL_AGENT_URL": "https://email-agent.example.test/a2a",
         "LQABR_TEXT_VOICE_AGENT_URL": "https://voice-agent.example.test/a2a",
+        "LQABR_RESEARCH_AGENT_URL": "https://research-agent.example.test/a2a",
     }
 
 
@@ -190,3 +193,52 @@ def make_event(
 @pytest.fixture()
 def event_factory():
     return make_event
+
+
+# ------------------------------------------------------------ audience (Rev 5)
+class FakeHubSpotReader:
+    """In-memory HubSpot reader for audience tests — no network."""
+
+    def __init__(self, industry_by_ticket=None, companies_by_industry=None,
+                 contacts_by_company=None, fail=False):
+        self.industry_by_ticket = industry_by_ticket or {}
+        self.companies_by_industry = companies_by_industry or {}
+        self.contacts_by_company = contacts_by_company or {}
+        self.fail = fail
+
+    def ticket_industry(self, ticket_id, property_name="blog_industry"):
+        if self.fail:
+            raise gw_audience.AudienceError("hubspot down")
+        return self.industry_by_ticket.get(str(ticket_id))
+
+    def company_ids_for_industry(self, industry, max_results=1000):
+        if self.fail:
+            raise gw_audience.AudienceError("hubspot down")
+        return list(self.companies_by_industry.get(industry, []))[:max_results]
+
+    def contact_ids_for_companies(self, company_ids, max_results=1000):
+        if self.fail:
+            raise gw_audience.AudienceError("hubspot down")
+        out = []
+        for cid in company_ids:
+            out.extend(self.contacts_by_company.get(str(cid), []))
+        seen, ded = set(), []
+        for x in out:
+            if x not in seen:
+                seen.add(x)
+                ded.append(x)
+        return ded[:max_results]
+
+
+@pytest.fixture()
+def fake_reader():
+    return FakeHubSpotReader(
+        industry_by_ticket={"328791966455": "HEALTHCARE"},
+        companies_by_industry={"HEALTHCARE": ["c1", "c2", "c3", "c4", "c5"]},
+        contacts_by_company={"c1": ["701"], "c2": ["702"], "c3": ["703"],
+                             "c4": ["704"], "c5": ["705"]})
+
+
+@pytest.fixture()
+def audience(fake_reader):
+    return gw_audience.AudienceResolver(fake_reader)

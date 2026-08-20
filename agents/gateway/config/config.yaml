@@ -149,6 +149,40 @@ dispatch:
   # full basis either way, so leave this false unless an agent needs it.
   include_routing_basis: false
 
+  # How many leads travel in one hand-off.
+  #
+  #   per_lead  one A2A call per lead. Today's behaviour, and the default:
+  #             an existing deployment is unchanged until this is set.
+  #   grouped   the routed decisions of ONE ingress are grouped by target
+  #             agent and chunked at batch_size, so 20 leads that arrived in
+  #             one HubSpot delivery become one call per agent, not 20.
+  #
+  # grouped never waits: it batches what already arrived together and sends.
+  # HubSpot decides how many that is (up to 100 events per POST), so this is
+  # "up to batch_size", never a guaranteed batch_size.
+  #
+  # Env override: LQABR_DISPATCH_MODE, LQABR_BATCH_SIZE — these are deployment
+  # variables so the mode can change with --set-env-vars, not a release.
+  mode: per_lead
+  batch_size: 20
+
   # The hand-off happens before we respond to HubSpot, so a 200 means
   # "dispatched" and the 503 retry path is meaningful. Deliberately not a
   # setting: a fire-and-forget mode would make the status code a lie.
+
+# =====================================================================
+# Step 4 (Rev 5) — Audience resolution. The gateway reads HubSpot to turn one
+# blog-summary Ticket into the leads it targets (D-08). When disabled it falls
+# back to Step-1 behaviour. Token comes from HUBSPOT_PRIVATE_APP_TOKEN only.
+# =====================================================================
+audience:
+  enabled: true
+  industry_property: blog_industry   # Ticket property naming the target industry
+  blog_route_id: R-blog-summary      # which route triggers resolution
+  page_size: 100                     # HubSpot search page size (max 100)
+  max_audience: 1000                 # ceiling on leads per post (bounded fan-out)
+  # Per HubSpot call. A full resolution (ticket + paginated company/contact
+  # searches) can exceed HubSpot's ~5s delivery budget; the redelivery is
+  # absorbed by deterministic trigger ids + idempotent agents, not by this
+  # timeout.
+  timeout_seconds: 8
