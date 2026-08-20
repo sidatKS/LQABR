@@ -6,10 +6,10 @@
 # routing code."
 #
 # Event -> agent mapping (Rev 3, page 1):
-#   Decision-maker agent event -> Email agent
+#   Lead-context written        -> Email agent
 #   Email status: opened       -> Voice agent
 # plus Contact Created -> Email agent (subscribed in addition to
-# decision_maker, because a property set at creation time may not raise a
+# lead_context, because a property set at creation time may not raise a
 # separate property-change event).
 # =====================================================================
 
@@ -23,10 +23,13 @@ subscriptions:
     event: contact.creation
   - object: contact
     event: contact.propertyChange
-    property: decision_maker
+    property: lead_context
   - object: contact
     event: contact.propertyChange
     property: lqabr_email_status
+  - object: ticket
+    event: ticket.propertyChange
+    property: blog_summary
 
 # ---------------------------------------------------------------------
 # Downstream agents. `endpoint_env` keeps URLs out of the repo and lets the
@@ -51,6 +54,13 @@ agents:
     writes:
       - lqabr_voice_status
 
+  research:
+    description: Research Agent - fuses blog summary + lead profile into lead_context
+    endpoint_env: LQABR_RESEARCH_AGENT_URL
+    enabled: true
+    writes:
+      - lead_context
+
 # ---------------------------------------------------------------------
 # Routes, evaluated top to bottom; first match wins.
 #
@@ -67,18 +77,21 @@ routes:
   - id: R1-contact-created
     description: >
       New lead record inserted by the lead-profile agent. Subscribed in
-      addition to decision_maker because a property set at creation time may
+      addition to lead_context because a property set at creation time may
       not raise a separate property-change event.
     subscription_type: contact.creation
     match: any                    # a creation event carries no property/value
     agent: email
 
-  - id: R2-decision-maker
-    description: Lead qualified as a decision maker -> Email agent.
+  - id: R2-lead-context
+    description: >
+      Research agent wrote lead_context onto the Contact (Rev 5). Any non-empty
+      value hands the lead to the Email agent. Replaces the decision_maker route;
+      lead_context is a dedicated property, not HubSpot's shared message field.
     subscription_type: contact.propertyChange
-    property: decision_maker
-    values: ["true"]
-    match: exact_ci
+    property: lead_context
+    values: []
+    match: non_empty
     agent: email
 
   - id: R3-email-opened
@@ -90,3 +103,11 @@ routes:
     values: ["OPENED"]
     match: exact_ci
     agent: voice
+
+  - id: R-blog-summary
+    description: Blog summary written on a Ticket - campaign trigger (D-11).
+    subscription_type: ticket.propertyChange
+    property: blog_summary
+    values: []
+    match: non_empty
+    agent: research

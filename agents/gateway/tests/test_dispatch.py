@@ -66,6 +66,12 @@ class TestA2AMessage:
         assert ALLOWED_METADATA_KEYS == {
             "trigger_id", "object_id", "run_id", "route_id", "source",
             "gateway_version",
+            # dispatch.mode = grouped — plural ids for a batched hand-off.
+            # Widened deliberately on 06-Aug-2026; this assertion exists so
+            # that widening is always a reviewed change and never a drift.
+            "batch_id", "object_ids", "batch_size", "trigger_ids",
+            # Rev 5 audience resolution: the blog Ticket id travels on the wire.
+            "summary_ref_id",
         }
 
     @pytest.mark.parametrize("field", ["property_name", "property_value"])
@@ -215,7 +221,7 @@ class TestBatchDispatch:
     def test_dispatches_every_decision(self, router, fake_session_factory, audit):
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("decision_maker", "true", event_id="e2"),
+            make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory()
         outcomes = gw_dispatch.Dispatcher(_client(session), audit).dispatch_all(
@@ -230,7 +236,7 @@ class TestBatchDispatch:
             self, router, fake_session_factory, fake_response_factory, audit):
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("decision_maker", "true", event_id="e2"),
+            make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory([
             fake_response_factory(400, text="nope"),
@@ -255,3 +261,99 @@ class TestDispatchAuditing:
         client = dispatcher._client
         assert client._timeout == config.get("protocols.a2a.timeout_seconds")
         assert client._max_retries == config.get("protocols.a2a.max_retries")
+
+
+class TestGroupedDispatch:
+    """dispatch.mode = grouped — N leads in one hand-off per agent."""
+
+    def _dispatcher(self, session, audit, batch_size=20):
+        return gw_dispatch.Dispatcher(_client(session), audit,
+                                      mode="grouped", batch_size=batch_size)
+
+    def test_twenty_leads_two_agents_becomes_two_calls(
+            self, router, fake_session_factory, audit):
+        events = ([make_event("lead_context", "ctx", object_id=str(700 + i),
+                              event_id=f"e{i}") for i in range(14)]
+                  + [make_event("lqabr_email_status", "OPENED", object_id=str(800 + i),
+                                event_id=f"o{i}") for i in range(6)])
+        result = router.route_batch(events)
+        assert len(result.decisions) == 20
+
+        session = fake_session_factory()
+        outcomes = self._dispatcher(session, audit).dispatch_grouped(
+            result.decisions, "run-1")
+
+        assert len(session.calls) == 2, "one call per agent, not one per lead"
+        assert [o.batch_size for o in outcomes] == [14, 6]
+        assert all(o.ok for o in outcomes)
+
+        by_url = {c["url"]: c["json"] for c in session.calls}
+        email = by_url["https://email-agent.example.test/a2a"]
+        assert len(email["params"]["metadata"]["object_ids"]) == 14
+        assert email["params"]["metadata"]["batch_size"] == 14
+        assert email["object_ids"] == email["params"]["metadata"]["object_ids"]
+
+    def test_a_group_larger_than_batch_size_is_chunked(
+            self, router, fake_session_factory, audit):
+        events = [make_event("lead_context", "ctx", object_id=str(900 + i),
+                             event_id=f"c{i}") for i in range(45)]
+        result = router.route_batch(events)
+        session = fake_session_factory()
+        outcomes = self._dispatcher(session, audit, batch_size=20).dispatch_grouped(
+            result.decisions, "run-1")
+
+        assert [o.batch_size for o in outcomes] == [20, 20, 5]
+        assert len(session.calls) == 3
+        # every lead travelled exactly once
+        sent = [oid for c in session.calls
+                for oid in c["json"]["params"]["metadata"]["object_ids"]]
+        assert len(sent) == 45 and len(set(sent)) == 45
+
+    def test_every_event_id_rides_on_its_outcome(
+            self, router, fake_session_factory, audit):
+        """server.py releases exactly these from the dedupe store on failure."""
+        events = [make_event("lead_context", "ctx", event_id=f"x{i}")
+                  for i in range(3)]
+        result = router.route_batch(events)
+        outcomes = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
+            result.decisions, "run-1")
+        assert set(outcomes[0].event_ids) == {"x0", "x1", "x2"}
+
+    def test_batch_ids_are_deterministic(self, router, fake_session_factory, audit):
+        """A redelivery of the same run mints the same batch id, so the audit
+        trail stays joinable."""
+        events = [make_event("lead_context", "ctx", event_id="d1")]
+        first = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
+            router.route_batch(events).decisions, "run-same")
+        second = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
+            router.route_batch(events).decisions, "run-same")
+        assert first[0].trigger_id == second[0].trigger_id
+        assert first[0].trigger_id.startswith("bat-")
+
+    def test_no_profile_field_reaches_the_wire_when_grouped(
+            self, router, fake_session_factory, audit):
+        events = [make_event("lead_context", "ctx", event_id=f"p{i}")
+                  for i in range(4)]
+        result = router.route_batch(events)
+        session = fake_session_factory()
+        self._dispatcher(session, audit).dispatch_grouped(result.decisions, "run-1")
+        blob = json.dumps(session.calls[0]["json"]).lower()
+        for field in ("email", "phone", "full_name", "company", "annual_revenue"):
+            assert field not in blob
+
+    def test_per_lead_is_still_one_call_per_lead(
+            self, router, fake_session_factory, audit):
+        """The default must be byte-for-byte what shipped."""
+        events = [make_event("lead_context", "ctx", event_id=f"s{i}")
+                  for i in range(5)]
+        result = router.route_batch(events)
+        session = fake_session_factory()
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch_all(
+            result.decisions, "run-1")
+        assert len(session.calls) == 5
+        assert "object_ids" not in session.calls[0]["json"]
+
+    def test_an_unknown_mode_falls_back_to_per_lead(self, fake_session_factory, audit):
+        d = gw_dispatch.Dispatcher(_client(fake_session_factory()), audit,
+                                   mode="grouepd")
+        assert d.mode == "per_lead"
