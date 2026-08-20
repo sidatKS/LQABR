@@ -3,7 +3,6 @@
 B3 retry (backoffPlan), wasted-backoff, M5 idempotency, and the Anthropic env
 bridge.
 All providers mocked — no calls, no network."""
-import os
 import types as _pytypes
 
 import pytest
@@ -22,63 +21,13 @@ def _lead(**kw):
     return VoiceLead(**base)
 
 
-# ---------------------------------------------------------------- route fix
-# The server URL must equal the configured report callback. Asserting equality
-# (not a hard-coded path) keeps this robust when a local .env sets an explicit
-# LQABR_VAPI_REPORT_CALLBACK_URL override.
-# (The transient-assistant counterpart of this test was deleted 2026-08-07 with
-# the transient path itself — there is only one call path now.)
-def test_assistantid_branch_server_url_matches_report_callback(monkeypatch):
-    # The callback URL must be pinned to a REACHABLE value. Since 2026-08-18
-    # _report_server() returns None for an unreachable target (unset/localhost/
-    # 127.0.0.1) and build_call_payload omits the override entirely, so with the
-    # default (http://localhost:8082/...) there is no "server" key to assert on.
-    monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
-    monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL",
-                        "https://example.test/voice_agent/vapi_report")
-    payload = tools.build_call_payload(_lead())
-    assert payload["assistantOverrides"]["server"]["url"] == tools.VAPI_REPORT_CALLBACK_URL
-
-
-def test_localhost_callback_omits_the_server_override_entirely(monkeypatch):
-    """The report-delivery fix, guarded.
-
-    A per-call `server` object REPLACES the dashboard assistant's server config
-    wholesale. Sending a localhost URL therefore replaces a working public
-    target with a dead one and the call outcome is lost in silence — which is
-    exactly what happened live, on every call, until 2026-08-18. Omitting the
-    override lets Vapi fall back to the dashboard config.
-    """
-    monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
-    for dead in ("http://localhost:8082/voice_agent/vapi_report",
-                 "http://127.0.0.1:8082/voice_agent/vapi_report",
-                 ""):
-        monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL", dead)
-        payload = tools.build_call_payload(_lead())
-        assert "server" not in payload["assistantOverrides"], dead
-
-
-def test_report_callback_default_path_is_voice_agent_vapi_report():
-    """The route change: with no explicit override, the default report path is
-    /voice_agent/vapi_report (was /vapi_report, before that /call-report,
-    before that /vapi/report). Skipped when an override is set (e.g. a local
-    .env exports LQABR_VAPI_REPORT_CALLBACK_URL) since that bypasses the
-    default entirely."""
-    if os.environ.get("LQABR_VAPI_REPORT_CALLBACK_URL"):
-        pytest.skip("LQABR_VAPI_REPORT_CALLBACK_URL override set (e.g. from .env)")
-    assert tools.VAPI_REPORT_CALLBACK_URL.endswith("/voice_agent/vapi_report")
-    assert "/call-report" not in tools.VAPI_REPORT_CALLBACK_URL
-    assert "/vapi/report" not in tools.VAPI_REPORT_CALLBACK_URL
-
-
-# ------------------------------------------------------------- B3 backoffPlan
-def test_assistantid_branch_server_has_retries(monkeypatch):
-    monkeypatch.setattr(tools, "VAPI_ASSISTANT_ID", "asst_123")
-    monkeypatch.setattr(tools, "VAPI_REPORT_CALLBACK_URL",
-                        "https://example.test/voice_agent/vapi_report")
-    payload = tools.build_call_payload(_lead())
-    assert payload["assistantOverrides"]["server"]["backoffPlan"]["maxRetries"] == 2
-    assert 0 <= payload["assistantOverrides"]["server"]["backoffPlan"]["baseDelaySeconds"] <= 10
+# ------------------------------------------------------------- server override
+# (The route-fix / backoffPlan / localhost-guard tests that used to live here
+# were deleted 2026-08-19 along with the per-call `server` override itself:
+# the report destination, secret and retries now live only on the dashboard
+# assistant's server config. test_tools.py's
+# test_build_call_payload_dashboard_assistant_sends_id_and_no_server_override
+# guards the new invariant — no per-call override, ever.)
 
 
 # ------------------------------------ dashboard assistant is now mandatory
@@ -129,7 +78,7 @@ _REPORT = {
     "endedReason": "customer-did-not-answer",  # terminal -> no model call
     "artifact": {"transcript": "", "recordingUrl": ""},
     "call": {"id": "call_1"},
-    "assistantOverrides": {"variableValues": {"contact_id": "C1"}},
+    "assistantOverrides": {"variableValues": {"object_id": "C1"}},
 }
 
 
@@ -174,8 +123,8 @@ def _fake_litellm(captured):
 
 
 def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
-    """LQABR_ANTHROPIC_API_KEY (e.g. Cloud Run --set-secrets) still wins
-    without ever touching Secret Manager."""
+    """LQABR_ANTHROPIC_API_KEY (how Cloud Run --set-secrets delivers the
+    Secret Manager value) resolves via get_secret's `auto` source."""
     from lqabr_core.secrets import get_secret
     get_secret.cache_clear()  # avoid lru_cache bleed from other tests
 
@@ -191,15 +140,16 @@ def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
     get_secret.cache_clear()
 
 
-def test_anthropic_key_falls_back_to_secret_manager(monkeypatch):
-    """2026-08-07: with no ANTHROPIC_API_KEY and no LQABR_ANTHROPIC_API_KEY
-    env var set, Step 7's classification path now reaches Secret Manager via
-    lqabr_core.model.ensure_provider_key() — this used to be env-only and
-    silently skip the model call instead."""
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+def test_anthropic_key_overwrites_a_preset_env_var(monkeypatch):
+    """2026-08-20 (user decision): Secret Manager DIRECTLY, no more
+    three-name confusion. A pre-set ANTHROPIC_API_KEY shell variable used to
+    silently win before Secret Manager was ever consulted (the old
+    ensure_provider_key behaviour); now it is overwritten every process, so
+    the single source lqabr-anthropic-api-key is always what litellm sees."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-stale-shell-value")
     monkeypatch.delenv("LQABR_ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr("lqabr_core.model.get_secret",
-                         lambda name: "sk-from-secret-manager")
+    monkeypatch.setattr(text_voice, "get_secret",
+                        lambda name: "sk-from-secret-manager")
 
     captured = {}
     monkeypatch.setitem(__import__("sys").modules, "litellm", _fake_litellm(captured))

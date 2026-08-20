@@ -6,14 +6,14 @@ from tools.py into this module's namespace) are monkeypatched with fakes at
 the point they are referenced inside text_voice.py's own globals. This tests
 Steps 3/7/8's own logic — dedup/claim ordering, outcome classification,
 partial-write reporting — without needing a real HubSpot/Vapi credential or
-network call, and without going through `_MCPAdapter`'s HubSpot-specific
-mapping (that class gets its own tests below, against a fake `crm._request`).
+network call. (The `_MCPAdapter` HubSpot stand-in and its tests were
+retired 2026-08-19 — Step 5 is a real MCP server now, see mcp_client.py.)
 """
 
 import time
 
 from lqabr_core.crm.base import CRMError
-from lqabr_core.types import EventType, VoiceLead, VoiceOutcome
+from lqabr_core.types import VoiceLead, VoiceOutcome
 
 
 # ============================================================== fake mcp/vapi
@@ -35,8 +35,6 @@ class FakeMCP:
         self.record_call_outcome_error = None
         self.find_lead_by_phone_result = None
         self.find_lead_by_phone_error = None
-        self.leads_in_stage_result = []
-        self.leads_in_stage_error = None
 
     def get_lead(self, object_id):
         self.calls.append(("get_lead", object_id))
@@ -74,12 +72,6 @@ class FakeMCP:
         if self.find_lead_by_phone_error:
             raise self.find_lead_by_phone_error
         return self.find_lead_by_phone_result
-
-    def leads_in_stage(self, stage, limit=100):
-        self.calls.append(("leads_in_stage", stage, limit))
-        if self.leads_in_stage_error:
-            raise self.leads_in_stage_error
-        return self.leads_in_stage_result
 
 
 def _voice_lead(**overrides):
@@ -319,14 +311,13 @@ def test_push_to_mcp_success_includes_summary_and_recording(tv_agent, monkeypatc
     }
     monkeypatch.setattr(tv_agent, "mcp", fake)
     result = tv_agent.push_to_mcp("123", "answered_and_engaged", summary="Great call",
-                                  recording_url="https://x/rec.mp3", call_id="call-1")
+                                  recording_url="https://x/rec.mp3")
     assert result["summary"] == "Great call"
     assert result["recording_url"] == "https://x/rec.mp3"
     assert result["probability"] == 60
     call = fake.calls[0]
     assert call[0] == "record_call_outcome"
     assert call[1] == "123" and call[2] == "answered_and_engaged"
-    assert "call=call-1" in call[3] and "recording=https://x/rec.mp3" in call[3] and "Great call" in call[3]
 
 
 def test_push_to_mcp_reports_crm_error_as_error_status_not_exception(tv_agent, monkeypatch):
@@ -562,27 +553,13 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
 # ======================================================== _contact_id_for_report
 
 def test_contact_id_for_report_reads_top_level_variable_values(tv_agent):
-    report = {"assistantOverrides": {"variableValues": {"contact_id": "77"}}}
+    report = {"assistantOverrides": {"variableValues": {"object_id": "77"}}}
     assert tv_agent._contact_id_for_report(report) == "77"
 
 
 def test_contact_id_for_report_reads_call_nested_variable_values(tv_agent):
-    report = {"call": {"assistantOverrides": {"variableValues": {"contact_id": "88"}}}}
+    report = {"call": {"assistantOverrides": {"variableValues": {"object_id": "88"}}}}
     assert tv_agent._contact_id_for_report(report) == "88"
-
-
-def test_contact_id_for_report_falls_back_to_phone_lookup(tv_agent, monkeypatch):
-    fake = FakeMCP()
-    # A real LeadProfile, not a duck-typed stub: LeadProfile's id field is
-    # `object_id` and it has no `contact_id`, so a stub carrying `contact_id`
-    # asserted a contract the real object never had (and hid the AttributeError
-    # this path used to raise in production).
-    from lqabr_core.types import LeadProfile
-    fake.find_lead_by_phone_result = LeadProfile(object_id="99")
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    report = {"call": {"customer": {"number": "+15550001111"}}}
-    assert tv_agent._contact_id_for_report(report) == "99"
-    assert fake.calls == [("find_lead_by_phone", "+15550001111")]
 
 
 def test_contact_id_for_report_returns_none_when_phone_lookup_finds_nothing(tv_agent, monkeypatch):
@@ -608,156 +585,6 @@ def test_contact_id_for_report_swallows_crm_error_and_returns_none(tv_agent, mon
     assert tv_agent._contact_id_for_report(report) is None
 
 
-# ============================================================ list_text_voice_queue
-
-def test_list_text_voice_queue_returns_leads_and_thresholds(tv_agent, monkeypatch):
-    fake = FakeMCP()
-    fake.leads_in_stage_result = [_voice_lead(), _voice_lead(employee_id="E2", contact_id="124")]
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    result = tv_agent.list_text_voice_queue(limit=10)
-    assert result["count"] == 2
-    assert result["entry_threshold"] == tv_agent.TEXT_VOICE_THRESHOLD
-    assert result["threshold_to_scheduling"] == tv_agent.SCHEDULING_THRESHOLD
-    assert len(result["leads"]) == 2
-
-
-def test_list_text_voice_queue_reports_crm_error_instead_of_crashing(tv_agent, monkeypatch):
-    """The un-guarded CRM call this test would have caught if it crashed the
-    whole adk session instead of returning an error dict."""
-    fake = FakeMCP()
-    fake.leads_in_stage_error = CRMError("HubSpot down")
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    result = tv_agent.list_text_voice_queue()
-    assert result["count"] == 0
-    assert "crm-error" in result["error"]
-
-
-# =================================================================== _MCPAdapter
-
-class FakeCRM:
-    """Stands in for HubSpotClient at the `_request` boundary _MCPAdapter uses
-    directly (get contact by id, get company, PATCH properties)."""
-
-    def __init__(self, responses_by_call=None, starting_probability=30):
-        self.calls = []
-        self._script = list(responses_by_call or [])
-        self._probability = starting_probability  # mirrors HubSpotClient.record_event:
-                                                    # each call reads current state and
-                                                    # compounds, rather than resetting.
-
-    def _request(self, method, path, **kwargs):
-        self.calls.append((method, path, kwargs))
-        item = self._script.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
-
-    def record_event(self, event):
-        self.calls.append(("record_event", event))
-        from lqabr_core.probability import apply_event, stage_for_probability
-        from lqabr_core.types import LeadProfile
-        self._probability = apply_event(self._probability, event.event_type)
-        return LeadProfile(object_id=event.contact_id,
-                           probability=self._probability,
-                           stage=stage_for_probability(self._probability))
-
-
-def _adapter_with_crm(tv_agent, crm):
-    adapter = tv_agent._MCPAdapter()
-    adapter._client = crm
-    return adapter
-
-
-def test_mcpadapter_contact_by_id_does_a_single_direct_get(tv_agent):
-    """The Agent Gateway now forwards HubSpot's own `objectId` (confirmed
-    against HubSpot's custom-workflow-action docs: "the unique system ID for
-    the specific contact"), not the external `employee_id` property — so this
-    is one direct GET, no idProperty/Search fallback needed anymore."""
-    crm = FakeCRM([{"id": "904", "properties": {}, "associations": {}}])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    contact = adapter._contact_by_id("904")
-    assert contact["id"] == "904"
-    assert len(crm.calls) == 1
-    method, path, kwargs = crm.calls[0]
-    assert method == "GET" and path.endswith("/contacts/904")
-    assert "idProperty" not in kwargs["params"]  # no fallback plumbing left
-
-
-def test_mcpadapter_contact_by_id_returns_none_on_404(tv_agent):
-    """A 404 means the contact genuinely doesn't exist (e.g. deleted since the
-    gateway enrolled it) — reported as not-found, not raised as a CRM error."""
-    crm = FakeCRM([CRMError("HubSpot GET /crm/v3/objects/contacts/904 failed: "
-                            "HTTP 404: {\"message\": \"not found\"}")])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    assert adapter._contact_by_id("904") is None
-
-
-def test_mcpadapter_contact_by_id_reraises_non_404_errors(tv_agent):
-    """A 5xx or auth failure is a real CRM error, not a not-found — it must
-    propagate rather than being swallowed into a false "no such contact"."""
-    import pytest
-    crm = FakeCRM([CRMError("HubSpot GET /crm/v3/objects/contacts/904 failed "
-                            "after 3 retries: HTTP 500: server error")])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    with pytest.raises(CRMError):
-        adapter._contact_by_id("904")
-
-
-def test_mcpadapter_to_voice_lead_maps_email_id_fallback_and_opted_out_string(tv_agent):
-    contact = {"id": "1", "properties": {
-        "firstname": "Jane", "lastname": "Smith", "email_id": "j@x.com",
-        "phone": "+1555", "opted_out": "true", "probability": "45",
-        "decision_maker": "yes", "lqabr_voice_status": "COMPLETED",
-    }}
-    company = {"id": "9", "properties": {"industry": "Tech", "name": "Acme"}}
-    lead = tv_agent._MCPAdapter._to_voice_lead(contact, company)
-    assert lead.full_name == "Jane Smith"
-    assert lead.opted_out is True
-    assert lead.probability == 45
-    assert lead.company_name == "Acme"
-    assert lead.hubspot_company_id == "9"
-
-
-def test_mcpadapter_upsert_lead_rejects_unknown_voice_status(tv_agent):
-    import pytest
-    crm = FakeCRM([])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    with pytest.raises(CRMError, match="not one of"):
-        adapter.upsert_lead("1", voice_status="BOGUS")
-
-
-def test_mcpadapter_upsert_lead_derives_voice_status_from_outcome(tv_agent):
-    crm = FakeCRM([{}])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    result = adapter.upsert_lead("1", outcome="voicemail")
-    assert result["properties"]["lqabr_voice_status"] == "VOICEMAIL_LEFT"
-    # every real write stamps the Text/Voice Agent's own last-touched marker
-    assert result["properties"]["last_modfied_voice"].isdigit()
-
-
-def test_mcpadapter_record_call_outcome_engaged_call_records_two_events(tv_agent):
-    crm = FakeCRM([{}])  # one PATCH from upsert_lead
-    adapter = _adapter_with_crm(tv_agent, crm)
-    result = adapter.record_call_outcome("1", "answered_and_engaged")
-    assert result["status"] == "ok"
-    event_calls = [c for c in crm.calls if c[0] == "record_event"]
-    assert len(event_calls) == 2
-    assert event_calls[0][1].event_type is EventType.CALL_ANSWERED
-    assert event_calls[1][1].event_type is EventType.CALL_ENGAGED
-    assert result["promoted_to_scheduling"] is True  # 30 + 15 + 15 == SCHEDULING_THRESHOLD
-
-
-def test_mcpadapter_record_call_outcome_reports_partial_on_upsert_failure(tv_agent):
-    crm = FakeCRM([CRMError("PATCH failed")])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    result = adapter.record_call_outcome("1", "voicemail")
-    assert result["status"] == "partial"
-    assert any("upsert_lead" in f for f in result["failures"])
-    # the event is still attempted even though the upsert failed
-    assert any(c[0] == "record_event" for c in crm.calls)
-
-
-
 # ==========================================================================
 # SP-2 FR4 — lead_context
 #
@@ -769,46 +596,6 @@ def test_mcpadapter_record_call_outcome_reports_partial_on_upsert_failure(tv_age
 # through handle_new_lead into Step 4.
 # ==========================================================================
 
-def test_lead_context_is_in_the_properties_step_3_asks_hubspot_for(tv_agent):
-    """A property that isn't in the GET's `properties` list comes back absent,
-    silently — the exact failure mode this repo keeps hitting."""
-    assert "lead_context" in tv_agent._CONTACT_PROPERTIES
-
-
-def test_mcpadapter_get_lead_with_extras_reads_it_from_the_same_get(tv_agent):
-    crm = FakeCRM([{"id": "904",
-                    "properties": {"firstname": "Jane", "phone": "+15550001111",
-                                   "lead_context": "Re: cutting your cloud spend"},
-                    "associations": {}}])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    lead, extras = adapter.get_lead_with_extras("904")
-    lead_context = extras["lead_context"]
-    assert lead.contact_id == "904"
-    assert lead_context == "Re: cutting your cloud spend"
-    # One GET, not two: no separate round-trip just for the context.
-    assert len([c for c in crm.calls if c[0] == "GET"]) == 1
-
-
-def test_mcpadapter_get_lead_with_extras_returns_empty_when_unset(tv_agent):
-    """The common case today — the property exists on every contact in the
-    portal and is populated on none of them (HAS_PROPERTY search: 0 of 0,
-    2026-08-17)."""
-    crm = FakeCRM([{"id": "904", "properties": {"phone": "+15550001111"},
-                    "associations": {}}])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    _, extras = adapter.get_lead_with_extras("904")
-    lead_context = extras["lead_context"]
-    assert lead_context == ""
-
-
-def test_mcpadapter_get_lead_with_extras_returns_none_for_a_missing_contact(tv_agent):
-    crm = FakeCRM([CRMError("HubSpot GET /crm/v3/objects/contacts/904 failed: "
-                            "HTTP 404: {\"message\": \"not found\"}")])
-    adapter = _adapter_with_crm(tv_agent, crm)
-    lead, extras = adapter.get_lead_with_extras("904")
-    assert lead is None and extras["lead_context"] == ""
-
-
 def test_get_lead_returns_lead_context_for_a_callable_lead(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.get_lead_result = _voice_lead()
@@ -819,11 +606,15 @@ def test_get_lead_returns_lead_context_for_a_callable_lead(tv_agent, monkeypatch
     assert result["lead_context"] == "Re: cutting your cloud spend"
 
 
-def test_get_lead_falls_back_when_the_mcp_tool_surface_has_no_context_reader(
+def test_get_lead_raises_loudly_when_the_mcp_tool_surface_has_no_context_reader(
         tv_agent, monkeypatch):
-    """`mcp` may resolve to the real Step 5 tool module, which only promises
-    the five names in _MCP_TOOL_NAMES. A lead is still callable without
-    context — it just opens on the generic intro."""
+    """2026-08-18: the getattr fallback onto plain `get_lead` was removed.
+    `_MCP_TOOL_NAMES` (what flips `_resolve_mcp()` onto a real Step 5 module)
+    was never going to include `get_lead_with_extras` anyway, so the old
+    fallback wasn't protecting against a real future swap — it was turning a
+    broken lead_context into a silent empty string instead of a loud
+    failure. An `mcp` object missing the method should now raise, not
+    degrade quietly."""
     class LegacyMCP:
         def __init__(self):
             self.calls = []
@@ -834,10 +625,10 @@ def test_get_lead_falls_back_when_the_mcp_tool_surface_has_no_context_reader(
 
     legacy = LegacyMCP()
     monkeypatch.setattr(tv_agent, "mcp", legacy)
-    result = tv_agent.get_lead("904")
-    assert result["callable"] is True
-    assert result["lead_context"] == ""
-    assert legacy.calls == ["904"]
+    import pytest
+    with pytest.raises(AttributeError):
+        tv_agent.get_lead("904")
+    assert legacy.calls == []  # never reached get_lead(); failed on the attribute lookup first
 
 
 def test_handle_new_lead_hands_lead_context_to_step_4(tv_agent, monkeypatch):
@@ -941,20 +732,6 @@ def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkey
     assert entry["lead_context_chars"] == 17
 
 
-def test_contact_id_for_report_uses_leadprofile_object_id_not_contact_id(
-        tv_agent, monkeypatch):
-    """Regression: LeadProfile (what find_lead_by_phone returns) has
-    `object_id` and no `contact_id`. Reading `.contact_id` raised
-    AttributeError — not a CRMError, so it escaped this function's guard and
-    Step 8 never ran for that call."""
-    from lqabr_core.types import LeadProfile
-    fake = FakeMCP()
-    fake.find_lead_by_phone_result = LeadProfile(object_id="77", phone="+15550001111")
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    report = {"customer": {"number": "+15550001111"}}
-    assert tv_agent._contact_id_for_report(report) == "77"
-
-
 # ==========================================================================
 # voice_status state machine (decision, Rao, 2026-08-10)
 #
@@ -966,7 +743,8 @@ def test_contact_id_for_report_uses_leadprofile_object_id_not_contact_id(
 # ==========================================================================
 
 def test_call_placed_is_a_valid_status_value(tv_agent):
-    assert "CALL_PLACED" in tv_agent._VOICE_STATUS_VALUES
+    # (The client-side _VOICE_STATUS_VALUES enum guard retired with the
+    # adapter on 2026-08-19 — the MCP server validates status values now.)
     assert tv_agent._IN_FLIGHT_VOICE_STATUSES == ("INITIATED", "CALL_PLACED")
 
 
@@ -981,48 +759,12 @@ def test_call_placed_blocks_a_duplicate_dial(tv_agent, monkeypatch):
     assert result["reason"].startswith("in-flight: voice_status=CALL_PLACED")
 
 
-def test_stale_in_flight_claim_is_released_for_a_redial(tv_agent, monkeypatch):
-    """A lead whose end-of-call report never arrived is stranded forever
-    without this — INITIATED blocks and nothing clears it."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead(voice_status="INITIATED")
-    fake.voice_status_written_ms_result = int(
-        (time.time() - 3600) * 1000)          # an hour old, window is 15 min
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    result = tv_agent.get_lead("E1")
-    assert result["callable"] is True
-
-
 def test_fresh_in_flight_claim_is_still_blocked(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.get_lead_result = _voice_lead(voice_status="INITIATED")
     fake.voice_status_written_ms_result = int((time.time() - 60) * 1000)
     monkeypatch.setattr(tv_agent, "mcp", fake)
     assert tv_agent.get_lead("E1")["callable"] is False
-
-
-def test_in_flight_without_a_timestamp_fails_closed(tv_agent, monkeypatch):
-    """No last_modfied_voice means we cannot know the age. Blocking is the
-    safe direction — the alternative is guessing and dialling a real person."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead(voice_status="INITIATED")
-    fake.voice_status_written_ms_result = None
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    result = tv_agent.get_lead("E1")
-    assert result["callable"] is False
-    assert "cannot age it out" in result["reason"]
-
-
-def test_a_stale_claim_does_not_excuse_a_missing_phone(tv_agent, monkeypatch):
-    """Releasing the in-flight block must not release the other stop
-    conditions with it."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead(voice_status="INITIATED", phone_number=None)
-    fake.voice_status_written_ms_result = int((time.time() - 3600) * 1000)
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    result = tv_agent.get_lead("E1")
-    assert result["callable"] is False
-    assert result["reason"] == "bad-data: contact has no phone number"
 
 
 def test_mark_call_placed_skips_when_the_report_already_landed(tv_agent, monkeypatch):
@@ -1054,12 +796,3 @@ def test_mark_call_placed_never_raises_when_the_write_fails(tv_agent, monkeypatc
     assert tv_agent._mark_call_placed("123") == "INITIATED"
 
 
-def test_epoch_ms_parses_both_shapes_hubspot_uses(tv_agent):
-    """We WRITE epoch-ms; HubSpot types the property as a datetime and READS
-    it back as ISO 8601. A real GET returned '2026-08-17T14:44:32.633Z'."""
-    assert tv_agent._epoch_ms("1786968272633") == 1786968272633
-    # Round-trips: 1786977872633 ms == 2026-08-17T14:44:32.633+00:00
-    assert tv_agent._epoch_ms("2026-08-17T14:44:32.633Z") == 1786977872633
-    assert tv_agent._epoch_ms("") is None
-    assert tv_agent._epoch_ms(None) is None
-    assert tv_agent._epoch_ms("not a date") is None
