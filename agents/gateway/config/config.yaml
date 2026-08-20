@@ -169,3 +169,20 @@ dispatch:
   # The hand-off happens before we respond to HubSpot, so a 200 means
   # "dispatched" and the 503 retry path is meaningful. Deliberately not a
   # setting: a fire-and-forget mode would make the status code a lie.
+
+# =====================================================================
+# Step 4 (Rev 5) — Audience resolution. The gateway reads HubSpot to turn one
+# blog-summary Ticket into the leads it targets (D-08). When disabled it falls
+# back to Step-1 behaviour. Token comes from HUBSPOT_PRIVATE_APP_TOKEN only.
+# =====================================================================
+audience:
+  enabled: true
+  industry_property: blog_industry   # Ticket property naming the target industry
+  blog_route_id: R-blog-summary      # which route triggers resolution
+  page_size: 100                     # HubSpot search page size (max 100)
+  max_audience: 1000                 # ceiling on leads per post (bounded fan-out)
+  # Per HubSpot call. A full resolution (ticket + paginated company/contact
+  # searches) can exceed HubSpot's ~5s delivery budget; the redelivery is
+  # absorbed by deterministic trigger ids + idempotent agents, not by this
+  # timeout.
+  timeout_seconds: 8

@@ -64,6 +64,9 @@ ALLOWED_METADATA_KEYS = frozenset({
     # which is the whole point of this guard: a list of object ids is not lead
     # data, and the agent still resolves each profile from HubSpot itself.
     "batch_id", "object_ids", "batch_size", "trigger_ids",
+    # Audience-resolved research hand-off (Rev 5): the blog Ticket id, so the
+    # agent can read the summary. Still an id, never lead-profile data.
+    "summary_ref_id",
 })
 
 
@@ -145,19 +148,14 @@ class A2AClient:
         #
         # Remove this block once the agents read params.metadata.object_id.
         envelope["trigger_id"] = trigger_id
-        object_id = metadata.get("object_id")
-        if object_id is not None:
-            envelope["object_id"] = object_id
-            envelope["objectId"] = object_id
-        # Grouped hand-off: the same mirroring for the plural form.
-        object_ids = metadata.get("object_ids")
-        if object_ids is not None:
-            envelope["object_ids"] = list(object_ids)
-            envelope["objectIds"] = list(object_ids)
-        batch_id = metadata.get("batch_id")
-        if batch_id is not None:
-            envelope["batch_id"] = batch_id
-            envelope["batchId"] = batch_id
+        for snake, camel in (("object_id", "objectId"), ("object_ids", "objectIds"),
+                             ("batch_id", "batchId"), ("summary_ref_id", "summaryRefId")):
+            value = metadata.get(snake)
+            if value is not None:
+                if snake == "object_ids":
+                    value = list(value)
+                envelope[snake] = value
+                envelope[camel] = value
 
         return envelope
 

@@ -93,7 +93,7 @@ class TestProbes:
     def test_root_describes_what_the_service_refuses_to_carry(self, client):
         body = client.get("/").json()
         assert body["carries"] == "trigger_id only"
-        assert len(body["routes"]) == 3
+        assert len(body["routes"]) == 4
 
     def test_metrics_exposes_handoff_counters(self, client):
         body = client.get("/metrics").json()
@@ -182,7 +182,7 @@ class TestEnvelope:
 class TestRoutingEndToEnd:
     def test_the_documented_paths_reach_the_documented_agents(self, client, app_bundle):
         cases = [
-            (make_event("decision_maker", "true", event_id="e1"),
+            (make_event("lead_context", "ctx", event_id="e1"),
              "https://email-agent.example.test/a2a"),
             (make_event("lqabr_email_status", "OPENED", event_id="e2"),
              "https://voice-agent.example.test/a2a"),
@@ -399,7 +399,7 @@ class TestIngressObservability:
         assert "token_model_stream_not_applicable" in events
 
     def test_the_full_path_of_one_lead_is_in_the_log(self, client, app_bundle):
-        body, headers = signed([make_event("decision_maker", "true")])
+        body, headers = signed([make_event("lead_context", "ctx")])
         trigger_id = client.post("/hubspot/events", content=body,
                                  headers=headers).json()["dispatched"][0]["trigger_id"]
         path = [r for r in app_bundle["hooks"].records
@@ -557,7 +557,7 @@ class TestGroupedMode:
             self, config_dir, registry, fake_session_factory, monkeypatch):
         session = fake_session_factory()
         app, _ = self._app(config_dir, registry, session, monkeypatch)
-        events = ([make_event("decision_maker", "true", event_id=f"g{i}")
+        events = ([make_event("lead_context", "ctx", event_id=f"g{i}")
                    for i in range(14)]
                   + [make_event("lqabr_email_status", "OPENED", event_id=f"h{i}")
                      for i in range(6)])
@@ -582,13 +582,13 @@ class TestGroupedMode:
             fake_response_factory(200),                # the redelivery succeeds
         ])
         app, _ = self._app(config_dir, registry, session, monkeypatch)
-        events = [make_event("decision_maker", "true", event_id=f"f{i}")
+        events = [make_event("lead_context", "ctx", event_id=f"f{i}")
                   for i in range(3)]
         with TestClient(app) as client:
             body, headers = signed(events)
             assert client.post("/hubspot/events", content=body,
                                headers=headers).status_code == 503
-            retry = [make_event("decision_maker", "true", event_id=f"f{i}",
+            retry = [make_event("lead_context", "ctx", event_id=f"f{i}",
                                 attempt_number=1) for i in range(3)]
             retry_body, retry_headers = signed(retry)
             second = client.post("/hubspot/events", content=retry_body,

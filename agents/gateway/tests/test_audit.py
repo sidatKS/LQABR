@@ -247,8 +247,8 @@ class TestProfileDataGuard:
 
     def test_property_name_and_value_are_allowed_because_fr7_requires_them(self, hooks):
         record = hooks.process("routing_decision", run_id="run-1",
-                               property_name="decision_maker", property_value="true")
-        assert record["property_name"] == "decision_maker"
+                               property_name="lead_context", property_value="ctx")
+        assert record["property_name"] == "lead_context"
 
     def test_object_id_is_a_record_id_not_profile_data(self, hooks):
         assert hooks.process("routing_decision", run_id="r", object_id="701")

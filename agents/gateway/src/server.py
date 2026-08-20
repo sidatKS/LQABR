@@ -41,6 +41,7 @@ import json
 import os
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -80,17 +81,12 @@ from soloai.protocols.http import (  # noqa: E402
     verify_v3_signature,
 )
 
-try:
-    from .audit import GatewayAudit
-    from .call_report import CallReportRelay, ReportRelayError, extract_correlation
-    from .dispatch import Dispatcher
-    from .router import AgentRegistry, DedupeStore, Router
-except ImportError:  # pragma: no cover - uvicorn run from inside src/
-    from audit import GatewayAudit  # type: ignore
-    from call_report import (  # type: ignore
-        CallReportRelay, ReportRelayError, extract_correlation)
-    from dispatch import Dispatcher  # type: ignore
-    from router import AgentRegistry, DedupeStore, Router  # type: ignore
+# Flat imports on purpose: production runs `uvicorn server:app` from src/ and
+# the tests load these modules standalone — nothing imports src/ as a package.
+from audit import GatewayAudit  # noqa: E402
+from call_report import CallReportRelay, ReportRelayError, extract_correlation  # noqa: E402
+from dispatch import Dispatcher  # noqa: E402
+from router import AgentRegistry, DedupeStore, Router  # noqa: E402
 
 
 def create_app(
@@ -98,6 +94,7 @@ def create_app(
     registry: Optional[AgentRegistry] = None,
     dispatcher: Optional[Dispatcher] = None,
     audit: Optional[GatewayAudit] = None,
+    audience: Optional[Any] = None,
     keep_records: bool = False,
 ) -> FastAPI:
     """Build the ingress app.
@@ -126,6 +123,15 @@ def create_app(
     )
     dispatcher = dispatcher or Dispatcher.from_config(config, gateway_audit)
 
+    # Rev 5 audience resolution. Built only when enabled AND a HubSpot token is
+    # present; without it the gateway falls back to Step-1 behaviour (an R-blog
+    # decision dispatches as a single hand-off carrying the ticket id).
+    if audience is None and bool(config.get("audience.enabled", True)):
+        _hs_token = os.environ.get("HUBSPOT_PRIVATE_APP_TOKEN", "").strip()
+        if _hs_token:
+            from audience import AudienceResolver
+            audience = AudienceResolver.from_config(config, _hs_token)
+
     ingress_path = str(config.get("gateway.ingress.path", "/hubspot/events"))
     max_batch = int(config.get("gateway.ingress.max_batch_size", 100))
     concurrency = ConcurrencyGuard(int(config.get("gateway.ingress.max_concurrent_requests", 10)))
@@ -152,22 +158,6 @@ def create_app(
 
     # Fails fast at startup if someone configured the gateway to proxy profiles.
     mcp_endpoint = mcp_protocol.endpoint_from_config(config)
-
-    app = FastAPI(
-        title="LQABR Agent Gateway",
-        version=str(config.get("gateway.version", "0.1.0")),
-        description=(
-            "Single ingress for HubSpot triggers. Carries a trigger_id only — "
-            "no lead-profile data crosses this service."
-        ),
-    )
-    app.state.config = config
-    app.state.router = router
-    app.state.dispatcher = dispatcher
-    app.state.audit = gateway_audit
-    app.state.registry = registry
-    app.state.concurrency = concurrency
-    app.state.ingress_path = ingress_path
 
     def _config_problems() -> Dict[str, str]:
         """Misconfigurations that would silently reject every real webhook.
@@ -200,8 +190,8 @@ def create_app(
         return problems
 
     # ------------------------------------------------------------- lifecycle
-    @app.on_event("startup")
-    def _startup() -> None:
+    @asynccontextmanager
+    async def _lifespan(_: FastAPI):
         for key, problem in _config_problems().items():
             gateway_audit.record_config_error(f"{key}: {problem}")
         gateway_audit.record_startup(
@@ -211,6 +201,30 @@ def create_app(
             concurrency_limit=concurrency.limit,
             chunk_size_hint=(mcp_endpoint.chunk_size_hint if mcp_endpoint else None),
         )
+        yield
+        # The file sink and the pooled HTTP session both hold OS resources.
+        try:
+            hooks.close()
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            pass
+
+    app = FastAPI(
+        lifespan=_lifespan,
+        title="LQABR Agent Gateway",
+        version=str(config.get("gateway.version", "0.1.0")),
+        description=(
+            "Single ingress for HubSpot triggers. Carries a trigger_id only — "
+            "no lead-profile data crosses this service."
+        ),
+    )
+    app.state.config = config
+    app.state.router = router
+    app.state.dispatcher = dispatcher
+    app.state.audience = audience
+    app.state.audit = gateway_audit
+    app.state.registry = registry
+    app.state.concurrency = concurrency
+    app.state.ingress_path = ingress_path
 
     # --------------------------------------------------------------- probes
     @app.get("/healthz")
@@ -319,6 +333,12 @@ def create_app(
 
             # --- Step 2: route --------------------------------------------
             result = router.route_batch(batch.events)
+            # --- Step 4a (Rev 5): resolve the audience --------------------
+            # Expand each R-blog-summary decision into one research hand-off per
+            # lead. Non-blog decisions pass through. A read failure becomes a
+            # routing error (503); a zero-lead ticket is logged and dropped.
+            if audience is not None:
+                result = audience.expand(result, run_id, gateway_audit)
             for decision in result.decisions:
                 gateway_audit.record_decision(run_id, decision)
             gateway_audit.record_discards(run_id, result.discarded)
@@ -338,12 +358,19 @@ def create_app(
             for decision in result.decisions:
                 router.dedupe.remember(decision.event_id)
 
-            # dispatch.mode is a deployment variable. grouped sends one call
-            # per agent per chunk; per_lead keeps today's one-call-per-lead.
-            if dispatcher.mode == "grouped":
-                outcomes = dispatcher.dispatch_grouped(result.decisions, run_id)
-            else:
-                outcomes = dispatcher.dispatch_all(result.decisions, run_id)
+            # Research hand-offs produced by audience resolution are always
+            # grouped per ticket, so an industry's leads travel in ONE call
+            # (keyed by summary_ref_id). Every other agent follows dispatch.mode.
+            _research = [d for d in result.decisions if d.summary_ref_id is not None]
+            _others = [d for d in result.decisions if d.summary_ref_id is None]
+            outcomes = []
+            if _research:
+                outcomes += dispatcher.dispatch_grouped(_research, run_id)
+            if _others:
+                if dispatcher.mode == "grouped":
+                    outcomes += dispatcher.dispatch_grouped(_others, run_id)
+                else:
+                    outcomes += dispatcher.dispatch_all(_others, run_id)
 
             dispatched: List[Dict[str, Any]] = []
             ok_count = failed_count = 0
@@ -455,14 +482,6 @@ def create_app(
             # txtv's response is returned verbatim so Vapi sees the real
             # outcome and its retry logic works against the truth.
             return Response(content=body, status_code=status, media_type=content_type)
-
-    @app.on_event("shutdown")
-    def _shutdown() -> None:
-        # The file sink and the pooled HTTP session both hold OS resources.
-        try:
-            hooks.close()
-        except Exception:  # noqa: BLE001 - shutdown must not raise
-            pass
 
     return app
 

@@ -30,12 +30,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-try:
-    from .audit import GatewayAudit
-    from .router import RoutingDecision
-except ImportError:  # pragma: no cover
-    from audit import GatewayAudit  # type: ignore
-    from router import RoutingDecision  # type: ignore
+from audit import GatewayAudit
+from router import RoutingDecision
 
 from soloai.protocols.a2a import A2AClient, A2AResponse, PayloadGuardError
 
@@ -132,6 +128,8 @@ class Dispatcher:
         }
         if self._include_routing_basis:
             metadata["route_id"] = decision.route_id
+        if decision.summary_ref_id is not None:
+            metadata["summary_ref_id"] = decision.summary_ref_id
         return metadata
 
     def dispatch(self, decision: RoutingDecision, run_id: str) -> DispatchResult:
@@ -199,10 +197,12 @@ class Dispatcher:
     #: a batch id can never collide with a trigger id.
     _BATCH_NAMESPACE = uuid.UUID("2f8c1d40-9a6b-5f21-b7e3-0c4a9d5e6f82")
 
-    def _batch_id(self, run_id: str, agent: str, index: int) -> str:
-        """Deterministic from (run_id, agent, chunk) so a redelivery of the same
-        batch mints the same id and the audit trail stays joinable."""
-        seed = f"lqabr-batch:{run_id}:{agent}:{index}"
+    def _batch_id(self, run_id: str, agent: str, summary_ref_id: Optional[str],
+                  index: int) -> str:
+        """Deterministic from (run_id, agent, summary_ref_id, chunk) so a
+        redelivery of the same batch mints the same id and the audit trail stays
+        joinable. summary_ref_id keeps two blog tickets' research batches apart."""
+        seed = f"lqabr-batch:{run_id}:{agent}:{summary_ref_id or '-'}:{index}"
         return f"bat-{uuid.uuid5(self._BATCH_NAMESPACE, seed).hex[:24]}"
 
     def _batch_metadata(self, decisions: Sequence[RoutingDecision], run_id: str,
@@ -222,6 +222,8 @@ class Dispatcher:
         }
         if self._include_routing_basis:
             metadata["route_id"] = decisions[0].route_id
+        if decisions[0].summary_ref_id is not None:
+            metadata["summary_ref_id"] = decisions[0].summary_ref_id
         return metadata
 
     def dispatch_grouped(self, decisions: Sequence[RoutingDecision],
@@ -237,16 +239,21 @@ class Dispatcher:
         eventId in that chunk, so HubSpot retries the whole group. Agents must
         therefore be idempotent per object_id; see the design note.
         """
-        by_agent: Dict[str, List[RoutingDecision]] = {}
+        # Group by (agent, summary_ref_id): the summary_ref_id keeps the leads
+        # of two different blog tickets in separate calls even though both are
+        # bound for research. For every non-blog agent it is None, so this
+        # collapses to grouping by agent — unchanged behaviour.
+        by_key: Dict[Tuple[str, Optional[str]], List[RoutingDecision]] = {}
         for decision in decisions:
-            by_agent.setdefault(decision.agent, []).append(decision)
+            by_key.setdefault((decision.agent, decision.summary_ref_id), []).append(decision)
 
         results: List[DispatchResult] = []
-        for agent, group in by_agent.items():
+        for (agent, summary_ref_id), group in by_key.items():
             for index in range(0, len(group), self._batch_size):
                 chunk = group[index:index + self._batch_size]
                 results.append(self._dispatch_chunk(
-                    chunk, run_id, self._batch_id(run_id, agent, index // self._batch_size)))
+                    chunk, run_id,
+                    self._batch_id(run_id, agent, summary_ref_id, index // self._batch_size)))
         return results
 
     def _dispatch_chunk(self, chunk: Sequence[RoutingDecision], run_id: str,

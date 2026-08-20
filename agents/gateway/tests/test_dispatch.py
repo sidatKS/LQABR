@@ -70,6 +70,8 @@ class TestA2AMessage:
             # Widened deliberately on 06-Aug-2026; this assertion exists so
             # that widening is always a reviewed change and never a drift.
             "batch_id", "object_ids", "batch_size", "trigger_ids",
+            # Rev 5 audience resolution: the blog Ticket id travels on the wire.
+            "summary_ref_id",
         }
 
     @pytest.mark.parametrize("field", ["property_name", "property_value"])
@@ -219,7 +221,7 @@ class TestBatchDispatch:
     def test_dispatches_every_decision(self, router, fake_session_factory, audit):
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("decision_maker", "true", event_id="e2"),
+            make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory()
         outcomes = gw_dispatch.Dispatcher(_client(session), audit).dispatch_all(
@@ -234,7 +236,7 @@ class TestBatchDispatch:
             self, router, fake_session_factory, fake_response_factory, audit):
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("decision_maker", "true", event_id="e2"),
+            make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory([
             fake_response_factory(400, text="nope"),
@@ -270,7 +272,7 @@ class TestGroupedDispatch:
 
     def test_twenty_leads_two_agents_becomes_two_calls(
             self, router, fake_session_factory, audit):
-        events = ([make_event("decision_maker", "true", object_id=str(700 + i),
+        events = ([make_event("lead_context", "ctx", object_id=str(700 + i),
                               event_id=f"e{i}") for i in range(14)]
                   + [make_event("lqabr_email_status", "OPENED", object_id=str(800 + i),
                                 event_id=f"o{i}") for i in range(6)])
@@ -293,7 +295,7 @@ class TestGroupedDispatch:
 
     def test_a_group_larger_than_batch_size_is_chunked(
             self, router, fake_session_factory, audit):
-        events = [make_event("decision_maker", "true", object_id=str(900 + i),
+        events = [make_event("lead_context", "ctx", object_id=str(900 + i),
                              event_id=f"c{i}") for i in range(45)]
         result = router.route_batch(events)
         session = fake_session_factory()
@@ -310,7 +312,7 @@ class TestGroupedDispatch:
     def test_every_event_id_rides_on_its_outcome(
             self, router, fake_session_factory, audit):
         """server.py releases exactly these from the dedupe store on failure."""
-        events = [make_event("decision_maker", "true", event_id=f"x{i}")
+        events = [make_event("lead_context", "ctx", event_id=f"x{i}")
                   for i in range(3)]
         result = router.route_batch(events)
         outcomes = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
@@ -320,7 +322,7 @@ class TestGroupedDispatch:
     def test_batch_ids_are_deterministic(self, router, fake_session_factory, audit):
         """A redelivery of the same run mints the same batch id, so the audit
         trail stays joinable."""
-        events = [make_event("decision_maker", "true", event_id="d1")]
+        events = [make_event("lead_context", "ctx", event_id="d1")]
         first = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
             router.route_batch(events).decisions, "run-same")
         second = self._dispatcher(fake_session_factory(), audit).dispatch_grouped(
@@ -330,7 +332,7 @@ class TestGroupedDispatch:
 
     def test_no_profile_field_reaches_the_wire_when_grouped(
             self, router, fake_session_factory, audit):
-        events = [make_event("decision_maker", "true", event_id=f"p{i}")
+        events = [make_event("lead_context", "ctx", event_id=f"p{i}")
                   for i in range(4)]
         result = router.route_batch(events)
         session = fake_session_factory()
@@ -342,7 +344,7 @@ class TestGroupedDispatch:
     def test_per_lead_is_still_one_call_per_lead(
             self, router, fake_session_factory, audit):
         """The default must be byte-for-byte what shipped."""
-        events = [make_event("decision_maker", "true", event_id=f"s{i}")
+        events = [make_event("lead_context", "ctx", event_id=f"s{i}")
                   for i in range(5)]
         result = router.route_batch(events)
         session = fake_session_factory()
