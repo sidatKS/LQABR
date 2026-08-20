@@ -7,16 +7,12 @@
 
 The runtime adapter (protocols + audit hooks) is co-located at
 ``agents/gateway/lib/soloai`` and put on ``sys.path`` by ``server.py``.
+
+Modules here use flat imports (``from router import ...``) — production runs
+``uvicorn server:app`` from ``src/`` and the tests load them standalone, so
+this file is documentation, not an import path.
 """
 
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-# Keep `import soloai` working regardless of which module is imported first.
-_LIB = Path(__file__).resolve().parents[1] / "lib"
-if str(_LIB) not in sys.path:
-    sys.path.insert(0, str(_LIB))
 
 __all__ = ["audit", "dispatch", "router", "server"]
