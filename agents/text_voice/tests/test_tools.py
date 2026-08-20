@@ -70,71 +70,30 @@ def test_build_call_payload_carries_ids_for_step_8(tv_tools, monkeypatch):
     assert payload["phoneNumberId"] == "phone-abc"
     assert "assistant" not in payload     # the script lives in the dashboard
     variables = payload["assistantOverrides"]["variableValues"]
-    assert variables["contact_id"] == "123"
+    assert variables["object_id"] == "123"
     assert variables["employee_id"] == "E1"
-    assert payload["name"] == "lqabr-text-voice-E1"
+    assert "name" not in payload
 
 
-def test_build_call_payload_dashboard_assistant_sends_id_and_own_server(tv_tools, monkeypatch):
+def test_build_call_payload_dashboard_assistant_sends_id_and_no_server_override(tv_tools, monkeypatch):
+    """2026-08-19: the per-call `server` override was removed (user decision) —
+    the report destination, secret and retries live only on the dashboard
+    assistant's server config. A per-call override REPLACES that config
+    wholesale, which is how two live calls on 2026-08-18 lost their reports to
+    a localhost URL. The payload must carry the assistant id and nothing that
+    could clobber the dashboard's server settings."""
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL",
-                        "https://gw.example.com/voice_agent/vapi_report")
     payload = tv_tools.build_call_payload(_lead())
     assert payload["assistantId"] == "asst-1"
     assert "assistant" not in payload
-    assert payload["assistantOverrides"]["server"] == {
-        "url": "https://gw.example.com/voice_agent/vapi_report",
-        "timeoutSeconds": tv_tools.VAPI_REPORT_TIMEOUT_SECONDS,
-        "backoffPlan": {"maxRetries": 2, "baseDelaySeconds": 1},
-    }
-
-
-# ----------------------------- the report-delivery failure of 2026-08-18
-#
-# Two live calls carried `http://localhost:8082/voice_agent/vapi_report` as a
-# per-call override while the dashboard held the correct public ngrok URL the
-# whole time. The override REPLACES the dashboard's server config, so both
-# calls ran and neither result was ever recorded.
-
-def test_no_server_override_when_the_callback_url_is_local(tv_tools, monkeypatch):
-    """Sending a local URL is strictly worse than sending nothing: it replaces
-    a working dashboard target with a dead one. Omit it instead."""
-    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL",
-                        "http://localhost:8082/voice_agent/vapi_report")
-    payload = tv_tools.build_call_payload(_lead())
     assert "server" not in payload["assistantOverrides"]
-    assert payload["assistantId"] == "asst-1"      # the call still goes out
-
-
-def test_no_server_override_when_the_callback_url_is_unset(tv_tools, monkeypatch):
-    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL", "")
-    assert "server" not in tv_tools.build_call_payload(_lead())["assistantOverrides"]
-
-
-def test_unreachable_url_detection(tv_tools):
-    for bad in ("", "http://localhost:8082/x", "http://127.0.0.1:8082/x",
-                "http://0.0.0.0:8082/x", "https://LOCALHOST/x"):
-        assert tv_tools._is_unreachable(bad) is True, bad
-    for good in ("https://gw.example.com/x",
-                 "https://irregular-thread-uninstall.ngrok-free.dev/voice_agent/vapi_report"):
-        assert tv_tools._is_unreachable(good) is False, good
-
-
-def test_secret_header_rides_on_the_override_when_configured(tv_tools, monkeypatch):
-    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    monkeypatch.setattr(tv_tools, "VAPI_REPORT_CALLBACK_URL", "https://gw.example.com/r")
-    monkeypatch.setattr(tv_tools, "VAPI_WEBHOOK_SECRET", "s3cret")
-    server = tv_tools.build_call_payload(_lead())["assistantOverrides"]["server"]
-    assert server["headers"] == {"x-vapi-secret": "s3cret"}
 
 
 def test_build_call_payload_omits_hubspot_ids_when_absent(tv_tools, monkeypatch):
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
     payload = tv_tools.build_call_payload(_lead(contact_id=None, employee_id=None))
     variables = payload["assistantOverrides"]["variableValues"]
-    assert "contact_id" not in variables
+    assert "object_id" not in variables
     assert "employee_id" not in variables
 
 
@@ -259,13 +218,11 @@ def test_place_call_success_returns_call_id_and_dials_once(tv_tools, monkeypatch
     monkeypatch.setattr(tv_tools, "_vapi", lambda: fake)
     monkeypatch.setattr(tv_tools, "VAPI_PHONE_NUMBER_ID", "phone-1")
     # Pin the assistant id rather than depending on a local .env: it is
-    # mandatory since 2026-08-07 (build_call_payload raises without it) and it
-    # is what place_call reports as "dashboard".
+    # mandatory since 2026-08-07 (build_call_payload raises without it).
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
     result = tv_tools.place_call(_lead(), lead_context="Follow-up on the cloud migration email")
     assert result == {
-        "status": "initiated", "call_id": "call-9", "call_status": "queued",
-        "contact_id": "123", "to": "+15550001111", "assistant": "dashboard",
+        "status": "initiated", "call_id": "call-9", "to": "+15550001111",
         "lead_context": "Follow-up on the cloud migration email",
         "lead_context_chars": 38,
     }
@@ -402,13 +359,14 @@ def test_call_report_route_unwraps_message_envelope(client):
     assert client.recorded["report"] == [(envelope["message"], body["correlation_id"])]
 
 
-def test_call_report_route_accepts_unwrapped_message(client):
-    """The gateway may forward the envelope verbatim or strip the wrapper —
-    both shapes must work."""
+def test_call_report_route_ignores_unwrapped_message(client):
+    """Vapi posts directly (no gateway) and always wraps in `message` — an
+    unwrapped body is not a report and must be acknowledged, not processed."""
     message = {"type": "end-of-call-report", "call": {"id": "call-2"}}
     resp = client.post("/voice_agent/vapi_report", json=message)
     assert resp.status_code == 200
-    assert client.recorded["report"] == [(message, resp.json()["correlation_id"])]
+    assert resp.json()["status"] == "ignored"
+    assert client.recorded["report"] == []
 
 
 def test_call_report_route_ignores_non_report_message_types(client):

@@ -112,10 +112,10 @@ def _isolate_shared_clients(monkeypatch):
     It is a memoised singleton holding a requests.Session (see
     `tools.reset_vapi_client`), so a client built with one test's fake
     credentials would otherwise leak into the next test. HubSpot has no
-    equivalent module-level singleton to reset: `HubSpotClient` instances are
-    owned by whoever constructs them (a test's `make_client`, or
-    `_MCPAdapter._crm()`), so tests isolate HubSpot by injecting their own
-    fake client/session rather than resetting a shared one.
+    equivalent module-level singleton to reset: since the 2026-08-19 MCP
+    switchover this agent holds no HubSpot client at all — tests monkeypatch
+    `text_voice.mcp` (the StepFiveMCPClient instance) with a fake, and the
+    client itself opens no connection until its first tool call.
     """
     monkeypatch.setenv("LQABR_LOG_JSON", "0")
     yield
