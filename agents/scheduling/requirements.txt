@@ -1,6 +1,0 @@
-# agents/scheduling — Scheduling Agent (Zoom Scheduler + Mailgun invites)
-google-adk==2.3.0
-requests>=2.31
-fastapi>=0.111
-uvicorn>=0.30
-# lqabr_core is installed separately: pip install -e packages/lqabr_core (repo root)
