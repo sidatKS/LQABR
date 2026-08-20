@@ -1,4 +1,0 @@
-# agents/orchestrator — pipeline orchestrator (A2A routing)
-google-adk==2.3.0
-requests>=2.31
-# lqabr_core is installed separately: pip install -e packages/lqabr_core (repo root)
