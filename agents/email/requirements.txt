@@ -10,13 +10,7 @@ google-genai>=1.0             # step 6 model call when LQABR_EMAIL_MODEL is a ge
 requests>=2.31
 fastapi>=0.111
 uvicorn>=0.30
-python-dotenv>=1.0            # load agents/email/.env at entry points (email_agent.py, webhook_app.py); no-op on Cloud Run
+python-dotenv>=1.0            # load agents/email/.env at entry points (email_agent.py, service_app.py); no-op on Cloud Run
 google-cloud-secret-manager>=2.20  # the Secret Manager API path; without it only env vars can resolve a secret
 # lqabr_core is installed separately, WITH the gcp extra:
 #   pip install -e "packages/lqabr_core[gcp]"   (repo root)
-# agents/email — Email Agent (Mailgun outreach + engagement webhook)
-google-adk==2.3.0
-requests>=2.31
-fastapi>=0.111
-uvicorn>=0.30
-# lqabr_core is installed separately: pip install -e packages/lqabr_core (repo root)

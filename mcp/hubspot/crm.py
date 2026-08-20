@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -31,6 +31,7 @@ from mcp.hubspot.schema import (
     ValidatedProfile,
     campaign_complete_property,
     last_modified_email_property,
+    lead_context_property,
     object_id_property,
     validate_profile,
     validate_writeback,
@@ -40,12 +41,41 @@ BASE_URL = "https://api.hubapi.com"
 _RETRYABLE = (429, 500, 502, 503, 504)
 _SEARCH_PAGE_MAX = 200
 
-#: Company-owned columns, per the confirmed schema in schema.py's header:
-#: `companies  company_id, industry, annualrevenue, frequency_of_purchase`.
-#: None of these live on the contact, so the step-5 contact GET cannot see
-#: them however many properties it asks for.
-_COMPANY_PROPERTIES = ("company_id", "industry", "annualrevenue",
-                       "frequency_of_purchase")
+#: Company-owned columns. None of these live on the contact, so the step-5
+#: contact GET cannot see them however many properties it asks for.
+#:
+#: WIDENED FOR REV 8 (confirmed live against ldqfingsrv-dev, 2026-08-18).
+#: The FRD names what email construction is entitled to — the lead, their
+#: company, its industry and the post — and four of those are company-owned
+#: and were simply never fetched:
+#:
+#:     name               the company NAME. Construction had none, so
+#:                        DRAFTING_RULES told the model to write around it.
+#:     website / domain   the company website URL.
+#:     about_us           custom property, "Short about-company". This is the
+#:                        FRD's "About-Us description" input.
+#:     hs_industry_group  HubSpot's second-tier industry classification. This
+#:                        is the FRD's "industry group / sub-domain" input.
+#:
+#: Every one is populated on the live portal. Asking for a property a portal
+#: does not have is harmless on a v3 GET — it comes back absent, and the
+#: profile carries the gap rather than failing.
+_COMPANY_PROPERTIES = ("name", "website", "domain", "about_us",
+                       "industry", "hs_industry_group",
+                       "company_id", "annualrevenue", "frequency_of_purchase")
+
+#: Company-backed values that must be present before the association walk can
+#: be skipped. `industry` alone is not enough any more.
+#:
+#: In practice this means the walk NOW RUNS FOR EVERY LEAD that has an
+#: associated company, and that is the intended cost. `about_us`,
+#: `hs_industry_group` and `website` exist only on the company object — no
+#: contact GET can ever carry them, however many properties it asks for — so
+#: skipping the walk means drafting without the inputs the FRD names. Two
+#: extra GETs per lead is the price of the email being about their business
+#: rather than about their job title.
+_COMPANY_BACKED_ATTRS = ("industry", "company", "external_company_id")
+_COMPANY_BACKED_EXTRAS = ("company_website", "company_about", "industry_group")
 
 
 class HubSpotCRM:
@@ -130,10 +160,16 @@ class HubSpotCRM:
         None of them abort the run — the lead is still validated and worked
         with whatever it has, exactly as before this method existed.
 
-        Only walks when `industry` is absent. A profile that already carries
-        one costs no extra hops.
+        Walks when ANY company-backed value is missing. Rev 7 keyed this on
+        `industry` alone, which was safe while industry was the only thing
+        taken from the company. Now that the name, website, about-us and
+        industry group come from there too — and three of those exist ONLY on
+        the company — an industry-carrying contact would have short-circuited
+        the walk and silently drafted without them.
         """
-        if profile.industry:
+        extra = profile.extra or {}
+        if (all(getattr(profile, attr, None) for attr in _COMPANY_BACKED_ATTRS)
+                and all(extra.get(key) for key in _COMPANY_BACKED_EXTRAS)):
             return
 
         object_id = str(profile.object_id)
@@ -182,30 +218,115 @@ class HubSpotCRM:
         props = (company or {}).get("properties") or {}
         filled = []
         for attr, column in (("industry", "industry"),
+                             ("company", "name"),
                              ("external_company_id", "company_id"),
                              ("company_size_revenue", "annualrevenue")):
             if not getattr(profile, attr, None) and props.get(column):
                 setattr(profile, attr, props[column])
                 filled.append(attr)
 
+        # The three that have no `LeadProfile` attribute of their own. They
+        # ride on `extra` for the same reason `lead_context` does: LeadProfile
+        # is shared with the sibling agents and its 9-pointer shape is not
+        # this module's to widen. Rebound rather than mutated — see
+        # `_read_lead_context` for why that matters with `replace()`.
+        extra = dict(profile.extra or {})
+        for key, column in (("company_website", "website"),
+                            ("company_about", "about_us"),
+                            ("industry_group", "hs_industry_group")):
+            value = str(props.get(column) or "").strip()
+            if value and not extra.get(key):
+                extra[key] = value
+                filled.append(key)
+        # Fall back to the bare domain when no full website URL is set.
+        if not extra.get("company_website") and props.get("domain"):
+            extra["company_website"] = str(props["domain"]).strip()
+            filled.append("company_website")
+        profile.extra = extra
+
         self._obs.process(
             step=5, event="company_enriched", object_id=object_id,
             company_hs_id=company_hs_id, filled=filled,
-            industry=profile.industry,
-            detail=("company-owned pointers read off the associated company; "
-                    "an empty `filled` means the company itself holds none"))
+            industry=profile.industry, company=profile.company or None,
+            detail=("company-owned inputs read off the associated company — "
+                    "name, website, about-us and industry group included as of "
+                    "rev 8; an empty `filled` means the company holds none"))
+
+    def _read_lead_context(self, profile: LeadProfile) -> None:
+        """Read the research agent's knowledge graph onto the profile.
+
+        REV 8 (v4). The research agent persists `lead_context` on the contact
+        at step 7 and that write is the hand-off signal that triggers the
+        email campaign at step 8; the email agent reads it back here at step 9
+        and frames construction with it at step 10. The email agent does no
+        research of its own, so if it is not on the record it does not exist.
+
+        `lqabr_core.crm.HubSpotClient` owns the confirmed 9-pointer property
+        mapping and knows nothing about this column, and `lqabr_core` is
+        shared with the sibling agents — so this reads it with its own audited
+        hop rather than forking that mapping, the same way
+        `_enrich_from_company` reads the company-owned pointers.
+
+        Best-effort and mutating in place, deliberately. A portal with no such
+        property answers a read for it with a 400, and that must not fail a
+        run: the lead comes back with an empty context, the email agent's
+        step-9 gate flags it with a named reason, and no email goes out on an
+        invented narrative. An empty configured property name skips the hop
+        entirely."""
+        prop = lead_context_property()
+        if not prop:
+            self._obs.process(
+                step=9, event="lead_context_read_disabled",
+                object_id=str(profile.object_id),
+                detail=("LQABR_HUBSPOT_LEAD_CONTEXT_PROPERTY is empty — not asking "
+                        "HubSpot for a research context on this lead"))
+            return
+        if (profile.extra or {}).get("lead_context"):
+            return
+
+        object_id = str(profile.object_id)
+        try:
+            record = self._request("GET", f"/crm/v3/objects/contacts/{object_id}",
+                                   step=9, params={"properties": prop})
+        except CRMError as exc:
+            self._obs.process(
+                step=9, event="lead_context_unavailable", object_id=object_id,
+                property_name=prop, error=str(exc)[:300],
+                detail=(f"HubSpot would not return '{prop}'. Confirm the property exists "
+                        "and set LQABR_HUBSPOT_LEAD_CONTEXT_PROPERTY to its real name "
+                        "(or clear it to disable this hop). The lead carries no research "
+                        "context and will be flagged, never emailed from a guess."))
+            return
+
+        value = str(((record or {}).get("properties") or {}).get(prop) or "").strip()
+        # REBOUND, not mutated in place. `LeadProfile` is a dataclass and
+        # `dataclasses.replace` copies it SHALLOWLY, so two profiles built from
+        # one template share the same `extra` dict — writing into it would leak
+        # one lead's research context onto another. Rebinding gives this profile
+        # its own dict and leaves any caller's alias untouched.
+        profile.extra = {**(profile.extra or {}), "lead_context": value}
+        self._obs.process(
+            step=9, event="lead_context_read", object_id=object_id,
+            property_name=prop, present=bool(value), word_count=len(value.split()),
+            detail=("the research agent's knowledge graph for this lead; absent means "
+                    "research has not reached it yet, not that the lead is bad"))
 
     def get_lead_profile(self, object_id: str) -> ValidatedProfile:
-        """One lead's schema-validated 9-parameter profile.
+        """One lead's schema-validated 9-parameter profile, plus its research
+        context.
 
         The contact GET is only half the profile — the company-owned pointers
         are walked in before validation so `missing_pointers` describes the
-        lead, not the fetch."""
+        lead, not the fetch — and `lead_context` (rev 8) is read alongside
+        them so the email agent's step 9 gets the profile and the knowledge
+        graph in one call, as the design specifies."""
         profile = self._client().get_lead(str(object_id))
         self._enrich_from_company(profile)
+        self._read_lead_context(profile)
         validated = validate_profile(profile)
         self._obs.process(step=5, event="schema_validated", object_id=validated.object_id,
-                          missing_pointers=validated.missing_pointers)
+                          missing_pointers=validated.missing_pointers,
+                          has_lead_context=validated.has_lead_context)
         return validated
 
     def leads_for_trigger(self, object_id: str, limit: int = 25) -> List[LeadProfile]:
@@ -409,7 +530,8 @@ def _row_to_profile(contact: Dict[str, Any]) -> LeadProfile:
         probability=int(float(props["probability"])) if props.get("probability") else 0,
         extra={"email_status": props.get("lqabr_email_status") or "PENDING"},
     )
-    # object_id is the alias for the shared LeadProfile.hubspot_contact_id, so
+    # object_id is the shared LeadProfile field (renamed from hubspot_contact_id
+    # -> contact_id -> object_id, 2026-08-14), so
     # the identifier reads as object_id everywhere in the email agent.
     lead.object_id = contact.get("id")
     return lead
