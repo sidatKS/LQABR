@@ -29,6 +29,7 @@ record identifier, not profile data.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
@@ -207,6 +208,9 @@ class Route:
 
     def matches_value(self, event: HubSpotEvent) -> bool:
         """Is this event's value the routing condition?"""
+        if self.match == "non_empty":
+            value = event.property_value
+            return value is not None and value.strip() != ""
         if self.match == "any" or not self.values:
             return True
         value = event.property_value
@@ -283,10 +287,10 @@ class AgentRegistry:
                     f"route '{route.id}' points at unknown agent '{route.agent}' — "
                     f"known agents: {sorted(self._agents)}"
                 )
-            if route.match not in {"exact", "exact_ci", "any"}:
+            if route.match not in {"exact", "exact_ci", "any", "non_empty"}:
                 raise RegistryError(
                     f"route '{route.id}' has unknown match mode '{route.match}'")
-            if route.match != "any" and not route.values and route.property_name:
+            if route.match not in ("any", "non_empty") and not route.values and route.property_name:
                 raise RegistryError(
                     f"route '{route.id}' watches '{route.property_name}' but declares no "
                     "values — a subscription fires on every value, so this would route "
@@ -329,7 +333,6 @@ class AgentRegistry:
         if not entry.enabled:
             raise RoutingError(f"agent '{agent_key}' is disabled in the registry",
                                agent=agent_key)
-        import os
         environ = self._environ if self._environ is not None else os.environ
         url = (environ.get(entry.endpoint_env) or "").strip()
         if not url:
@@ -459,6 +462,9 @@ class RoutingDecision:
     property_value: Optional[str]
     occurred_at: Optional[int]
     attempt_number: int
+    #: Set only on audience-expanded research hand-offs (Rev 5): the blog Ticket
+    #: id the lead was selected for. None for every other route.
+    summary_ref_id: Optional[str] = None
 
     def audit_fields(self) -> Dict[str, Any]:
         return {

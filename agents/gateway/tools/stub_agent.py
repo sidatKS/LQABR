@@ -61,14 +61,24 @@ async def receive(agent: str, request: Request) -> Dict[str, Any]:
     print(f"  {agent.upper()} AGENT WOKEN")
     print("=" * 62)
     print(f"  trigger_id : {trigger_id}")
-    print(f"  object_id  : {metadata.get('object_id')}   <- the contact to fetch")
+    object_ids = metadata.get('object_ids')
+    if object_ids is not None:
+        print(f"  object_ids : {object_ids}")
+        print(f"  count      : {len(object_ids)} contacts to fetch (grouped, one industry)")
+    else:
+        print(f"  object_id  : {metadata.get('object_id')}   <- the contact to fetch")
+    if metadata.get('summary_ref_id') is not None:
+        print(f"  summary_ref: {metadata.get('summary_ref_id')}   <- blog ticket (read the summary)")
     print(f"  run_id     : {metadata.get('run_id')}")
     print(f"  from       : {metadata.get('source')} v{metadata.get('gateway_version')}")
     print(f"  correlation: x-lqabr-trigger-id = "
           f"{request.headers.get('x-lqabr-trigger-id')}")
     print("-" * 62)
     print(f"  A real agent would now call:")
-    print(f"    GET /crm/v3/objects/contacts/{metadata.get('object_id')}")
+    if object_ids is not None:
+        print(f"    POST /crm/v3/objects/contacts/batch/read  ids={object_ids}")
+    else:
+        print(f"    GET /crm/v3/objects/contacts/{metadata.get('object_id')}")
     print("=" * 62, flush=True)
 
     target = FORWARD.get(agent, "")
