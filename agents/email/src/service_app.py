@@ -8,8 +8,9 @@ polling and the keep-alive that were wrong. So:
   * one image, one Cloud Run service, one endpoint;
   * Mailgun is configured with THIS service's URL — the same one the gateway
     reaches — and what happens next is business logic inside the agent;
-  * when the agent wants the state of messages it already sent, it makes a
-    Mailgun TOOL CALL through the local mailgun_tool, once, on demand;
+  * message state is not pulled. Every engagement event Mailgun raises is
+    pushed to /mailgun/events carrying its own lqabr_object_id, so the agent
+    never asks Mailgun for status and holds no run state to reconcile;
   * nothing in this process polls, sleeps, schedules, or stays warm. The
     container exists for the length of a run and returns to zero instances.
 
@@ -17,12 +18,9 @@ polling and the keep-alive that were wrong. So:
     GET  /health               }  identical payloads, so nothing downstream
     GET  /healthz              }  has to know which spelling we chose
     POST /email/campaign       STEP 2 — the gateway's entry point
-    POST /mailgun/events       STEP 8 — Mailgun pushes engagement here
-    POST /engagement/sync      STEP 8 via the Mailgun tool call: "give me the
-                               status of these track IDs"
-    GET  /runs/{object_id}/{run_id}   run state, for "where did this get stuck"
+    POST /mailgun/events       STEP 8 — Mailgun's inbound event call lands here
 
-CONTAINER LIFECYCLE (Swaroop, 8:09 / 21:29)
+CONTAINER LIFECYCLE 
 -------------------------------------------
 Zero instances at rest. A trigger reaches the gateway, the sandbox spins an
 instance (~32s cold start today), this app binds 0.0.0.0:$PORT — 8080 on
@@ -48,11 +46,10 @@ IAM token and each entry proves itself:
 
   * `/mailgun/events` — the Mailgun HMAC on every event. Not optional, no
     bypass flag.
-  * `/email/campaign` and `/engagement/sync` — currently UNAUTHENTICATED.
-    The LQABR_EMAIL_GATEWAY_TOKEN / X-LQABR-Gateway-Token check was removed
-    2026-08-05 (the gateway wasn't sending the header); nothing replaces it
-    yet. Rev 3's short-lived scoped JWTs are the intended fix once the
-    gateway track defines them.
+  * `/email/campaign` — currently UNAUTHENTICATED. The LQABR_EMAIL_GATEWAY_TOKEN
+    / X-LQABR-Gateway-Token check was removed 2026-08-05 (the gateway wasn't
+    sending the header); nothing replaces it yet. Rev 3's short-lived scoped
+    JWTs are the intended fix once the gateway track defines them.
 
 Run locally:  uvicorn service_app:app --port 8080   (from agents/email/src)
 """
@@ -92,9 +89,59 @@ from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from pydantic import BaseModel
 
 import events as events_module
-import observability as obs
+# --------------------------------------------------------------- logging
+# One JSON line per event, stamped with object_id + run_id so a whole run
+# greps back together. Inlined per module (no shared observability file); the
+# MCP is handed `MCPObservability` because mcp/hubspot/ cannot import agent code.
+import json as _json
+import logging as _logging
+import hashlib as _hashlib
+from dataclasses import dataclass as _dataclass
+from datetime import datetime as _datetime, timezone as _timezone
+
+_LOG = _logging.getLogger("lqabr.email")
+
+
+@_dataclass(frozen=True)
+class RunContext:
+    object_id: str
+    run_id: str
+
+
+def _emit(stream, ctx, **fields):
+    _LOG.info(_json.dumps(
+        {"stream": stream, "ts": _datetime.now(_timezone.utc).isoformat(),
+         "agent": "email_agent",
+         "object_id": ctx.object_id if ctx else None,
+         "run_id": ctx.run_id if ctx else None, **fields}, default=str))
+
+
+def _log_process(ctx, *, step=None, event, **f):
+    _emit("process_log", ctx, step=step, event=event, **f)
+
+
+def _log_audit(ctx, *, step=None, direction, endpoint, method="", status_code=None,
+               bearer=None, **f):
+    fp = _hashlib.sha256(bearer.encode()).hexdigest()[:12] if bearer else "none"
+    _emit("audit_log", ctx, step=step, direction=direction, endpoint=endpoint,
+          method=method, status_code=status_code, bearer_fingerprint=fp, **f)
+
+
+
+def _log_system(**f):
+    f.setdefault("host", os.environ.get("K_REVISION") or os.environ.get("HOSTNAME", "local"))
+    _emit("system_log", None, **f)
+
+
+def _configure_logging(level=_logging.INFO):
+    _LOG.setLevel(level)
+    if not _LOG.handlers:
+        h = _logging.StreamHandler(); h.setFormatter(_logging.Formatter("%(message)s"))
+        _LOG.addHandler(h)
+    _LOG.propagate = False
+
+
 import outreach
-from runstate import RunStateError, RunStateStore
 
 from lqabr_core.crm import CRMError
 from lqabr_core.mailgun import verify_webhook_signature
@@ -112,7 +159,6 @@ SERVICE_NAME = "email_agent"
 
 CAMPAIGN_ROUTE = "/email/campaign"
 MAILGUN_ROUTE = "/mailgun/events"
-SYNC_ROUTE = "/engagement/sync"
 
 
 def routes_mode() -> str:
@@ -172,7 +218,7 @@ def dispatch_mailgun(payload: Dict[str, Any], handler, endpoint: str = MAILGUN_R
         # bare 500: this is a credential/config fault, it is transient from
         # Mailgun's point of view, and a 5xx makes Mailgun retry — so the
         # event is deferred, not lost.
-        obs.audit(None, step=8, direction="inbound", endpoint=endpoint,
+        _log_audit(None, step=8, direction="inbound", endpoint=endpoint,
                   method="POST", status_code=503, error=str(exc))
         logger.error("Mailgun signing key unavailable, event deferred: %s", exc)
         raise HTTPException(
@@ -180,7 +226,7 @@ def dispatch_mailgun(payload: Dict[str, Any], handler, endpoint: str = MAILGUN_R
             detail=f"secret-error: cannot verify the Mailgun signature: {exc}") from exc
 
     if not authentic:
-        obs.audit(None, step=8, direction="inbound", endpoint=endpoint,
+        _log_audit(None, step=8, direction="inbound", endpoint=endpoint,
                   method="POST", status_code=401, error="invalid Mailgun signature")
         raise HTTPException(status_code=401, detail="invalid Mailgun signature")
 
@@ -209,17 +255,16 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         """system_log — container activity, the one stream that is meaningful
         when no run is in flight."""
-        obs.configure_logging()
-        obs.system(event="container_started", component=SERVICE_NAME, routes=mode)
+        _configure_logging()
+        _log_system(event="container_started", component=SERVICE_NAME, routes=mode)
         yield
-        obs.system(event="container_stopped", component=SERVICE_NAME)
+        _log_system(event="container_stopped", component=SERVICE_NAME)
 
     app = FastAPI(title="LQABR Email Agent", version="2", lifespan=lifespan)
 
     published = ["GET /", "GET /health", "GET /healthz"]
     if serves_campaign:
-        published += [f"POST {CAMPAIGN_ROUTE}", f"POST {SYNC_ROUTE}",
-                      "GET /runs/{object_id}/{run_id}"]
+        published += [f"POST {CAMPAIGN_ROUTE}"]
     if serves_webhook:
         published += [f"POST {MAILGUN_ROUTE}"]
 
@@ -261,19 +306,12 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
             removed (gateway wasn't sending it). No boundary here yet."""
             object_id = body.resolved_id()
 
-            obs.audit(None, step=2, direction="inbound", endpoint=CAMPAIGN_ROUTE,
+            _log_audit(None, step=2, direction="inbound", endpoint=CAMPAIGN_ROUTE,
                       method="POST", status_code=200, object_id=object_id,
                       dry_run=body.dry_run)
             try:
                 return outreach.run_campaign(object_id, limit=body.limit,
                                              dry_run=body.dry_run, run_id=body.run_id)
-            except RunStateError as exc:
-                # The run never started: run state is where late engagement
-                # events find their lead, so sending without it would mean
-                # sending mail nobody can attribute. 503 — retryable.
-                logger.error("run state unusable: %s", exc)
-                raise HTTPException(status_code=503,
-                                    detail=f"run-state-error: {exc}") from exc
             except SecretNotFoundError as exc:
                 # A credential that cannot be resolved is configuration, not a
                 # bug: 503 so the caller retries after it is fixed, with the
@@ -287,52 +325,12 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
                 logger.error("HubSpot unavailable: %s", exc)
                 raise HTTPException(status_code=502, detail=f"crm-error: {exc}") from exc
 
-        @app.post(SYNC_ROUTE)
-        def engagement_sync(body: CampaignRequest) -> Dict[str, Any]:
-            """STEP 8 via the Mailgun TOOL CALL.
-
-            One call. It reads the run's own message ids from run state, asks
-            Mailgun for their events through the local mailgun_tool, and writes back
-            whatever moved. It does not loop and it does not schedule itself
-            — this runs inside a container a trigger already brought up.
-
-            `run_id` is required here: a track-ID pull is scoped to one run.
-
-            UNAUTHENTICATED as of 2026-08-05 — the gateway-token check was
-            removed (gateway wasn't sending it). No boundary here yet."""
-            object_id = body.resolved_id()
-            if not body.run_id:
-                raise HTTPException(status_code=400,
-                                    detail="run_id is required — a track-ID pull is "
-                                           "scoped to one run")
-
-            obs.audit(None, step=8, direction="inbound", endpoint=SYNC_ROUTE,
-                      method="POST", status_code=200, object_id=object_id,
-                      run_id=body.run_id)
-            try:
-                return events_module.sync_run_engagement(object_id, body.run_id)
-            except RunStateError as exc:
-                raise HTTPException(status_code=503,
-                                    detail=f"run-state-error: {exc}") from exc
-            except SecretNotFoundError as exc:
-                raise HTTPException(status_code=503, detail=f"secret-error: {exc}") from exc
-            except TokenError as exc:
-                raise HTTPException(status_code=502, detail=f"auth-error: {exc}") from exc
-            except CRMError as exc:
-                raise HTTPException(status_code=502, detail=f"crm-error: {exc}") from exc
-
-        @app.get("/runs/{object_id}/{run_id}")
-        def run_state(object_id: str, run_id: str) -> Dict[str, Any]:
-            """What a run sent and what has come back for it — the answer to
-            'where did this run get stuck', without inventing engagement."""
-            return RunStateStore().summary(object_id, run_id)
-
     # -------------------------------------------------------------- step 8
     if serves_webhook:
 
         async def mailgun_events(request: Request) -> Dict[str, Any]:
-            """STEP 8 — Mailgun pushes here, to the SAME service the gateway
-            reaches. Configure this URL in the Mailgun dashboard."""
+            """STEP 8 — Mailgun makes an inbound call here, to the SAME
+            service the gateway reaches. Configure this URL in Mailgun."""
             payload = await request.json()
             return dispatch_mailgun(payload, _handle)
 
