@@ -416,7 +416,6 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
               input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
               duration_ms=round((time.perf_counter() - started) * 1000, 1),
               prompt=prompt, completion=text)
-
     # --- parse
     try:
         subject, body = parse_reply(text)
@@ -424,7 +423,6 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
         log_process(ctx, step=6, event="model_output_unusable", object_id=object_id)
         raise SkillError(
             f'model {model_name} replied, but not as {{"subject": ..., "html_body": ...}} JSON')
-
     # --- finalise in code, never asked of the model: cta/sender substituted,
     #     any model-written opt-out stripped, the one compliant footer appended.
     subject, html_body = skills.finalise(subject, body, context)
@@ -434,7 +432,6 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
     log_process(ctx, step=6, event="email_drafted", object_id=object_id,
                 skill=skill.name, subject_length=len(subject), body_length=len(html_body))
     return subject, html_body, skill.name
-
 
 # ------------------------------------------------------------------- step 7
 def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile,
