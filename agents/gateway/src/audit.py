@@ -29,14 +29,12 @@ profile-data guard.
 
 from __future__ import annotations
 
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
-try:  # package-relative first (production), flat second (uvicorn from src/)
-    from .router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult
-except ImportError:  # pragma: no cover
-    from router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult  # type: ignore
+from router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult
 
 from soloai.audit_hooks import AuditHooks, Stream, new_run_id
 
@@ -59,14 +57,13 @@ class HandoffMetrics:
     dispatched_failed: int = 0
     dispatch_latency_ms_total: float = 0.0
     retries: int = 0
-    by_agent: Dict[str, int] = None  # type: ignore[assignment]
-    by_discard_reason: Dict[str, int] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.by_agent is None:
-            self.by_agent = {}
-        if self.by_discard_reason is None:
-            self.by_discard_reason = {}
+    by_agent: Dict[str, int] = field(default_factory=dict)
+    by_discard_reason: Dict[str, int] = field(default_factory=dict)
+    #: The ingress pipeline runs in a threadpool with up to 10 concurrent
+    #: requests, so every mutation and snapshot goes through this lock —
+    #: unguarded `+=` across threads loses counts.
+    lock: threading.Lock = field(default_factory=threading.Lock,
+                                 repr=False, compare=False)
 
     @property
     def dispatch_latency_ms_mean(self) -> Optional[float]:
@@ -76,19 +73,20 @@ class HandoffMetrics:
         return round(self.dispatch_latency_ms_total / total, 2)
 
     def as_dict(self) -> Dict[str, Any]:
-        return {
-            "requests": self.requests,
-            "events_received": self.events_received,
-            "routed": self.routed,
-            "discarded": self.discarded,
-            "routing_errors": self.routing_errors,
-            "dispatched_ok": self.dispatched_ok,
-            "dispatched_failed": self.dispatched_failed,
-            "dispatch_retries": self.retries,
-            "dispatch_latency_ms_mean": self.dispatch_latency_ms_mean,
-            "by_agent": dict(self.by_agent),
-            "by_discard_reason": dict(self.by_discard_reason),
-        }
+        with self.lock:
+            return {
+                "requests": self.requests,
+                "events_received": self.events_received,
+                "routed": self.routed,
+                "discarded": self.discarded,
+                "routing_errors": self.routing_errors,
+                "dispatched_ok": self.dispatched_ok,
+                "dispatched_failed": self.dispatched_failed,
+                "dispatch_retries": self.retries,
+                "dispatch_latency_ms_mean": self.dispatch_latency_ms_mean,
+                "by_agent": dict(self.by_agent),
+                "by_discard_reason": dict(self.by_discard_reason),
+            }
 
 
 class GatewayAudit:
@@ -146,8 +144,9 @@ class GatewayAudit:
                        concurrency: Optional[Dict[str, int]] = None) -> None:
         """Audit stream: *where the call came from, when it arrived, which
         endpoint it went to* — Step 2's audit row."""
-        self.metrics.requests += 1
-        self.metrics.events_received += event_count
+        with self.metrics.lock:
+            self.metrics.requests += 1
+            self.metrics.events_received += event_count
         self._hooks.audit(
             "hubspot_ingress_received",
             run_id=run_id,
@@ -177,9 +176,10 @@ class GatewayAudit:
     def record_decision(self, run_id: str, decision: RoutingDecision) -> None:
         """Process stream: the routing decision **and the property and value it
         was based on**. This is the record Rev 3 Step 7 is written for."""
-        self.metrics.routed += 1
-        self.metrics.by_agent[decision.agent] = \
-            self.metrics.by_agent.get(decision.agent, 0) + 1
+        with self.metrics.lock:
+            self.metrics.routed += 1
+            self.metrics.by_agent[decision.agent] = \
+                self.metrics.by_agent.get(decision.agent, 0) + 1
         self._hooks.process(
             "routing_decision",
             run_id=run_id,
@@ -203,9 +203,10 @@ class GatewayAudit:
         by_reason: Dict[str, int] = {}
         for item in discarded:
             by_reason[item.reason.value] = by_reason.get(item.reason.value, 0) + 1
-            self.metrics.discarded += 1
-            self.metrics.by_discard_reason[item.reason.value] = \
-                self.metrics.by_discard_reason.get(item.reason.value, 0) + 1
+            with self.metrics.lock:
+                self.metrics.discarded += 1
+                self.metrics.by_discard_reason[item.reason.value] = \
+                    self.metrics.by_discard_reason.get(item.reason.value, 0) + 1
             if self._verbose_discards:
                 self._hooks.process("event_discarded", run_id=run_id,
                                     decision="discard", **item.audit_fields())
@@ -221,7 +222,8 @@ class GatewayAudit:
         endpoint is a configuration fault, not a data condition.
         """
         for error in errors:
-            self.metrics.routing_errors += 1
+            with self.metrics.lock:
+                self.metrics.routing_errors += 1
             self._hooks.process("routing_error", run_id=run_id,
                                 trigger_id=error.trigger_id, decision="error",
                                 **error.as_dict())
@@ -242,12 +244,13 @@ class GatewayAudit:
         which is how the light-payload claim becomes measurable.
         """
         retries = max(0, attempts - 1)
-        self.metrics.retries += retries
-        self.metrics.dispatch_latency_ms_total += latency_ms
-        if ok:
-            self.metrics.dispatched_ok += 1
-        else:
-            self.metrics.dispatched_failed += 1
+        with self.metrics.lock:
+            self.metrics.retries += retries
+            self.metrics.dispatch_latency_ms_total += latency_ms
+            if ok:
+                self.metrics.dispatched_ok += 1
+            else:
+                self.metrics.dispatched_failed += 1
 
         self._hooks.audit(
             "agent_dispatch" if ok else "agent_dispatch_failed",
@@ -276,6 +279,73 @@ class GatewayAudit:
             "dispatch_resources", run_id=run_id, trigger_id=decision.trigger_id,
             agent=decision.agent,
         )
+
+    def record_batch_dispatch(self, run_id: str, head: RoutingDecision, *,
+                             batch_id: str, batch_size: int, ok: bool,
+                             status_code: Optional[int], latency_ms: float,
+                             attempts: int, payload_size_bytes: int,
+                             error: Optional[str] = None) -> None:
+        """Step 4 for a grouped hand-off: N leads in one call.
+
+        Same three streams as ``record_dispatch``, with the batch id in place
+        of a single trigger id and ``batch_size`` on the record — which is what
+        makes "20 routed, 2 dispatched" visible at a glance. Still ids only:
+        the object ids stay in the payload, never in the log line.
+        """
+        retries = max(0, attempts - 1)
+        with self.metrics.lock:
+            self.metrics.retries += retries
+            self.metrics.dispatch_latency_ms_total += latency_ms
+            if ok:
+                self.metrics.dispatched_ok += 1
+            else:
+                self.metrics.dispatched_failed += 1
+
+        self._hooks.audit(
+            "agent_batch_dispatch" if ok else "agent_batch_dispatch_failed",
+            run_id=run_id,
+            trigger_id=batch_id,
+            direction="outbound",
+            agent=head.agent,
+            endpoint=head.endpoint,
+            batch_size=batch_size,
+            status=status_code,
+            latency_ms=latency_ms,
+            retry_count=retries,
+            error=error,
+        )
+        self._hooks.process(
+            "protocol_conversion",
+            run_id=run_id,
+            trigger_id=batch_id,
+            conversion="https_ingress -> a2a_message_send",
+            payload_size_bytes=payload_size_bytes,
+            payload_contents="batch_id + object_ids only",
+            agent=head.agent,
+            route_id=head.route_id,
+            batch_size=batch_size,
+            outcome="dispatched" if ok else "failed",
+        )
+        self._hooks.system(
+            "dispatch_resources", run_id=run_id, trigger_id=batch_id,
+            agent=head.agent, batch_size=batch_size,
+        )
+
+    def record_audience(self, run_id: str, decision: RoutingDecision, *,
+                        outcome: Optional[Any] = None,
+                        error: Optional[str] = None) -> None:
+        """Rev 5 Step 4 — one blog ticket resolved into N leads (ids/counts only)."""
+        if error is not None:
+            self._hooks.process(
+                "audience_resolution_failed", run_id=run_id,
+                trigger_id=decision.trigger_id, object_id=decision.object_id,
+                error=error)
+            return
+        self._hooks.process(
+            "audience_resolved", run_id=run_id, trigger_id=decision.trigger_id,
+            summary_ref_id=outcome.summary_ref_id, industry=outcome.industry,
+            company_count=outcome.company_count, lead_count=outcome.lead_count,
+            zero_audience=(outcome.lead_count == 0))
 
     # ---------------------------------------------------------------- wrap-up
     def record_run_summary(self, run_id: str, result: RoutingResult,

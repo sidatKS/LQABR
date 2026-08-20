@@ -52,16 +52,17 @@ class TestHubSpotEvent:
 class TestAgentRegistry:
     def test_the_shipped_registry_loads_and_validates(self, registry):
         """The real agents_registry.yaml is a deliverable — read it here first."""
-        assert set(registry.agents) == {"email", "voice"}
+        assert set(registry.agents) == {"email", "voice", "research"}
         assert [r.id for r in registry.routes] == [
-            "R1-contact-created", "R2-decision-maker", "R3-email-opened",
+            "R1-contact-created", "R2-lead-context", "R3-email-opened",
+            "R-blog-summary",
         ]
 
     def test_the_three_documented_mappings_resolve(self, registry):
         """Rev 3 page 1: decision-maker -> email, opened -> voice,
         plus Created -> email."""
         cases = [
-            (make_event("decision_maker", "true"), "email", "R2-decision-maker"),
+            (make_event("lead_context", "ctx"), "email", "R2-lead-context"),
             (make_event("lqabr_email_status", "OPENED"), "voice", "R3-email-opened"),
             (make_event(None, None, subscription_type="contact.creation"),
              "email", "R1-contact-created"),
@@ -180,8 +181,8 @@ class TestValueFiltering:
         # The discard names the route it failed, so the log explains itself.
         assert result.discarded[0].route_id == "R3-email-opened"
 
-    def test_decision_maker_false_is_not_a_trigger(self, router):
-        result = router.route_batch([make_event("decision_maker", "false")])
+    def test_empty_lead_context_is_not_a_trigger(self, router):
+        result = router.route_batch([make_event("lead_context", "")])
         assert result.decisions == []
         assert result.discarded[0].reason is DiscardReason.NOT_ROUTING_CONDITION
 
@@ -334,7 +335,7 @@ class TestLoopGuard:
 
     def test_human_edits_are_always_routed(self, registry):
         router = gw_router.Router(registry=registry, loop_guard_mode="all_api")
-        result = router.route_batch([make_event("decision_maker", "true",
+        result = router.route_batch([make_event("lead_context", "ctx",
                                                 change_source="CRM")])
         assert len(result.decisions) == 1
 
@@ -364,7 +365,7 @@ class TestRoutingErrors:
         router = gw_router.Router(registry=registry)
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="evt-voice"),
-            make_event("decision_maker", "true", event_id="evt-email"),
+            make_event("lead_context", "ctx", event_id="evt-email"),
             make_event(None, None, subscription_type="contact.creation",
                        event_id="evt-created"),
         ])
@@ -386,7 +387,7 @@ class TestBatches:
         result = router.route_batch([
             make_event("lqabr_email_status", "OPENED", event_id="e1"),
             make_event("lqabr_email_status", "BOUNCED", event_id="e2"),
-            make_event("decision_maker", "true", event_id="e3"),
+            make_event("lead_context", "ctx", event_id="e3"),
             make_event("lifecyclestage", "lead", event_id="e4"),
             make_event(None, None, subscription_type="contact.creation", event_id="e5"),
         ])
@@ -415,3 +416,20 @@ class TestBatches:
 
     def test_empty_batch_is_simply_empty(self, router):
         assert router.route_batch([]).event_count == 0
+
+class TestBlogSummaryRoute:
+    """R-blog-summary (Step 1) - non_empty match sends a blog summary to research."""
+
+    def test_non_empty_blog_summary_routes_to_research(self, registry):
+        route = registry.match(gw_router.HubSpotEvent.from_payload(
+            make_event("blog_summary", "A post about healthcare",
+                       subscription_type="ticket.propertyChange")))
+        assert route is not None
+        assert (route.agent, route.id) == ("research", "R-blog-summary")
+
+    def test_cleared_blog_summary_is_discarded(self, registry):
+        route = registry.match(gw_router.HubSpotEvent.from_payload(
+            make_event("blog_summary", "",
+                       subscription_type="ticket.propertyChange")))
+        assert route is None
+
