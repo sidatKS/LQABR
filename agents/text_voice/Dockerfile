@@ -11,8 +11,16 @@
 # agents/text_voice/Dockerfile .` / docker-compose.yml's `context: .`),
 # because it needs packages/lqabr_core from outside this directory.
 #
-#   SERVICE_KIND "webhook" (default) -> uvicorn ${APP_MODULE} — the prod path
-#                "agent"             -> adk api_server — dev/test surface only
+#   SERVICE_KIND is always "webhook" here -> uvicorn ${APP_MODULE}.
+#   The "agent" (adk api_server) kind was dropped on 2026-08-18 along with ADK
+#   itself: this agent has no `root_agent` any more. Everything reaches it over
+#   plain HTTP — the orchestrator's A2A JSON-RPC `message/send` envelope is
+#   parsed by tools.py's /voice_agent/lead directly (tools.py:621).
+#
+#   WARNING: infra/gcp/cloud-run/entrypoint.sh's `webhook` branch hardcodes
+#   `uvicorn webhook_app:app` and IGNORES ${APP_MODULE}. webhook_app.py is
+#   retired, so that shared entrypoint cannot serve this image. See
+#   claude/deleted-files-audit-2026-08-18.md before deploying.
 #
 # Runs in Google's managed serverless sandbox (Cloud Run / gVisor) when
 # deployed — no privileged access, per-revision isolation.
@@ -35,11 +43,8 @@ RUN pip install --no-cache-dir ./packages/lqabr_core
 
 COPY agents/text_voice agents/text_voice
 RUN pip install --no-cache-dir -r agents/text_voice/requirements.txt
-# google-adk lives in requirements-dev.txt (the prod webhook runs pure
-# uvicorn/FastAPI and doesn't need it) — only pulled in for the
-# SERVICE_KIND=agent dev/test image, which runs `adk api_server`.
-RUN if [ "${SERVICE_KIND}" = "agent" ] && [ -f "agents/text_voice/requirements-dev.txt" ]; then \
-      pip install --no-cache-dir -r agents/text_voice/requirements-dev.txt ; fi
+# No conditional google-adk install any more — requirements-dev.txt is gone
+# (2026-08-18, ADK removal). requirements.txt is the whole dependency set.
 
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
