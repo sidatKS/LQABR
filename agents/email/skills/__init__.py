@@ -1,15 +1,36 @@
 """STEP 6 — instruction-based email construction. CHANGED IN V2.1.
 
+OWNERSHIP — THE EMAIL AGENT'S, AND NOTHING ELSE'S
+This package lives at `agents/email/skills/` because outreach copy is the email
+agent's business logic. It is deliberately NOT in `packages/lqabr_core` (the
+only shared code path) and NOT in `mcp/hubspot/` (the shared HubSpot tool),
+because it is not shared: no sibling agent reads it, imports it, or drafts from
+it, and editing it must never change what text/voice, scheduling, lead_profile,
+ingestion or the orchestrator sends.
+
+Three things hold that line, and `tests/test_skills.py` asserts all three:
+
+  1. `SKILL_DIR` is resolved from THIS file's location, so it always points
+     inside `agents/email/` and cannot be repointed at a shared directory by
+     however the process was launched.
+  2. `outreach.py` loads this package by file path under the private module
+     name `lqabr_email_skills`, never as a bare `skills` — a bare name would
+     collide with any sibling agent that grew a `skills/` package of its own,
+     and whichever imported first would silently win.
+  3. A repo scan asserts nothing outside `agents/email/` references it.
+
+CLAUDE.md §6 states the convention ("no cross-agent imports: shared code flows
+through packages/lqabr_core"). The tests are what make it true.
+
+
 Construction is **skill-based and instruction-driven**. A skill is a folder
 in here containing a `SKILL.md`: YAML frontmatter naming the industries it
-serves, then a body of drafting instructions. The skill is selected from the
-lead's industry and fields, and exactly one model call per lead drafts the
-email from those instructions.
+serves, then a body of drafting instructions. Exactly one model call per lead
+drafts the email from those instructions.
 
     skills/
-    ├── DRAFTING_RULES.md      shared, prepended to every skill
-    ├── technology/SKILL.md
-    └── ...
+    ├── DRAFTING_RULES.md      shared, prepended to the skill
+    └── outreach/SKILL.md      the single all-industry instruction set
 
 WHAT CHANGED FROM THE REV 6 DESIGN
 Rev 6 specified fill-in-the-blank templates: a fixed subject and HTML body
@@ -37,20 +58,38 @@ unreachable or unusable raises `SkillError` and the lead is flagged
 unresolved at step 5/6 rather than sent an un-personalised email. Failing
 loudly is the only safe degradation once the content is model-written.
 
-NO DEFAULT SKILL. A skill is chosen from the lead's INDUSTRY and nothing
-else. A lead whose industry is empty, or which no skill claims, raises
-`SkillError` and is flagged unresolved with that reason — it is not sent
-industry-neutral copy and it is not silently dropped. Widening coverage is
-therefore a matter of adding a skill or of the industry arriving on the
-profile, both visible, rather than of a catch-all quietly absorbing leads
-nobody wrote copy for.
+ONE SKILL, ALL INDUSTRIES — CHANGED IN REV 8 (v4)
+Rev 7 had fifteen per-industry skill folders and selected between them on the
+lead's industry, with no default: an unmatched industry meant the lead was
+flagged and never emailed. That is no longer the shape.
 
-Adding a skill: `mkdir <name>/` with a `SKILL.md` carrying `name`,
-`description` and `industries` frontmatter. No code change —
-`load_skills()` discovers it.
+There is now a single `outreach/SKILL.md` covering every sector, because v4
+moved the personalisation somewhere else. `lead_context` — the research
+agent's knowledge graph for the individual lead — is what makes one email
+differ from the next, and it is far more specific than a sector template ever
+was. The industry now does exactly one job: it selects which SECTOR RESTRAINT
+applies inside the instructions (healthcare says nothing about PHI, financial
+services nothing that reads as advice, and so on). All fifteen restraints are
+carried in that one file, keyed by industry, plus a strictest-reading default
+for a sector that is not listed.
 
-Lead facts available to the instructions: first_name, last_name, company,
-job_title, industry, location. The email greets the lead by their full name
+WHAT THIS TRADED AWAY, DELIBERATELY. Rev 7's guarantee was structural: the
+copy a lead could receive was fixed in code by its industry. That guarantee is
+gone — the model now reads a restraint table and applies the matching row, so
+"which restraint binds" is a model decision rather than a selection in code.
+What replaced it as the send-safety gate is `lead_context`: a lead with no
+research context is not emailed at all (see `outreach.load_context`). An
+unrecognised industry is now flagged on process_log rather than blocking the
+send — `industry_is_recognised()` is what reports it.
+
+Adding sector coverage is now editing the restraint table and the `industries`
+frontmatter in that one file — no new folder, no code change. `select_skill()`
+deliberately RAISES if it ever finds more than one skill folder, so a restored
+per-industry folder fails loudly instead of silently winning on sort order.
+
+Lead facts available to the instructions: email_id, first_name, last_name,
+company, job_title, industry, industry_group, company_about, company_website,
+annual_revenue, lead_context. The email greets the lead by their full name
 (`first_name` + `last_name`), falling back to whichever part is present, and
 to a plain "Hello," when no name is on record (see DRAFTING_RULES). The
 internal `employee_id` is never given to construction and never appears in
@@ -64,7 +103,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 SKILL_DIR = Path(__file__).resolve().parent
 SKILL_FILENAME = "SKILL.md"
@@ -163,37 +202,97 @@ def load_skills() -> Dict[str, Skill]:
     return skills
 
 
-def select_skill(industry: Optional[str] = None,
-                 job_title: Optional[str] = None) -> Tuple[Skill, str]:
-    """Pick the skill for this lead from its INDUSTRY. Returns
-    ``(skill, reason)``; the reason is what process_log records as WHICH
-    SKILL WAS CHOSEN and on what basis.
+def match_industry(industry: Optional[str] = None) -> Optional[str]:
+    """The claimed industry label this lead's industry resolves to, or None.
 
-    Matching is on the lead's industry, exact then substring. There is no
-    default skill: a lead with no industry, or an industry no skill claims,
-    raises `SkillError` and is flagged unresolved by the caller. Guessing a
-    near match or sending industry-neutral copy would both put an
-    unapproved email in front of a real person, so neither happens."""
-    skills = load_skills()
+    Exact match first, then substring either way, against every industry named
+    in skill frontmatter. Returns None for an empty industry and for one that
+    is not claimed — the CALLER decides what that means; this reports the fact
+    and nothing more."""
     normalised = _normalise(industry)
-
     if not normalised:
-        raise SkillError(
-            "no industry on the profile — a skill is selected from the industry "
-            "and there is no default; lead flagged unresolved")
+        return None
 
+    skills = load_skills()
     for skill in skills.values():
         if normalised in skill.industries:
-            return skill, f"industry '{industry}' matched skill '{skill.name}' exactly"
-
+            return normalised
     for skill in skills.values():
         for claimed in skill.industries:
             if claimed and (claimed in normalised or normalised in claimed):
-                return skill, f"industry '{industry}' matched skill '{skill.name}' on '{claimed}'"
+                return claimed
+    return None
 
-    raise SkillError(
-        f"industry '{industry}' is claimed by no skill "
-        f"({', '.join(sorted(skills))}) — lead flagged unresolved")
+
+def industry_is_recognised(industry: Optional[str] = None) -> bool:
+    """Whether the sector restraint table has an entry for this industry.
+
+    An unrecognised industry no longer stops the send — the instructions carry
+    a strictest-reading default for exactly this case — but it IS logged, so an
+    operator can see which leads went out un-sectored and widen the frontmatter
+    if they should not have."""
+    return match_industry(industry) is not None
+
+
+def select_skill(industry: Optional[str] = None) -> Tuple[Skill, str]:
+    """Pick the skill for this lead. Returns ``(skill, reason)``; the reason is
+    what process_log records as WHICH SKILL WAS CHOSEN and on what basis.
+
+    NO `job_title` PARAMETER — REMOVED 2026-08-18, deliberately.
+    This function accepted one for as long as it existed and never read it,
+    while `outreach.construct_email` dutifully passed `profile.job_title` in.
+    Every caller therefore read as though the job title refined which copy a
+    lead received. It never did: matching was on industry alone.
+
+    It is deleted rather than implemented because rev 8 removed the thing it
+    would have refined. Under the fifteen-skill design, narrowing by role
+    inside an industry was at least a coherent idea. With one instruction set
+    covering every sector there is nothing left to select between, and the job
+    title already reaches the model directly as a construction fact — where it
+    does real work, shaping the concern the email speaks to. Selecting on it
+    here would be a second, weaker copy of that.
+
+    CHANGED FOR REV 8. There is now ONE set of drafting instructions covering
+    every sector, and the industry no longer selects it. `lead_context` is what
+    personalises the email, and the gate deciding whether a lead is safe to
+    email is that context being present — not its industry matching a folder
+    name. See `outreach.load_context`.
+
+    The industry still does one job: it selects which sector restraint applies
+    INSIDE the instructions. So it is classified here and named in the reason —
+
+        recognised   the restraint table has an entry for it
+        unknown      no entry; the instructions' strictest-reading default
+                     applies and the caller logs a named warning
+        absent       no industry on the record at all; same default
+
+    — and in none of those cases is the lead dropped. That is the deliberate
+    change from rev 7, where an unmatched industry meant no send at all.
+
+    Still raises `SkillError` when there is nothing to draft from, or when the
+    single-skill layout has been broken: those are deployment faults, not
+    lead-level ones, and must not be resolved by guessing."""
+    skills = load_skills()
+    if len(skills) != 1:
+        # Rev 8 is a single instruction set. More than one folder means a
+        # retired per-industry skill was restored or a new one added — say so
+        # rather than silently drafting from whichever sorted first.
+        raise SkillError(
+            f"expected exactly one skill covering every industry, found "
+            f"{len(skills)} ({', '.join(sorted(skills))}). Rev 8 replaced the "
+            "per-industry skills with a single instruction set — remove the "
+            "extra folders, or restore per-industry selection deliberately.")
+    skill = next(iter(skills.values()))
+
+    matched = match_industry(industry)
+    if matched:
+        return skill, (f"industry '{industry}' matched the '{matched}' sector "
+                       f"restraint in skill '{skill.name}'")
+    if not _normalise(industry):
+        return skill, (f"no industry on the profile — skill '{skill.name}' applies its "
+                       "strictest-reading default restraint")
+    return skill, (f"industry '{industry}' has no sector restraint entry — skill "
+                   f"'{skill.name}' applies its strictest-reading default restraint")
 
 
 def fill(template: str, context: Dict[str, Any]) -> str:
@@ -273,6 +372,7 @@ def render(skill: Skill, context: Dict[str, Any],
     return subject, body, True
 
 
-__all__ = ["Skill", "SkillError", "load_skills", "select_skill", "render", "finalise",
+__all__ = ["Skill", "SkillError", "load_skills", "select_skill", "match_industry",
+           "industry_is_recognised", "render", "finalise",
            "fill", "build_context", "lead_facts", "SKILL_DIR",
            "SKILL_FILENAME", "RULES_FILENAME", "UNSUBSCRIBE_FOOTER", "RESERVED_SLOTS"]

@@ -8,7 +8,7 @@ from mcp_fakes import FakeResponse, FakeSession, RecordingObs
 from lqabr_core.crm import CRMError
 from lqabr_core.types import LeadProfile
 from mcp.hubspot.crm import HubSpotCRM
-from mcp.hubspot.schema import SchemaValidationError, campaign_complete_property
+from mcp.hubspot.schema import SchemaValidationError
 from mcp.hubspot.server import TOOLS, MCPSession
 
 
@@ -60,16 +60,23 @@ def test_get_lead_profile_validates_and_logs_the_validation():
     profile = crm(obs=obs).get_lead_profile("42")
     assert profile.object_id == "42" and profile.employee_id == "E00002"
     assert profile.first_name == "Jane" and profile.last_name == "Smith"
-    assert obs.processes[0]["event"] == "schema_validated"
-    assert obs.processes[0]["step"] == 5
+    # `schema_validated` is no longer the FIRST record: the rev-8 lead_context
+    # read (step 9) is logged ahead of validation. Assert the record exists and
+    # carries its step, rather than that it happens to come first — what reads
+    # run before it is not this test's subject.
+    validated = [p for p in obs.processes if p["event"] == "schema_validated"]
+    assert len(validated) == 1
+    assert validated[0]["step"] == 5
 
 
 # --------------------------------------------- step 5: the company walk
 class NoIndustryClient(StubHubSpotClient):
-    """A contact as HubSpot actually returns one: `industry`, `company_id`
-    and revenue are COMPANY columns, so a contact GET never carries them."""
+    """A contact as HubSpot actually returns one: `industry`, `company_id`,
+    revenue and the company NAME are all COMPANY columns, so a contact GET
+    never carries them. Confirmed against contact 533967041217 on
+    ldqfingsrv-dev, whose record holds none of the four."""
 
-    lead = replace(StubHubSpotClient.lead, industry=None,
+    lead = replace(StubHubSpotClient.lead, industry=None, company=None,
                    external_company_id=None, company_size_revenue=None)
 
 
@@ -105,11 +112,25 @@ def test_industry_is_read_off_the_associated_company_not_the_contact():
     assert session.calls[1]["url"].endswith("/crm/v3/objects/companies/9001")
 
 
-def test_a_profile_that_already_carries_an_industry_costs_no_extra_hops():
-    crm_, session, _ = crm_with(StubHubSpotClient, [])
+def test_the_company_walk_is_bounded_to_one_association_and_one_company_read():
+    """CHANGED IN REV 8. This used to assert ZERO company hops for a profile
+    that already carried an industry. That optimisation died with the widened
+    read: `about_us`, `hs_industry_group` and `website` exist only on the
+    company object, so a contact GET can never satisfy them and the walk has to
+    run for every lead with an associated company.
+
+    What still must hold is that it is BOUNDED — one association read and one
+    company read, never a per-property fetch or a loop."""
+    crm_, session, _ = crm_with(StubHubSpotClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(200, {"properties": {"about_us": "Fintech platform."}}),
+        FakeResponse(200, {"properties": {"lead_context": "Research narrative."}}),
+    ])
     profile = crm_.get_lead_profile("42")
     assert profile.industry == "Software"
-    assert session.calls == []
+
+    assert len([c for c in session.calls if "/associations/companies" in c["url"]]) == 1
+    assert len([c for c in session.calls if "/objects/companies/" in c["url"]]) == 1
 
 
 def test_a_contact_with_no_associated_company_still_validates():
@@ -360,3 +381,187 @@ def test_an_os_level_failure_is_retried_not_crashed():
     with pytest.raises(CRMError):
         client.patch_object("42", {"probability": 12})
     assert session.calls == 3          # retried, then a typed error
+
+
+class CompanyCompleteClient(StubHubSpotClient):
+    """A contact whose company-backed values are ALL already populated, so the
+    association walk is skipped and the only remaining hop is the lead_context
+    read. Used to isolate that read in the tests below — without it the walk's
+    two GETs consume the queued responses and the assertions read the wrong
+    call."""
+
+    lead = replace(StubHubSpotClient.lead,
+                   extra={"company_website": "https://acme.example",
+                          "company_about": "Delivery platform vendor.",
+                          "industry_group": "Software (Delivery Tooling)"})
+
+
+# ------------------------------------- rev 8: reading the research context
+def test_the_lead_context_is_read_off_the_contact_and_carried_through():
+    """FRD step 9. `lqabr_core.crm.HubSpotClient` owns the confirmed 9-pointer
+    mapping and knows nothing about this column, and lqabr_core is shared with
+    the sibling agents — so the MCP reads it with its own audited hop rather
+    than forking that mapping."""
+    crm_, session, obs = crm_with(CompanyCompleteClient, [
+        FakeResponse(200, {"properties": {"lead_context": "Acme is consolidating."}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == "Acme is consolidating."
+    assert profile.has_lead_context is True
+    assert session.calls[0]["url"].endswith("/crm/v3/objects/contacts/42")
+    assert session.calls[0]["params"] == {"properties": "lead_context"}
+
+    read = [p for p in obs.processes if p["event"] == "lead_context_read"]
+    assert len(read) == 1
+    assert read[0]["step"] == 9 and read[0]["present"] is True
+    assert read[0]["word_count"] == 3
+
+
+def test_a_portal_without_the_property_does_not_fail_the_run():
+    """HubSpot answers a read for a property it does not have with a 400. The
+    2026-08-05 audit found neither `object_id` nor `email_campaign_complete`
+    among all 410 contact properties, so this one is assumed absent too — and a
+    missing column must not take a whole campaign down. The lead comes back with
+    no context, the email agent's gate flags it, and nothing is emailed off a
+    guessed narrative."""
+    crm_, _, obs = crm_with(CompanyCompleteClient, [
+        FakeResponse(400, {}, text='{"message":"Property \\"lead_context\\" does not exist"}'),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == ""
+    assert profile.has_lead_context is False
+    unavailable = [p for p in obs.processes if p["event"] == "lead_context_unavailable"]
+    assert len(unavailable) == 1
+    assert unavailable[0]["property_name"] == "lead_context"
+    assert "LQABR_HUBSPOT_LEAD_CONTEXT_PROPERTY" in unavailable[0]["detail"]
+
+
+def test_an_absent_value_is_reported_as_absent_not_as_a_failure():
+    """The property exists but this lead has none yet — research has not
+    reached it. That is a different log record from the property not existing,
+    because it is a different problem with a different fix."""
+    crm_, _, obs = crm_with(CompanyCompleteClient, [
+        FakeResponse(200, {"properties": {"lead_context": None}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == ""
+    read = [p for p in obs.processes if p["event"] == "lead_context_read"]
+    assert read[0]["present"] is False
+    assert "lead_context_unavailable" not in events(obs)
+
+
+def test_clearing_the_property_name_skips_the_hop_entirely(monkeypatch):
+    """The escape hatch for a portal where the column does not exist: stop
+    asking for it at all rather than eating a 400 per lead."""
+    monkeypatch.setenv("LQABR_HUBSPOT_LEAD_CONTEXT_PROPERTY", "")
+    crm_, session, obs = crm_with(CompanyCompleteClient, [])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == ""
+    assert session.calls == []
+    assert "lead_context_read_disabled" in events(obs)
+
+
+def test_a_context_already_on_the_profile_costs_no_hop():
+    """If the read path ever starts carrying it, do not ask twice."""
+    class WithContext(CompanyCompleteClient):
+        lead = replace(CompanyCompleteClient.lead,
+                       extra={**CompanyCompleteClient.lead.extra,
+                              "lead_context": "Already here."})
+
+    crm_, session, _ = crm_with(WithContext, [])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == "Already here."
+    assert session.calls == []
+
+
+def test_the_configured_property_name_is_what_gets_asked_for(monkeypatch):
+    monkeypatch.setenv("LQABR_HUBSPOT_LEAD_CONTEXT_PROPERTY", "lqabr_research_context")
+    crm_, session, _ = crm_with(CompanyCompleteClient, [
+        FakeResponse(200, {"properties": {"lqabr_research_context": "Renamed column."}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.lead_context == "Renamed column."
+    assert session.calls[0]["params"] == {"properties": "lqabr_research_context"}
+
+
+# ------------------------- rev 8: the company-owned construction inputs
+def test_the_named_construction_inputs_are_read_off_the_company():
+    """The FRD names what construction is entitled to — the lead, their
+    company, its industry and the post. Four of those are COMPANY-owned and
+    were never fetched: the name, the website, the About-Us text and the
+    industry group. Confirmed live on ldqfingsrv-dev 2026-08-18, where M1
+    Finance holds all four."""
+    crm_, session, obs = crm_with(NoIndustryClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(200, {"properties": {
+            "name": "M1 Finance",
+            "website": "https://m1.com",
+            "domain": "m1.com",
+            "about_us": "Fintech platform offering commission-free automated investing.",
+            "industry": "FINANCIAL_SERVICES",
+            "hs_industry_group": "Investment / Wealth Management (Automated Investing)",
+            "company_id": "C0021",
+            "annualrevenue": "4.7",
+        }}),
+        FakeResponse(200, {"properties": {"lead_context": "Research narrative."}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    assert profile.company == "M1 Finance"
+    assert profile.company_website == "https://m1.com"
+    assert profile.company_about.startswith("Fintech platform")
+    assert profile.industry_group == "Investment / Wealth Management (Automated Investing)"
+    assert profile.industry == "FINANCIAL_SERVICES"
+    assert profile.company_id == "C0021"
+
+    # and every one of them reaches construction
+    context = profile.as_context()
+    for field in ("company", "company_website", "company_about", "industry_group"):
+        assert context[field], f"{field} never reached the model"
+    # ...while the internal reference does not
+    assert "company_id" not in context
+
+    assert "company_enriched" in events(obs)
+    asked = session.calls[1]["params"]["properties"]
+    for column in ("name", "website", "about_us", "hs_industry_group"):
+        assert column in asked, f"the company GET never asked for {column}"
+
+
+def test_a_company_with_no_website_falls_back_to_its_domain():
+    crm_, _, _ = crm_with(NoIndustryClient, [
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(200, {"properties": {"name": "M1 Finance", "domain": "m1.com",
+                                          "industry": "FINANCIAL_SERVICES"}}),
+        FakeResponse(200, {"properties": {}}),
+    ])
+    assert crm_.get_lead_profile("42").company_website == "m1.com"
+
+
+def test_a_contact_carrying_an_industry_still_gets_the_other_company_fields():
+    """Rev 7 short-circuited the company walk on `industry` alone. Now that the
+    name, website, about-us and industry group also come from there, that
+    short-circuit would silently strip four construction inputs from any lead
+    whose contact happened to carry an industry."""
+    crm_, _, obs = crm_with(StubHubSpotClient, [   # this stub DOES carry industry
+        FakeResponse(200, {"results": [{"toObjectId": 9001}]}),
+        FakeResponse(200, {"properties": {"name": "M1 Finance",
+                                          "about_us": "Fintech platform.",
+                                          "hs_industry_group": "Automated Investing"}}),
+        FakeResponse(200, {"properties": {"lead_context": "Research narrative."}}),
+    ])
+    profile = crm_.get_lead_profile("42")
+
+    # The contact's own values still win where it has them...
+    assert profile.industry == "Software"
+    assert profile.company == "Acme"
+    # ...but the walk ran anyway, so the company-only fields are populated
+    # instead of being silently lost to the rev-7 short-circuit.
+    assert profile.company_about == "Fintech platform."
+    assert profile.industry_group == "Automated Investing"
+    assert "company_enriched" in events(obs)
