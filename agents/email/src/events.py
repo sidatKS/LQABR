@@ -66,7 +66,7 @@ class MailgunEvent(str, Enum):
     OPENED = "opened"
     CLICKED = "clicked"
     FAILED = "failed"              # transient failure — Mailgun gave up retrying
-    BOUNCED = "bounced"            # permanent failure — address is dead
+    BOUNCED = "failed"            # permanent failure — address is dead
     COMPLAINED = "complained"      # recipient marked it as spam
     UNSUBSCRIBED = "unsubscribed"  # recipient opted out
     STOPPED = "stopped"            # send refused before it left Mailgun
