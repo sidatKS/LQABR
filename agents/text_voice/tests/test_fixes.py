@@ -67,7 +67,7 @@ def test_no_sleep_after_final_attempt(monkeypatch):
 class _FakeMcp:
     def __init__(self, lead): self._lead, self.recorded = lead, []
     def get_lead(self, cid): return self._lead
-    def record_call_outcome(self, cid, outcome, detail=None):
+    def record_call_outcome(self, cid, outcome, detail=None, current=None):
         self.recorded.append((cid, outcome))
         return {"status": "ok", "events": [], "failures": [],
                 "probability": 60, "stage": "x", "promoted_to_scheduling": True}
