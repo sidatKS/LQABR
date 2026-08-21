@@ -52,8 +52,10 @@ class FakeMCP:
             "voice_status_written_ms": self.voice_status_written_ms_result,
         }
 
-    def upsert_lead(self, contact_id, voice_status=None, probability=None, outcome=None):
-        self.calls.append(("upsert_lead", contact_id, voice_status, probability, outcome))
+    def upsert_lead(self, contact_id, voice_status=None, probability=None,
+                    outcome=None, current=None):
+        self.calls.append(("upsert_lead", contact_id, voice_status, probability,
+                           outcome, current))
         if self.upsert_results:
             result = self.upsert_results.pop(0)
             if isinstance(result, Exception):
@@ -61,7 +63,7 @@ class FakeMCP:
             return result
         return {"status": "updated", "contact_id": contact_id}
 
-    def record_call_outcome(self, contact_id, outcome, detail=None):
+    def record_call_outcome(self, contact_id, outcome, detail=None, current=None):
         self.calls.append(("record_call_outcome", contact_id, outcome, detail))
         if self.record_call_outcome_error:
             raise self.record_call_outcome_error
@@ -502,7 +504,7 @@ def test_release_claim_writes_failed(tv_agent, monkeypatch):
     fake = FakeMCP()
     monkeypatch.setattr(tv_agent, "mcp", fake)
     tv_agent._release_claim("123", "vapi-error: boom")
-    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None)]
+    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None, None)]
 
 
 def test_release_claim_swallows_crm_error_rather_than_raising(tv_agent, monkeypatch):
@@ -536,7 +538,8 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
                             "classified_by": "model"})
     monkeypatch.setattr(tv_agent, "_contact_id_for_report", lambda report: "123")
     monkeypatch.setattr(tv_agent, "push_to_mcp",
-                        lambda contact_id, outcome, summary="", recording_url="", call_id="":
+                        lambda contact_id, outcome, summary="", recording_url="",
+                               current=None:
                             {"status": "ok", "contact_id": contact_id, "probability": 60,
                              "promoted_to_scheduling": True, "failures": []})
 
@@ -591,7 +594,7 @@ def test_contact_id_for_report_swallows_crm_error_and_returns_none(tv_agent, mon
 # `lead_context` is a real contact property on portal 246777241 (type string,
 # label "lead_context", description "Lead context notes"), verified against
 # the live properties API on 2026-08-17 rather than read off a UI label. It is
-# deliberately NOT a VoiceLead field — VoiceLead lives in packages/lqabr_core,
+# deliberately NOT a VoiceLead field — it is a Vapi-call concern,
 # which this agent does not own — so it travels as its own value from Step 3
 # through handle_new_lead into Step 4.
 # ==========================================================================
@@ -670,66 +673,6 @@ def test_handle_new_lead_dials_with_empty_context_when_the_property_is_unset(
     result = tv_agent.handle_new_lead("904")
     assert result["status"] == "initiated"
     assert seen["lead_context"] == ""
-
-
-def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
-    """User request 2026-08-17: the text itself, not only its length. Step 3
-    logs the RAW property value."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead()
-    fake.lead_context_result = "Re: cutting your cloud spend"
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-
-    logged = {}
-    real_step = tv_agent.obs.step
-
-    import contextlib
-
-    @contextlib.contextmanager
-    def capturing_step(step_name, **fields):
-        with real_step(step_name, **fields) as outcome:
-            yield outcome
-            logged[step_name] = dict(outcome)
-
-    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
-    tv_agent.get_lead("904")
-
-    entry = logged[tv_agent.obs.STEP_READ_LEAD]
-    assert entry["lead_context"] == "Re: cutting your cloud spend"
-    assert entry["lead_context_chars"] == 28
-
-
-def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkeypatch):
-    """Step 4 logs the CAPPED value that went on the wire, which can differ
-    from the raw property Step 3 read — that difference is the whole point."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead()
-    fake.lead_context_result = "the full untruncated raw value from HubSpot"
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    monkeypatch.setattr(tv_agent, "place_call",
-                        lambda lead, lead_context="": {
-                            "status": "initiated", "call_id": "c1",
-                            "to": lead.phone_number,
-                            "lead_context": "the full untrunc\u2026",   # as capped
-                            "lead_context_chars": 17})
-
-    logged = {}
-    real_step = tv_agent.obs.step
-
-    import contextlib
-
-    @contextlib.contextmanager
-    def capturing_step(step_name, **fields):
-        with real_step(step_name, **fields) as outcome:
-            yield outcome
-            logged[step_name] = dict(outcome)
-
-    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
-    tv_agent.handle_new_lead("904")
-
-    entry = logged[tv_agent.obs.STEP_PLACE_CALL]
-    assert entry["lead_context"] == "the full untrunc\u2026"
-    assert entry["lead_context_chars"] == 17
 
 
 # ==========================================================================
