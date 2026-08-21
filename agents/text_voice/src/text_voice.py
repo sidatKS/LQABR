@@ -14,14 +14,11 @@ from lqabr_core.secrets import get_secret
 from lqabr_core.types import VoiceLead, VoiceOutcome
 
 try:
+    from .mcp_client import StepFiveMCPClient
     from .tools import VapiError, place_call
 except ImportError:  # pragma: no cover - uvicorn/pytest put src/ on sys.path
-    from tools import VapiError, place_call  # type: ignore
-
-try:
-    from .mcp_client import StepFiveMCPClient
-except ImportError:  # pragma: no cover
     from mcp_client import StepFiveMCPClient  # type: ignore
+    from tools import VapiError, place_call  # type: ignore
 
 
 MODEL = os.environ.get("LQABR_TEXT_VOICE_MODEL", "anthropic/claude-sonnet-5")
@@ -83,7 +80,8 @@ def get_lead(object_id: str) -> Dict[str, Any]:
                     "contact_id": lead.contact_id}
 
         outcome["probability"] = lead.probability
-        outcome["lead_context"] = lead_context
+        # Char count only — the raw lead_context is lead content and does not
+        # belong on the logs (2026-08-20, user decision).
         outcome["lead_context_chars"] = len(lead_context)
         return {"callable": True, "lead": lead.to_dict(),
                 "contact_id": lead.contact_id,
@@ -275,11 +273,12 @@ def _parse_model_reply(content: str) -> tuple[str, str]:
 
 
 def push_to_mcp(contact_id: str, outcome: str, summary: str = "",
-                recording_url: str = "") -> Dict[str, Any]:
+                recording_url: str = "",
+                current: Optional[VoiceLead] = None) -> Dict[str, Any]:
     """STEP 8 — make this call's result the lead's state via mcp.record_call_outcome."""
     with obs.step(obs.STEP_PUSH_MCP, contact_id=contact_id, outcome=outcome) as step_result:
         try:
-            result = mcp.record_call_outcome(contact_id, outcome)
+            result = mcp.record_call_outcome(contact_id, outcome, current=current)
         except CRMError as exc:
             step_result["status"] = "error"
             return {"status": "error", "reason": f"crm-error: {exc}",
@@ -305,7 +304,7 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
     lead = VoiceLead(**read["lead"])
 
     try:
-        mcp.upsert_lead(lead.contact_id, voice_status="INITIATED")
+        mcp.upsert_lead(lead.contact_id, voice_status="INITIATED", current=lead)
     except CRMError as exc:
         obs.log_process(obs.STEP_PLACE_CALL, "degraded",
                         "voice_status=INITIATED write failed — dialling anyway, "
@@ -320,14 +319,14 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
             placed = place_call(lead, lead_context=lead_context)
         except VapiError as exc:
             step_result["status"] = "error"
-            _release_claim(lead.contact_id, f"vapi-error: {exc}")
+            _release_claim(lead.contact_id, f"vapi-error: {exc}", current=lead)
             return {"status": "error", "step": "4",
                     "contact_id": lead.contact_id,
                     "reason": f"vapi-error: {exc}"}
         except Exception as exc:  # noqa: BLE001 — e.g. a SecretNotFoundError
             step_result["status"] = "error"
             _release_claim(lead.contact_id,
-                           f"pre-dial failure: {type(exc).__name__}")
+                           f"pre-dial failure: {type(exc).__name__}", current=lead)
             return {"status": "error", "step": "4",
                     "contact_id": lead.contact_id,
                     "reason": f"pre-dial failure: {type(exc).__name__}: {exc}"}
@@ -341,7 +340,6 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
                     "reason": placed["error"]}
 
         step_result["call_id"] = placed.get("call_id")
-        step_result["lead_context"] = placed.get("lead_context")
         step_result["lead_context_chars"] = placed.get("lead_context_chars")
         step_result["voice_status"] = _mark_call_placed(lead.contact_id)
 
@@ -375,7 +373,7 @@ def _mark_call_placed(contact_id: Optional[str]) -> str:
         return current.voice_status or "unknown"
 
     try:
-        mcp.upsert_lead(contact_id, voice_status="CALL_PLACED")
+        mcp.upsert_lead(contact_id, voice_status="CALL_PLACED", current=current)
         return "CALL_PLACED"
     except CRMError as exc:
         obs.log_process(obs.STEP_PLACE_CALL, "degraded",
@@ -386,12 +384,13 @@ def _mark_call_placed(contact_id: Optional[str]) -> str:
         return "INITIATED"
 
 
-def _release_claim(contact_id: Optional[str], reason: str) -> None:
+def _release_claim(contact_id: Optional[str], reason: str,
+                   current: Optional[VoiceLead] = None) -> None:
     """Undo the pre-dial INITIATED claim (as FAILED) when the call never happened."""
     if not contact_id:
         return
     try:
-        mcp.upsert_lead(contact_id, voice_status="FAILED")
+        mcp.upsert_lead(contact_id, voice_status="FAILED", current=current)
     except CRMError as exc:
         obs.log_process(obs.STEP_PLACE_CALL, "degraded",
                         "call was never placed but the FAILED rollback also "
@@ -447,7 +446,7 @@ def handle_call_report(report: Dict[str, Any]) -> Dict[str, Any]:
 
     written = push_to_mcp(contact_id, decided["outcome"],
                           summary=decided["summary"],
-                          recording_url=recording_url)
+                          recording_url=recording_url, current=existing)
     return {"status": written.get("status", "ok"), "step": "8",
             "call_id": call_id, "contact_id": contact_id,
             "outcome": decided["outcome"], "summary": decided["summary"],
