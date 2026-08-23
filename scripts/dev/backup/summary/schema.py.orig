@@ -1,0 +1,188 @@
+"""The contracts: what a caller sends, what the model must return, what we answer.
+
+Pydantic lives HERE and not in `summary_core`, so the library stays
+importable in a context with no web framework. The library speaks
+dataclasses; this module is the translation layer at the edge.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field
+
+from summary_core.types import SourceSpec, SummaryResult
+
+# ---------------------------------------------------------------- inbound
+
+
+class HubSpotTarget(BaseModel):
+    """Where the summary should land. Omit it entirely to summarise only."""
+
+    object_id: str = ""
+    object_type: str = ""          # defaults to LQABR_SUMMARY_HUBSPOT_OBJECT_TYPE
+    industry: str = ""             # written to the industry property when set
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SummaryRequest(BaseModel):
+    """POST /summary/run.
+
+    `source` accepts the full object (`{"kind": "url", "url": …}`) or a bare
+    string, which is read as a URL when it looks like one and as text
+    otherwise — so the simplest possible call is `{"source": "https://…"}`.
+    """
+
+    source: Union[Dict[str, Any], str]
+    hubspot: Optional[HubSpotTarget] = None
+    options: Dict[str, Any] = Field(default_factory=dict)
+
+    def to_spec(self) -> SourceSpec:
+        return SourceSpec.from_dict(self.source)
+
+
+# ---------------------------------------------------------------- outbound
+
+
+class SummaryPayload(BaseModel):
+    title: str = ""
+    topic: str = ""
+    summary: str = ""
+    key_points: List[str] = Field(default_factory=list)
+    concepts: List[str] = Field(default_factory=list)
+    technologies: List[str] = Field(default_factory=list)
+    takeaways: List[str] = Field(default_factory=list)
+    industry: str = ""
+
+
+class HubSpotOutcome(BaseModel):
+    status: str = "skipped"
+    object_id: str = ""
+    object_type: str = ""
+    properties: List[str] = Field(default_factory=list)
+    tool: str = ""
+    error: str = ""
+
+
+class SourceInfo(BaseModel):
+    kind: str = ""
+    reference: str = ""
+    title: str = ""
+    chars: int = 0
+    truncated: bool = False
+
+
+class SummaryResponse(BaseModel):
+    run_id: str
+    status: str                     # completed | failed
+    source: SourceInfo
+    summary: Optional[SummaryPayload] = None
+    hubspot: HubSpotOutcome = Field(default_factory=HubSpotOutcome)
+    model: str = ""
+    error: str = ""
+
+
+# ---------------------------------------------------------------- model contract
+
+
+class SummaryValidationError(ValueError):
+    """The model did not return the agreed shape. Never silently patched."""
+
+
+#: What the model is told to return, and what `parse_summary` enforces. The
+#: two must not drift, so the instruction builder reads this constant.
+SUMMARY_FIELDS = {
+    "title": "the document's own title, verbatim; empty string if it has none",
+    "topic": "one short phrase naming the subject",
+    "summary": "3-5 sentences, factual, no invention",
+    "key_points": "list of the most important points",
+    "concepts": "list of the technical or domain concepts covered",
+    "technologies": "list of named technologies, products or frameworks",
+    "takeaways": "list of practical takeaways for a reader",
+    "industry": "the industry this is aimed at, or empty string if unclear",
+}
+
+REQUIRED_FIELDS = ("summary",)
+
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+
+
+def extract_json(text: str) -> Dict[str, Any]:
+    """The model's JSON object, whether or not it arrived in a code fence.
+
+    Models wrap JSON in ```json fences, or preface it with a sentence. Both
+    are recovered. What is NOT done is guessing: text with no JSON object in
+    it raises, so a chatty non-answer cannot be written to the CRM.
+    """
+    candidate = (text or "").strip()
+    if not candidate:
+        raise SummaryValidationError("the model returned nothing")
+
+    fenced = _FENCE.search(candidate)
+    if fenced:
+        candidate = fenced.group(1).strip()
+    else:
+        start, end = candidate.find("{"), candidate.rfind("}")
+        if start != -1 and end > start:
+            candidate = candidate[start:end + 1]
+
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise SummaryValidationError(
+            f"the model did not return valid JSON ({exc.msg} at position {exc.pos})"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise SummaryValidationError(
+            f"the model returned a {type(parsed).__name__}, not a JSON object"
+        )
+    return parsed
+
+
+def _string_list(value: Any) -> List[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value)]
+
+
+def parse_summary(raw: str, *, source_kind: str = "", source_ref: str = "",
+                  model: str = "") -> SummaryResult:
+    """Validate the model's answer into a SummaryResult, or raise by name."""
+    data = extract_json(raw)
+
+    missing = [field for field in REQUIRED_FIELDS
+               if not str(data.get(field) or "").strip()]
+    if missing:
+        raise SummaryValidationError(
+            f"the model's response is missing required field(s): {', '.join(missing)}"
+        )
+
+    return SummaryResult(
+        summary=str(data.get("summary", "")).strip(),
+        title=str(data.get("title", "") or "").strip(),
+        topic=str(data.get("topic", "") or "").strip(),
+        key_points=_string_list(data.get("key_points")),
+        concepts=_string_list(data.get("concepts")),
+        technologies=_string_list(data.get("technologies")),
+        takeaways=_string_list(data.get("takeaways")),
+        industry=str(data.get("industry", "") or "").strip(),
+        source_kind=source_kind,
+        source_ref=source_ref,
+        model=model,
+        raw=raw,
+    )
+
+
+def to_payload(result: SummaryResult) -> SummaryPayload:
+    return SummaryPayload(
+        title=result.title, topic=result.topic, summary=result.summary,
+        key_points=result.key_points, concepts=result.concepts,
+        technologies=result.technologies, takeaways=result.takeaways,
+        industry=result.industry,
+    )

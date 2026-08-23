@@ -78,19 +78,21 @@ class MCPSession:
         return [lead.to_dict() for lead in self._crm.leads_for_trigger(object_id, limit=limit)]
 
     # ------------------------------------------------------------ step 9
-    def post_patch_crm(self, object_id: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+    def post_patch_crm(self, object_id: str, properties: Dict[str, Any],
+                       object_type: str = "contact") -> Dict[str, Any]:
         """STEP 9 — land engagement state on the system of record, through
         the same central MCP and against the same schema used for the read.
 
         Returns `{"status": "written", ...}` or an explicit error — a failed
         write-back never reads as a success."""
         try:
-            self._crm.patch_object(str(object_id), properties)
+            self._crm.patch_object(str(object_id), properties, object_type=object_type)
         except SchemaValidationError as exc:
             self._obs.process(step=9, event="writeback_validation_failed",
                               object_id=str(object_id), reason=str(exc))
             return {"error": str(exc), "object_id": str(object_id)}
         return {"status": "written", "object_id": str(object_id),
+                "object_type": object_type,
                 "properties": sorted(properties.keys())}
 
 

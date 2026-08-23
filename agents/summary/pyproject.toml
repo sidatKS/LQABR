@@ -1,0 +1,26 @@
+[project]
+name = "lqabr-summary-agent"
+version = "0.1.0"
+description = "LQABR Summary Agent — summarises a web URL, raw JSON, an HTTP/FastAPI response or plain text, and writes the result to HubSpot through the HubSpot MCP at runtime. Standalone: no shared repo packages."
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[project.scripts]
+summary-agent = "src.agent:main"
+
+[build-system]
+requires = ["hatchling", "hatch-requirements-txt"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+[tool.hatch.build.targets.wheel]
+# summary_core is the agent's OWN library. `src` stays unpackaged on
+# purpose: it is an ADK agent directory (`adk run agents/summary/src`),
+# the same shape as agents/lead_profile/src.
+packages = ["packages/summary_core"]
+
+[tool.hatch.build.targets.wheel.sources]
+"packages/summary_core" = "summary_core"

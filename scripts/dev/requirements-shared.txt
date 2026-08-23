@@ -1,0 +1,39 @@
+# =====================================================================
+# LQABR — single shared WSL venv for local MVP (session 2026-08-21)
+# One venv covers all 5 agents. google-adk is UNPINNED here on purpose:
+# the two repo pins (email 2.3.0, lead_profile/summary 2.6.2) conflict,
+# so we take the latest and record what resolved. summary_core needs no
+# install (rides on pytest pythonpath); lqabr_core is installed editable
+# separately (see scripts/dev/setup_venv.sh).
+# =====================================================================
+
+# --- ADK + models (latest) ---
+google-adk
+google-genai>=1.0
+litellm>=1.60.0
+
+# --- web surface (highest floor across agents) ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+requests>=2.32.0
+httpx>=0.27.0
+python-multipart>=0.0.9
+
+# --- summary extras ---
+beautifulsoup4>=4.12.0
+ag-ui-adk>=0.7.0
+ag-ui-protocol>=0.1.19
+
+# --- gateway ---
+PyYAML>=6.0
+
+# --- shared infra ---
+python-dotenv>=1.0.1
+google-cloud-secret-manager>=2.30.0
+psutil>=6.0.0
+
+# --- test tooling ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+responses>=0.25.0
