@@ -1,0 +1,28 @@
+# agents/summary — Summary Agent (STANDALONE)
+#
+# This agent depends on NOTHING else in this repo. There is no
+# `pip install -e packages/lqabr_core` step and no `COPY mcp mcp` in its
+# image. Its only coupling to the rest of the system is a RUNTIME MCP
+# connection to the HubSpot MCP container (LQABR_SUMMARY_MCP_BASE_URL).
+#
+# google-adk is pinned to the same version agents/lead_profile was built
+# and tested against. Because this agent has its own image and its own
+# virtualenv, this pin is free to differ from the other agents' — that is
+# the point of the standalone contract.
+google-adk==2.6.2
+litellm>=1.60.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+python-dotenv>=1.0.1
+
+# AG-UI surface (/chat) — used by ui/. Import is feature-flagged, so the
+# service still starts if these are absent.
+ag-ui-adk>=0.7.0
+ag-ui-protocol>=0.1.19
+
+# Optional, degrades gracefully when absent:
+google-cloud-secret-manager>=2.30.0   # prod secret backend; local dev uses env
+psutil>=6.0.0                         # richer system snapshots in obs

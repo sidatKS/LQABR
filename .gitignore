@@ -169,3 +169,6 @@ _to_delete/
 
 # Claude Code local settings
 .claude/
+mcp/.env
+scripts/dev/ngrok.env
+ngrok/.env

@@ -1,0 +1,11 @@
+# Build context is agents/summary — see the Dockerfile header for why.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}:${_TAG}", "-t", "${_IMAGE}:latest", "-f", "Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_IMAGE}"]
+images:
+  - "${_IMAGE}:${_TAG}"
+  - "${_IMAGE}:latest"
+options:
+  logging: CLOUD_LOGGING_ONLY
