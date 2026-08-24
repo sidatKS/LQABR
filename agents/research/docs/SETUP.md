@@ -80,9 +80,16 @@ cd agents/research
 ./setup_env.sh              # writes are OFF — safe first run
 ```
 
-It pulls the model key from Secret Manager and writes `.env` (git-ignored).
-The HubSpot token is deliberately **not** written: the agent resolves it by
-name at run time, so it never lands on disk.
+It writes `.env` (git-ignored) with **no credential in it**. Both the model key
+and the HubSpot token are resolved from Secret Manager at run time, by the names
+in that file — so nothing secret lands on disk, and a key rotation needs no
+change on anyone's machine. What the script does check is that your identity can
+actually *read* both secrets, which is far better found now than as every lead
+failing later.
+
+This means valid ADC is required to run, not just to set up. If the research
+step starts failing with `no model credential`, re-run
+`gcloud auth application-default login`.
 
 When you actually want to write to HubSpot:
 
@@ -101,7 +108,8 @@ python3 -m uvicorn service_app:app --port 8086 --app-dir src
 
 **Source `.env` first.** Exporting a variable and *then* sourcing `.env`
 overwrites it — that is how an empty `ANTHROPIC_API_KEY` silently killed a
-whole run once.
+whole run once. (It no longer carries credentials, but the ordering trap
+applies to every variable in it.)
 
 Give it ~10 seconds: it imports the SDK and discovers the MCP tools before it
 answers. A health check earlier than that reports a healthy agent as down.
@@ -157,7 +165,7 @@ PYTHONPATH=src:packages python3 -m pytest -q
 
 | What you see | What it is |
 |---|---|
-| `ANTHROPIC_API_KEY is not set` on every lead | `.env` was sourced *after* the key was exported, so the blank overwrote it. Source `.env` first. |
+| `no model credential` on every lead | ADC expired, or this identity cannot read `lqabr-anthropic-api-key`. Run `gcloud auth application-default login`. |
 | Everything succeeds but HubSpot is unchanged | `LQABR_RESEARCH_DRY_RUN=1`. Check `dry_run` in `/health`. |
 | `address already in use` on 8086 | An older instance is still up: `ss -ltnp \| grep 8086`, then kill that pid. |
 | `POST /mcp 404` | Port 8086 is the *agent*; the MCP is 8080. Check `mcp_base_url` in `/health`. |

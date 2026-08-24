@@ -10,7 +10,8 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | `LQABR_RESEARCH_MODEL` | `claude-sonnet-4-6` | an `anthropic/`-prefixed value is accepted; the prefix is stripped |
 | `LQABR_RESEARCH_TEMPERATURE` | `1.0` | |
 | `LQABR_RESEARCH_MAX_TOKENS` | `2000` | |
-| `ANTHROPIC_API_KEY` | — | powers **both** the model call and the web search |
+| `ANTHROPIC_API_KEY` | — | Optional override. Normally unset: the key is read from Secret Manager as `LQABR_RESEARCH_MODEL_TOKEN_SECRET`. When set, it wins and the use is logged. |
+| `LQABR_RESEARCH_MODEL_TOKEN_SECRET` | `lqabr-anthropic-api-key` | The model credential's NAME in Secret Manager — never its value. |
 
 ## MCP — the only door to HubSpot
 

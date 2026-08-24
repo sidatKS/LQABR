@@ -102,6 +102,10 @@ class Settings:
     model: str = "claude-sonnet-4-6"
     temperature: float = 1.0
     max_tokens: int = 2000
+    #: The model credential's NAME in Secret Manager — never its value. Resolved
+    #: at run time exactly like the HubSpot token, so no key is written to disk
+    #: and a rotation needs no change on anyone's machine.
+    model_token_secret: str = "lqabr-anthropic-api-key"
 
     # ── MCP (the runtime connection to the HubSpot MCP container) ──
     mcp_base_url: str = "http://localhost:8091/mcp"
@@ -194,6 +198,9 @@ class Settings:
             model=_str("LQABR_RESEARCH_MODEL", _cfg(cfg, "model", "name", "claude-sonnet-4-6")),
             temperature=_float("LQABR_RESEARCH_TEMPERATURE", _cfg(cfg, "model", "temperature", 1.0)),
             max_tokens=_int("LQABR_RESEARCH_MAX_TOKENS", _cfg(cfg, "model", "max_tokens", 2000)),
+            model_token_secret=_str("LQABR_RESEARCH_MODEL_TOKEN_SECRET",
+                                    _cfg(cfg, "model", "token_secret",
+                                         "lqabr-anthropic-api-key")),
 
             mcp_base_url=_str("LQABR_RESEARCH_MCP_BASE_URL",
                               _cfg(cfg, "mcp", "base_url", "http://localhost:8091/mcp")),
