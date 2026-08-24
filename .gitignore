@@ -20,6 +20,8 @@ venv/
 # Environment & secrets — never commit these
 .env
 .env.local
+.env.bak
+**/.env.bak
 .env.*.local
 *.key
 *.pem
