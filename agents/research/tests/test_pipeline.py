@@ -45,7 +45,7 @@ def test_happy_path_writes_and_completes():
 def test_missing_object_id_fails_at_input():
     settings = get_settings(refresh=True)
     hubspot = HubSpotMCP(client=FakeMCPClient({}), settings=settings)
-    response = run_research(ResearchTarget(object_id="", blog_published_at="x"),
+    response = run_research(ResearchTarget(object_id="", summary_ref_id="x"),
                             settings=settings, hubspot=hubspot,
                             composer=Composer(provider=FakeSearch(), settings=settings))
     assert response.status == "failed" and "bad-data" in response.error

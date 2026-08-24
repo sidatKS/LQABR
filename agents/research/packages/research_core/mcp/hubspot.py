@@ -9,7 +9,7 @@ Three operations, all through the MCP, none direct to HubSpot:
 
     read_lead(object_id)              the contact: industry, company, and the
                                       three ids the write tool demands back
-    read_blog(blog_published_at)      the published post that triggered the run
+    read_blog(object_id)              the published post, by its record id
     write_context(lead, note)         the lead_context write-back
 
 The write is the point of the agent: a lead_context landing on the contact is

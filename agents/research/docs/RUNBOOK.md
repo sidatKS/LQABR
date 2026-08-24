@@ -31,8 +31,8 @@ curl -s localhost:8086/mcp/tools | python3 -m json.tool     # missing: []
 Then a dry run — computes the note, logs the write, sends nothing:
 
 ```bash
-LQABR_RESEARCH_DRY_RUN=1 python agents/research/src/agent.py \
-  --object-id <contact id> --blog-published-at <timestamp>
+LQABR_RESEARCH_DRY_RUN=1 python3 agents/research/src/agent.py \
+  --object-id <CONTACT id> --summary-ref-id <BLOG POST id>
 ```
 
 Then live:

@@ -42,7 +42,7 @@ try:  # pragma: no cover - depends on the local environment
 except ImportError:
     pass
 
-from fastapi import BackgroundTasks, FastAPI, Request  # noqa: E402
+from fastapi import BackgroundTasks, FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
     configure_logging(SETTINGS.log_level, SETTINGS.log_file, SETTINGS.log_format)
     obs = get_obs(new_run_id(), refresh=True)
     obs.process.emit("service_start", service="lqabr-research-agent", version="0.1.0",
-                     routes=SETTINGS.routes, config=SETTINGS.redacted())
+                     config=SETTINGS.redacted())
     _MCP_STATE.update(_startup_mcp_check())
     yield
     get_obs().process.emit("service_stop", service="lqabr-research-agent")
@@ -109,7 +109,6 @@ def _health_payload() -> Dict[str, Any]:
         "status": "UP",
         "service": "lqabr-research-agent",
         "version": "0.1.0",
-        "routes": SETTINGS.routes,
         "model": SETTINGS.model,
         "dry_run": SETTINGS.dry_run,
         "search": {"enabled": SETTINGS.search_enabled,
@@ -208,7 +207,6 @@ async def research_a2a(envelope: A2AEnvelope, background: BackgroundTasks) -> Di
 
     obs.audit.emit("http_in", route=SETTINGS.route_a2a, status=200,
                    object_id=target.object_id,
-                   blog_published_at=target.blog_published_at,
                    summary_ref_id=target.summary_ref_id, run_id=run_id)
 
     background.add_task(run_research, target, run_id=run_id)

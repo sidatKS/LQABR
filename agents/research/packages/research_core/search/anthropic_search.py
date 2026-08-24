@@ -192,7 +192,6 @@ class AnthropicWebSearch:
         payload = {
             "model": model,
             "max_tokens": int(settings.max_tokens),
-            "temperature": float(settings.temperature),
             "messages": [{"role": "user", "content": prompt}],
             "tools": [self._tool()],
         }

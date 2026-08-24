@@ -16,8 +16,10 @@ class ResearchTarget(BaseModel):
     """Which lead, and which post. Both ids come from the gateway's dispatch."""
 
     object_id: str = ""            # the HubSpot CONTACT record id
-    blog_published_at: str = ""    # the MCP's key into the blog store
-    summary_ref_id: str = ""       # the blog Ticket id (correlation only)
+    summary_ref_id: str = ""       # the BLOG POST's record id — the MCP reads
+                                   # the blog store by it. A different record
+                                   # from object_id; swapping them reads the
+                                   # wrong row.
     #: TEST AFFORDANCE ONLY (gap B1). The MCP's get_lead_profile returns
     #: company_id but not the company NAME, so company-specific research cannot
     #: be exercised end to end yet. Supplying this overrides the MCP value for
@@ -32,16 +34,15 @@ class ResearchRequest(BaseModel):
     target: Optional[ResearchTarget] = None
     #: Convenience mirrors so a hand-written curl need not nest.
     object_id: str = ""
-    blog_published_at: str = ""
+    summary_ref_id: str = ""
     company: str = ""              # test affordance — see ResearchTarget.company
 
     def resolved(self) -> ResearchTarget:
         target = self.target or ResearchTarget()
         return ResearchTarget(
             object_id=(target.object_id or self.object_id or "").strip(),
-            blog_published_at=(target.blog_published_at
-                               or self.blog_published_at or "").strip(),
-            summary_ref_id=target.summary_ref_id or "",
+            summary_ref_id=(target.summary_ref_id
+                            or self.summary_ref_id or "").strip(),
             company=(target.company or self.company or "").strip(),
         )
 
@@ -130,9 +131,9 @@ class ResearchResponse(BaseModel):
 class A2AEnvelope(BaseModel):
     """The gateway's JSON-RPC ``message/send`` envelope.
 
-    The ids live in ``params.metadata`` (``object_id``, ``blog_published_at``,
-    ``summary_ref_id``); the gateway also mirrors ``object_id`` at the top level
-    for agents that have not caught up, so both are read.
+    The ids live in ``params.metadata`` (``object_id``, ``summary_ref_id``);
+    the gateway also mirrors ``object_id`` at the top level for agents that
+    have not caught up, so both are read.
     """
 
     jsonrpc: str = "2.0"
@@ -154,7 +155,6 @@ class A2AEnvelope(BaseModel):
                 break
         return ResearchTarget(
             object_id=object_id,
-            blog_published_at=str(meta.get("blog_published_at") or "").strip(),
             summary_ref_id=str(meta.get("summary_ref_id") or "").strip(),
         )
 

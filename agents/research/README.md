@@ -73,8 +73,8 @@ first read.
 Headless, one lead:
 
 ```bash
-python agents/research/src/agent.py \
-  --object-id 533963448020 --blog-published-at 2026-08-27T09:30:00Z --dry-run
+python3 agents/research/src/agent.py \
+  --object-id 533963448020 --summary-ref-id 330008697562 --dry-run
 ```
 
 Tests (offline, no credentials) — run from the agent directory, not the repo

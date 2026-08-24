@@ -43,7 +43,6 @@ def run_research(target: ResearchTarget, *,
     hubspot = hubspot or HubSpotMCP(settings=settings, obs=obs)
 
     obs.process.emit("run_start", object_id=target.object_id,
-                     blog_published_at=target.blog_published_at,
                      summary_ref_id=target.summary_ref_id, dry_run=settings.dry_run)
 
     def _failed(step: str, reason: str) -> ResearchResponse:

@@ -100,7 +100,6 @@ class Settings:
 
     # ── model ────────────────────────────────────────────────
     model: str = "claude-sonnet-4-6"
-    temperature: float = 1.0
     max_tokens: int = 2000
     #: The model credential's NAME in Secret Manager — never its value. Resolved
     #: at run time exactly like the HubSpot token, so no key is written to disk
@@ -152,12 +151,10 @@ class Settings:
     include_sources: bool = True
 
     # ── HTTP surface ─────────────────────────────────────────
-    routes: str = "all"                 # all | api
     route_a2a: str = "/research/a2a"          # gateway -> ONE CONTACT
     route_campaign_a2a: str = "/research/campaign/a2a"   # gateway -> ONE POST
     route_run: str = "/research/run"
     cors_origins: List[str] = field(default_factory=lambda: ["http://localhost:5173"])
-    port: int = 8086
 
     # ── direct HubSpot (campaign lead lookup ONLY — see hubspot_direct.py) ──
     #: The MCP has no lead-listing tool, so "which leads are in this industry"
@@ -196,7 +193,6 @@ class Settings:
 
         return cls(
             model=_str("LQABR_RESEARCH_MODEL", _cfg(cfg, "model", "name", "claude-sonnet-4-6")),
-            temperature=_float("LQABR_RESEARCH_TEMPERATURE", _cfg(cfg, "model", "temperature", 1.0)),
             max_tokens=_int("LQABR_RESEARCH_MAX_TOKENS", _cfg(cfg, "model", "max_tokens", 2000)),
             model_token_secret=_str("LQABR_RESEARCH_MODEL_TOKEN_SECRET",
                                     _cfg(cfg, "model", "token_secret",
@@ -253,7 +249,6 @@ class Settings:
             include_sources=_bool("LQABR_RESEARCH_INCLUDE_SOURCES",
                                   _cfg(cfg, "note", "include_sources", True)),
 
-            routes=_str("LQABR_RESEARCH_ROUTES", _cfg(cfg, "service", "routes", "all")).lower(),
             route_a2a=_str("LQABR_RESEARCH_ROUTE_A2A",
                            _cfg(cfg, "service", "route_a2a", "/research/a2a")),
             route_campaign_a2a=_str(
@@ -264,7 +259,6 @@ class Settings:
             cors_origins=_list("LQABR_RESEARCH_CORS_ORIGINS",
                                tuple(_cfg(cfg, "service", "cors_origins",
                                           ["http://localhost:5173"]) or ())),
-            port=_int("PORT", _cfg(cfg, "service", "port", 8086)),
 
             use_direct_lead_lookup=_bool(
                 "LQABR_RESEARCH_USE_DIRECT_LEAD_LOOKUP",
@@ -287,10 +281,6 @@ class Settings:
         )
 
     # ------------------------------------------------------------------
-    @property
-    def serves_api(self) -> bool:
-        return self.routes in ("all", "api")
-
     def redacted(self) -> Dict[str, object]:
         """Safe to log at startup: every knob, no secret values."""
         data = {key: value for key, value in self.__dict__.items()

@@ -12,7 +12,7 @@ def test_config_map_supplies_defaults():
     assert s.mcp_tool_read_blog == "get_blog_summary"
     assert s.mcp_tool_write == "upsert_lead_profile"
     assert s.hubspot_context_property == "lead_context"
-    assert s.port == 8086
+    assert s.model_token_secret == "lqabr-anthropic-api-key"
 
 
 def test_environment_overrides_config_map(monkeypatch):
