@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from pathlib import Path
 
@@ -34,23 +33,14 @@ def main(argv: list[str] | None = None) -> int:
         description="Research one lead against one published post and write lead_context.")
     parser.add_argument("--object-id", required=True,
                         help="the HubSpot CONTACT record id")
-    parser.add_argument("--summary-ref-id", required=True,
-                        help="the BLOG POST's record id — the MCP reads the blog "
-                             "store by it. A different record from --object-id.")
+    parser.add_argument("--blog-published-at", required=True,
+                        help="publication timestamp — the MCP's blog store key")
     parser.add_argument("--dry-run", action="store_true",
                         help="compute the note and log the write, but do not send it")
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    configure_logging(settings.log_level, settings.log_file, settings.log_format)
-
-    # For a CLI, stdout is the RESULT DOCUMENT — the caller pipes it to jq.
-    # The service logs to stdout because that is what Cloud Run ingests; here
-    # that would interleave log lines into the JSON and make it unparseable.
-    for handler in logging.getLogger("lqabr.research").handlers:
-        if type(handler) is logging.StreamHandler:      # not the FileHandler
-            handler.setStream(sys.stderr)
-
+    configure_logging(settings.log_level, settings.log_file)
     get_obs(new_run_id(), refresh=True)
 
     if args.dry_run:
@@ -60,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
 
     response = run_research(
         ResearchTarget(object_id=args.object_id,
-                       summary_ref_id=args.summary_ref_id),
+                       blog_published_at=args.blog_published_at),
         settings=settings)
     print(json.dumps(response.model_dump(), indent=2, default=str))
     return 0 if response.status == "completed" else 1

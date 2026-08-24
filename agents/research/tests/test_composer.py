@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from composer import (Composer, build_query, load_system_prompt,
-                      strip_preamble)
+from composer import Composer, build_query, load_system_prompt
 from research_core.search.base import SearchError
 from research_core.settings import get_settings
 
@@ -62,42 +61,3 @@ def test_note_is_truncated_to_the_cap(lead, blog):
     provider = FakeSearch(text="x" * 100, sources=[])
     note = Composer(provider=provider, settings=get_settings(refresh=True)).compose(lead, blog)
     assert len(note.as_hubspot_text(max_chars=10)) == 10
-
-
-# --- the note must be the note, not the model talking about writing it -------
-# Both shapes below came off a real run (2026-08-24, FINANCIAL_SERVICES):
-# tool-use narration between searches, and a research recap followed by an
-# announcement line. Neither belongs on a HubSpot contact.
-
-NOTE = ("Brex is now a wholly owned subsidiary of Capital One after a $5.15 "
-        "billion acquisition, and its core identity is an AI-native finance "
-        "platform combining corporate cards, spend management and banking.")
-
-
-def test_announcement_line_and_rule_are_dropped():
-    raw = ("Brex is a modern AI-native platform. The search did not surface a "
-           "President by that name.\n\n"
-           "Here is the `lead_context` note:\n\n---\n\n") + NOTE
-    assert strip_preamble(raw) == NOTE
-
-
-def test_the_recap_before_the_announcement_goes_too():
-    raw = "A recap paragraph about the search.\n\nHere is the note:\n\n" + NOTE
-    assert "recap paragraph" not in strip_preamble(raw)
-
-
-def test_a_clean_note_is_returned_untouched():
-    assert strip_preamble(NOTE) == NOTE
-
-
-def test_here_is_mid_sentence_is_not_a_marker():
-    """Only a colon at END OF LINE announces a note — prose keeps its words."""
-    raw = ("MoneyLion's pitch is simple: here is your whole financial life in "
-           "one app. That framing is exactly what a governed-AI story respects.")
-    assert strip_preamble(raw) == raw
-
-
-def test_nothing_is_dropped_when_too_little_would_survive():
-    """A short tail means the marker was misread — keep the original."""
-    raw = "Here is the note:\n\nToo short."
-    assert strip_preamble(raw) == raw.strip()

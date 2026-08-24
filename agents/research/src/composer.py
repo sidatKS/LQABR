@@ -7,7 +7,6 @@ answer is bounded — never how the vendor is reached.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -23,37 +22,6 @@ except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
         SearchError, SearchProvider, build_provider)
     from ..packages.research_core.types import (  # type: ignore
         BlogFacts, LeadFacts, ResearchNote)
-
-# A line that announces the note rather than being it: "Here is the
-# lead_context note:", "Below is the note for Brex:". Matched at any line
-# start, not just the first — the model often writes a research recap FIRST
-# and only then announces the note, so the opener is mid-text.
-_PREAMBLE = re.compile(
-    r"^[ \t]*(?:here(?:'s| is)\b|below is\b|i'?ll\b|i have\b|i've\b"
-    r"|let me\b|now let me\b|i'?m going to\b|sure[,!.]|certainly[,!.])"
-    r"[^\n]{0,200}?:[ \t]*$",
-    re.IGNORECASE | re.MULTILINE)
-
-# A markdown rule the model puts between the announcement and the note.
-_LEADING_RULE = re.compile(r"\A(?:\s*(?:-{3,}|\*{3,}|_{3,})\s*\n)+")
-
-
-def strip_preamble(text: str) -> str:
-    """Keep only the note, dropping anything the model said about writing it.
-
-    Takes what follows the LAST "here is the note:" style line, because a
-    recap paragraph before that line is commentary, not context. Guarded: the
-    opener must end in a colon at end-of-line, and at least 80 characters must
-    survive — otherwise the original is returned untouched, so a note that
-    merely contains such a phrase is never truncated.
-    """
-    tail = text
-    matches = list(_PREAMBLE.finditer(text))
-    if matches:
-        tail = text[matches[-1].end():]
-    tail = _LEADING_RULE.sub("", tail.lstrip("\n")).strip()
-    return tail if len(tail) >= 80 else text.strip()
-
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "research.md"
 
@@ -140,7 +108,7 @@ class Composer:
 
         findings = self._provider.research(prompt, system=system)
         note = ResearchNote(
-            text=strip_preamble(findings.text),
+            text=findings.text.strip(),
             sources=list(findings.sources) if settings.include_sources else [],
         )
         self._obs.process.emit("compose_ok", object_id=lead.object_id,
@@ -149,5 +117,4 @@ class Composer:
         return note
 
 
-__all__ = ["Composer", "build_query", "load_system_prompt",
-           "strip_preamble", "SearchError"]
+__all__ = ["Composer", "build_query", "load_system_prompt", "SearchError"]

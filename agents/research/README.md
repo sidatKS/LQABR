@@ -54,36 +54,24 @@ that is configuration, not an import.
 
 ## Run
 
-New machine? Follow `docs/SETUP.md` — clone to first campaign, ~10 minutes.
-
 ```bash
 pip install -r agents/research/requirements.txt
+cp agents/research/.env.example agents/research/.env    # then set ANTHROPIC_API_KEY
 
-cd agents/research
-./setup_env.sh                 # .env from Secret Manager; writes OFF
-                               # ./setup_env.sh --live  when you mean it
-set -a && source .env && set +a
-python3 -m uvicorn service_app:app --port 8086 --app-dir src
+uvicorn service_app:app --port 8086 --app-dir agents/research/src
 ```
-
-Source `.env` FIRST — exporting a variable and then sourcing `.env` overwrites
-it. The HubSpot MCP container must be up (`:8080`) or every run fails at the
-first read.
 
 Headless, one lead:
 
 ```bash
-python3 agents/research/src/agent.py \
-  --object-id 533963448020 --summary-ref-id 330008697562 --dry-run
+python agents/research/src/agent.py \
+  --object-id 533963448020 --blog-published-at 2026-08-27T09:30:00Z --dry-run
 ```
 
-Tests (offline, no credentials) — run from the agent directory, not the repo
-root: from the root, pytest takes the root as rootdir and tries to collect the
-whole repo.
+Tests (offline, no credentials):
 
 ```bash
-cd agents/research
-PYTHONPATH=src:packages python -m pytest -q
+python3 -m pytest -c agents/research/tests/pytest.ini -q
 ```
 
 ## Configuration
@@ -99,5 +87,4 @@ the config map.
 - `docs/DESIGN.md` — why each piece exists, and the decisions behind it
 - `docs/API.md` — the HTTP contract
 - `docs/ENV_VARS.md` — every knob
-- `docs/SETUP.md` — a new machine, from clone to first campaign
 - `docs/RUNBOOK.md` — start it, verify it, read the failures
