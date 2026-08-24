@@ -90,3 +90,54 @@ def test_missing_api_key_is_named(monkeypatch):
     with pytest.raises(SearchError) as excinfo:
         provider.research("prompt")
     assert "ANTHROPIC_API_KEY" in str(excinfo.value)
+
+
+# --- the model credential comes from Secret Manager, like HubSpot's ---------
+
+def _provider(monkeypatch, **env):
+    for key in ("ANTHROPIC_API_KEY", "LQABR_RESEARCH_SECRETS_SOURCE",
+                "LQABR_RESEARCH_GCP_PROJECT", "LQABR_ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return AnthropicWebSearch(settings=get_settings(refresh=True))
+
+
+def test_an_injected_key_wins(monkeypatch):
+    """Tests must never reach a secret store."""
+    provider = _provider(monkeypatch)
+    provider._api_key = "injected"
+    assert provider._resolve_key() == "injected"
+
+
+def test_the_environment_still_overrides(monkeypatch):
+    """ANTHROPIC_API_KEY is the SDK's own convention and the local override."""
+    provider = _provider(monkeypatch, ANTHROPIC_API_KEY="from-env")
+    assert provider._resolve_key() == "from-env"
+
+
+def test_it_falls_back_to_the_named_secret(monkeypatch):
+    """No env var: resolve by NAME, exactly like the HubSpot token."""
+    provider = _provider(monkeypatch, LQABR_RESEARCH_SECRETS_SOURCE="env")
+    # source=env with nothing set makes resolve_secret raise without any
+    # network call — what matters is that the failure names the SECRET, which
+    # proves the lookup was attempted rather than skipped.
+    with pytest.raises(SearchError) as caught:
+        provider._resolve_key()
+    assert "lqabr-anthropic-api-key" in str(caught.value)
+
+
+def test_a_missing_credential_is_a_search_error_not_a_crash(monkeypatch):
+    """The caller reports it against the lead; it must not escape as SecretError."""
+    provider = _provider(monkeypatch, LQABR_RESEARCH_SECRETS_SOURCE="env")
+    with pytest.raises(SearchError):
+        provider._resolve_key()
+
+
+def test_the_secret_name_is_configurable(monkeypatch):
+    provider = _provider(monkeypatch,
+                         LQABR_RESEARCH_MODEL_TOKEN_SECRET="some-other-secret",
+                         LQABR_RESEARCH_SECRETS_SOURCE="env")
+    with pytest.raises(SearchError) as caught:
+        provider._resolve_key()
+    assert "some-other-secret" in str(caught.value)

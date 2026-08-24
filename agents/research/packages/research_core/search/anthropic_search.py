@@ -17,6 +17,7 @@ import time
 from typing import Any, List, Optional
 
 from ..obs import Observability, get_obs
+from ..secrets import SecretError, resolve_secret
 from ..settings import Settings, get_settings
 from ..types import ResearchFindings
 from .base import SearchError
@@ -82,13 +83,39 @@ class AnthropicWebSearch:
             raise SearchError(
                 "the anthropic SDK is not installed — add `anthropic` to "
                 "agents/research/requirements.txt") from exc
-        key = self._api_key or os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        if not key:
-            raise SearchError("ANTHROPIC_API_KEY is not set — the research pass "
-                              "cannot run without a model credential")
         self._client = anthropic.Anthropic(
-            api_key=key, timeout=float(self._settings.search_timeout_seconds))
+            api_key=self._resolve_key(),
+            timeout=float(self._settings.search_timeout_seconds))
         return self._client
+
+    def _resolve_key(self) -> str:
+        """The model credential, from Secret Manager — same path as HubSpot's.
+
+        Order: an injected key (tests), then ANTHROPIC_API_KEY, then Secret
+        Manager by name. The environment variable stays supported because it is
+        the SDK's own convention and the fastest local override, but it is
+        logged when used, so a run on a stale local key is never silent.
+        """
+        if self._api_key:
+            return self._api_key
+
+        override = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if override:
+            self._obs.process.emit(
+                "secret_resolved", secret=self._settings.model_token_secret,
+                source="env:ANTHROPIC_API_KEY",
+                note="environment override — Secret Manager was not consulted")
+            return override
+
+        try:
+            return resolve_secret(self._settings.model_token_secret,
+                                  settings=self._settings, obs=self._obs)
+        except SecretError as exc:
+            # A missing model credential is a research failure with a reason,
+            # not a stack trace: the caller reports it against the lead.
+            raise SearchError(
+                f"no model credential: {exc}. Set ANTHROPIC_API_KEY, or give "
+                f"this process access to the secret.") from exc
 
     def _tool(self) -> dict:
         tool: dict = {"type": self._tool_type, "name": "web_search",
@@ -109,6 +136,7 @@ class AnthropicWebSearch:
         to understand. Anything unrecognised is skipped, never fatal.
         """
         texts: List[str] = []
+        all_texts: List[str] = []
         sources: List[str] = []
         searches = 0
 
@@ -123,17 +151,22 @@ class AnthropicWebSearch:
                 value = _get(block, "text", "") or ""
                 if value:
                     texts.append(value)
+                    all_texts.append(value)
                 for citation in (_get(block, "citations", []) or []):
                     url = _get(citation, "url", "") or ""
                     if url and url not in sources:
                         sources.append(url)
             elif kind in ("server_tool_use", "web_search_tool_use"):
                 searches += 1
+                # Anything said BEFORE a search is the model narrating its own
+                # tool use ("I'll search for ..."), not the note. Drop it.
+                texts.clear()
             elif kind == "web_search_tool_result":
                 # Some SDK versions emit only the RESULT block, so counting
                 # tool_use alone reported 0 searches on a run that clearly made
                 # them. Count results too; the pair is halved above.
                 searches += 1
+                texts.clear()
                 for item in (_get(block, "content", []) or []):
                     url = _get(item, "url", "") or ""
                     if url and url not in sources:
@@ -143,7 +176,12 @@ class AnthropicWebSearch:
         # Joined with NO separator: the API splits one sentence into several
         # text blocks wherever a citation attaches, so a blank-line join
         # injected breaks mid-sentence and shredded the prose.
-        return "".join(texts).strip(), sources, searches
+        #
+        # `texts` holds only the blocks after the LAST search, which is the
+        # model's actual answer. `all_texts` is the fallback for the odd
+        # response that ends on a search block and would otherwise be empty.
+        return ("".join(texts).strip() or "".join(all_texts).strip(),
+                sources, searches)
 
     def research(self, prompt: str, *, system: str = "") -> ResearchFindings:
         """One grounded pass. Raises SearchError; never returns a fabricated note."""
@@ -154,7 +192,6 @@ class AnthropicWebSearch:
         payload = {
             "model": model,
             "max_tokens": int(settings.max_tokens),
-            "temperature": float(settings.temperature),
             "messages": [{"role": "user", "content": prompt}],
             "tools": [self._tool()],
         }

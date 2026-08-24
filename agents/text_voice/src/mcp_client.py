@@ -61,8 +61,8 @@ _KEY_TO_FIELD = {
     "company_name": "company_name",
     "annual_revenue_m": "annual_revenue",
     "annual_revenue": "annual_revenue",
-    "contact_hs_id": "contact_id",
-    "contact_id": "contact_id",
+    "contact_hs_id": "object_id",
+    "contact_id": "object_id",
     "company_hs_id": "hubspot_company_id",
     "lqabr_voice_status": "voice_status",
     "voice_status": "voice_status",
@@ -266,6 +266,7 @@ class StepFiveMCPClient:
         return None
 
     def get_lead(self, object_id: str) -> Optional[VoiceLead]:
+        """One lead by HubSpot object id; None when no such contact exists."""
         lead, _ = self.get_lead_with_extras(object_id)
         return lead
 
@@ -348,7 +349,7 @@ class StepFiveMCPClient:
                            f"of {tuple(_OUTCOMES)}")
         voice_status, events = _OUTCOMES[outcome]
 
-        result: Dict[str, Any] = {"contact_id": contact_id, "outcome": outcome,
+        result: Dict[str, Any] = {"object_id": object_id, "outcome": outcome,
                                   "events": [], "failures": []}
         if current is None:
             try:
