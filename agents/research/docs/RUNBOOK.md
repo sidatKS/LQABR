@@ -12,9 +12,14 @@ Give it ~10 seconds: it imports the SDK and runs MCP tool discovery before it
 answers. A health check earlier than that reports "down" on an agent that is
 merely still booting.
 
-Prerequisite: the **HubSpot MCP container must be up** on `:8091`
-(`bash mcp/run.sh`). The agent starts without it — `startup_check: warn` — but
-every run will fail at the first read.
+Prerequisite: the **HubSpot MCP container must be up**. In practice it runs on
+`:8080` (`tne736/lqabr-mcp-server:latest`) — note the code *default* is `:8091`,
+so the URL is set explicitly in `.env`. `setup_env.sh` writes `:8080`; if you
+build `.env` by hand, check `mcp.url` in `/health` matches where the container
+actually is. The agent starts without it — `mcp_startup_check: warn` — but
+every run then fails at the first read.
+
+Starting the container from scratch: see `SETUP.md`.
 
 ## Verify
 
