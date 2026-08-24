@@ -37,8 +37,7 @@ gateway:
     # anyone who learns the URL can inject routing triggers.
     # Secret: HUBSPOT_APP_SECRET (private-app client secret).
     signature:
-      enabled: false   # LOCAL DEV (session 2026-08-21): no HUBSPOT_APP_SECRET yet.
-                       # Re-enable with the private-app client secret before prod.
+      enabled: true
       header: X-HubSpot-Signature-v3
       timestamp_header: X-HubSpot-Request-Timestamp
       # HubSpot rejects/replays outside 5 minutes; match it.
@@ -61,7 +60,7 @@ gateway:
 # ---------------------------------------------------------------------
 vapi:
   report:
-    enabled: false   # MVP: no gateway relay of Vapi reports
+    enabled: true
     # Must match the assistant's Server URL in the Vapi dashboard, which is
     # {GATEWAY_BASE_URL}/call-report. Confirmed against txtv's OpenAPI
     # (POST /lead, POST /call-report, GET /healthz) on 2026-08-04.
@@ -101,8 +100,8 @@ protocols:
 # Rev 3 FR-7. Four streams, collected to the runtime's own logging standard.
 audit:
   level: standard                 # minimal | standard | verbose
-  sink: file                      # LOCAL DEV: native file log under logs/gateway/
-  file_path: ./logs/gateway/gateway.jsonl # relative to CWD -> run uvicorn from repo root
+  sink: stdout                    # stdout -> Cloud Logging; "file" for local dev
+  file_path: ./logs/gateway.jsonl # used only when sink: file
   streams:
     audit: true                   # network activity: where from, when, which endpoint
     process: true                 # the routing decision + property/value behind it
@@ -177,13 +176,9 @@ dispatch:
 # back to Step-1 behaviour. Token comes from HUBSPOT_PRIVATE_APP_TOKEN only.
 # =====================================================================
 audience:
-  enabled: true
+  enabled: false
   industry_property: blog_industry   # Ticket property naming the target industry
   blog_route_id: R-blog-summary      # which route triggers resolution
   page_size: 100                     # HubSpot search page size (max 100)
   max_audience: 1000                 # ceiling on leads per post (bounded fan-out)
-  # Per HubSpot call. A full resolution (ticket + paginated company/contact
-  # searches) can exceed HubSpot's ~5s delivery budget; the redelivery is
-  # absorbed by deterministic trigger ids + idempotent agents, not by this
-  # timeout.
-  timeout_seconds: 8
+  timeout_seconds: 8                 # per HubSpot call; within the 5s ingress budget
