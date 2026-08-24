@@ -1,33 +1,20 @@
 """The email agent's send path — trigger in, one email per lead out.
 
-    run_campaign(object_id)
-      ├─ start_run        step 3/4  bind object_id -> run_id, acquire the HubSpot bearer
-      ├─ load_leads       step 5    object_id -> lead profiles (+ lead_context), via the MCP
-      │     for each lead:
-      ├─ construct_email  step 6    the skill + ONE model call
-      └─ send_one         step 7    Mailgun, tagged with the lead's object_id
+    run_campaign -> start_run -> load_leads -> [per lead] construct_email -> send_one
 
-No run state. Every message carries ``lqabr_object_id`` as a Mailgun user
-variable; Mailgun echoes it on every event the message ever produces, so the
-inbound path (``events.py``) attributes each event to its HubSpot record with
-no lookup and no stored table — correct on a container that scales to zero
-between the send and the event.
+No run state: every message carries ``lqabr_object_id`` as a Mailgun variable,
+echoed back on every event it produces, so ``events.py`` attributes events with
+no lookup — correct on a container that scales to zero between the two.
 
-Two outcomes never advance a lead silently:
+NEVER SEND TWICE, because a duplicate email cannot be taken back. Three guards:
+the batch is de-duplicated by object id; SENT is claimed BEFORE the model call
+(``work_lead``) and released on any path that then fails to send; and the send
+itself is NOT retried. The claim goes before CONSTRUCTION, not before the send —
+the model call can run over a minute, and a caller that times out and retries in
+that window is exactly how one lead received three different emails.
 
-  * no ``lead_context``    -> left at its current status and reported in
-                             ``unresolved`` as ``lead-context:`` — research has
-                             not reached it yet; a later run will pick it up.
-  * Mailgun refuses a send -> written back FAILED at once; no event is coming
-                             for an email that never left.
-
-Every HubSpot hop goes through the central MCP at the project root; the agent
-makes no direct HubSpot call.
-
-This module also owns the run's LOGGING (the ``log_*`` helpers below). They are
-defined once here and imported by ``events.py``, ``service_app.py`` and
-``email_agent.py`` — the run context is minted on this path, so this is where
-it lives.
+Every HubSpot hop goes through the central MCP. This module also owns the run's
+logging (``log_*``), imported by events.py / service_app.py / email_agent.py.
 """
 
 from __future__ import annotations
@@ -43,7 +30,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from lqabr_core.crm import CRMError
 from lqabr_core.mailgun import MailgunClient, MailgunError
@@ -63,48 +50,33 @@ from mcp.hubspot.server import MCPSession, build_session  # noqa: E402
 MODEL = os.environ.get("LQABR_EMAIL_MODEL", "gemini-2.0-flash")
 DEFAULT_BATCH_LIMIT = int(os.environ.get("LQABR_EMAIL_BATCH_LIMIT", "25"))
 #: Above the flat default so two leads drafting from the same instructions do
-#: not converge on identical wording; DRAFTING_RULES constrains content.
+#: not converge on identical wording.
 CONSTRUCTION_TEMPERATURE = float(os.environ.get("LQABR_EMAIL_TEMPERATURE", "1.0"))
-#: A lead already at one of these has been outreached — a redelivered trigger
-#: (retry, duplicate webhook, re-fired workflow) must not email it twice.
+#: Already outreached — a redelivered trigger must not email these twice.
 ALREADY_SENT_STATUSES = frozenset({"SENT", "DELIVERED", "OPENED"})
-#: The HubSpot ``lqabr_email_status`` value for "not workable" — what this path
-#: writes when a send is refused or a lead cannot be read/constructed. The full
-#: Mailgun-event -> status translation is ``events.HUBSPOT_EMAIL_STATUS``; every
-#: terminal there collapses to this same value.
+#: "Not workable". Retryable — a later campaign works the lead again.
 FAILED_STATUS = "FAILED"
 MAILGUN_SEND_ENDPOINT = "mailgun:/messages"
 
-#: ``model_fn(model_name, prompt) -> (text, usage)`` — injectable in tests.
-ModelFn = Callable[[str, str], Tuple[str, Dict[str, Any]]]
-
-
 # ------------------------------------------------------------------ logging
-# Four streams, one JSON line per event, every line stamped with object_id +
-# run_id so a whole run greps back together:
-#     system_log   container activity (no run in flight)
-#     process_log  what the run decided and why        (step=, event=)
-#     audit_log    every boundary hop — HubSpot, Mailgun, inbound webhooks
-#     model_log    the one model call per lead (content only when enabled)
-# ``step=`` values are join keys shared with the central MCP (it logs reads as
-# 5 and writes as 9), so they stay stable: 3 run start · 4 bearer · 5 profile
-# · 6 construct · 7 send · 8 event in · 9 write-back · 10 hand-off.
+# Four streams (system / process / audit / model), one JSON line each, every
+# line stamped object_id + run_id so a whole run greps back together.
+# ``step=`` values are join keys shared with the central MCP — do not renumber.
 AGENT_NAME = "email_agent"
 _LOG = logging.getLogger("lqabr.email")
 
 
 @dataclass(frozen=True)
 class RunContext:
-    """The correlation token: the trigger's HubSpot id + a per-run id. The
-    run_id rides on the Mailgun message so the returning event logs under the
-    same pair."""
+    """The correlation token. run_id rides on the Mailgun message, so the
+    event returning days later logs under the same pair."""
 
     object_id: str
     run_id: str
 
 
 def configure_logging(level: int = logging.INFO) -> None:
-    """JSON lines on stdout (Cloud Run reads stdout). Idempotent."""
+    """JSON lines on stdout. Idempotent."""
     _LOG.setLevel(level)
     if not _LOG.handlers:
         handler = logging.StreamHandler()
@@ -137,7 +109,7 @@ def log_audit(ctx: Optional[RunContext], *, direction: str, endpoint: str,
               step: Optional[int] = None, method: str = "",
               status_code: Optional[int] = None, bearer: Optional[str] = None,
               **fields: Any) -> None:
-    """A boundary hop. The bearer is logged as a fingerprint, never the value."""
+    """A boundary hop. The bearer is fingerprinted, never logged."""
     fingerprint = hashlib.sha256(bearer.encode()).hexdigest()[:12] if bearer else "none"
     _emit("audit_log", ctx, step=step, direction=direction, endpoint=endpoint,
           method=method, status_code=status_code, bearer_fingerprint=fingerprint, **fields)
@@ -152,8 +124,8 @@ def log_model(ctx: Optional[RunContext], *, model_name: str, step: int = 6,
               input_tokens: Optional[int] = None, output_tokens: Optional[int] = None,
               prompt: Optional[str] = None, completion: Optional[str] = None,
               **fields: Any) -> None:
-    """The model call. Prompt/completion carry prospect PII and are dropped
-    unless LQABR_EMAIL_LOG_MODEL_CONTENT is explicitly on."""
+    """Prompt/completion are prospect PII — dropped unless
+    LQABR_EMAIL_LOG_MODEL_CONTENT is explicitly on."""
     if model_content_logging_enabled():
         fields.update(prompt=prompt, completion=completion, content_logged=True)
     else:
@@ -163,8 +135,8 @@ def log_model(ctx: Optional[RunContext], *, model_name: str, step: int = 6,
 
 
 def bind_run(object_id: str, run_id: Optional[str] = None) -> RunContext:
-    """Step 3 — mint the run context. ``object_id`` is mandatory: a run cannot
-    be logged, and its events cannot be attributed, without it."""
+    """Mint the run context. object_id is mandatory — without it an event
+    cannot be attributed back to a lead."""
     if not object_id:
         raise ValueError("object_id is required — a run cannot be logged without it")
     ctx = RunContext(object_id=str(object_id), run_id=run_id or uuid.uuid4().hex)
@@ -173,8 +145,8 @@ def bind_run(object_id: str, run_id: Optional[str] = None) -> RunContext:
 
 
 class MCPObservability:
-    """The sink handed to ``mcp/hubspot`` (which is shared and cannot import
-    agent code) so the MCP's own hops land on these streams under the run."""
+    """Sink handed to mcp/hubspot — it is shared and cannot import agent
+    code, so it logs through this instead."""
 
     def __init__(self, ctx: Optional[RunContext] = None) -> None:
         self.ctx = ctx
@@ -188,9 +160,8 @@ class MCPObservability:
 
 # ------------------------------------------------------------------- skills
 def _load_skills_package():
-    """``skills/`` is a sibling of ``src/`` and ADK only puts ``src/`` on the
-    path. Load it by file location under a private module name so it can never
-    collide with another agent's ``skills/``."""
+    """Loaded by file path under a private name so it can never collide with
+    another agent's ``skills/``. ADK only puts ``src/`` on the path."""
     if "lqabr_email_skills" in sys.modules:
         return sys.modules["lqabr_email_skills"]
     path = Path(__file__).resolve().parents[1] / "skills" / "__init__.py"
@@ -208,17 +179,15 @@ SkillError = skills.SkillError
 
 
 class MissingLeadContext(RuntimeError):
-    """A lead with no research context yet. Not an error with the lead — the
-    run arrived before the research agent wrote its ``lead_context``, so the
-    lead is left at its current status for a later campaign rather than
-    emailed from un-framed copy or marked failed."""
+    """No research context yet. NOT an error with the lead — the run arrived
+    before the research agent wrote it, so the lead is left where it is."""
 
 
 # ----------------------------------------------------------------- step 3/4
 def start_run(object_id: str, run_id: Optional[str] = None,
               session: Optional[MCPSession] = None) -> Tuple[RunContext, MCPSession]:
-    """Bind the run and open an authenticated MCP session. The bearer is
-    acquired here so a credential problem fails before any email is built."""
+    """Bind the run, open an authenticated MCP session. Bearer acquired here
+    so a credential problem fails before any email is built."""
     ctx = bind_run(object_id, run_id)
     mcp_session = session or build_session(obs=MCPObservability(ctx))
     mcp_session.acquire_bearer()
@@ -229,8 +198,8 @@ def start_run(object_id: str, run_id: Optional[str] = None,
 # ------------------------------------------------------------------- step 5
 def _set_email_status(ctx: RunContext, mcp_session: MCPSession, object_id: str,
                       status: str, *, step: int, reason: str = "") -> bool:
-    """Write ``lqabr_email_status`` (+ last-modified stamp) for one lead.
-    Best-effort: a failed write is logged and reported False, never raised."""
+    """Write lqabr_email_status + timestamp. Best-effort: a failed write
+    returns False, never raises."""
     props: Dict[str, Any] = {"lqabr_email_status": status}
     lm_prop = last_modified_email_property()
     if lm_prop:
@@ -248,14 +217,11 @@ def _set_email_status(ctx: RunContext, mcp_session: MCPSession, object_id: str,
 
 def load_leads(ctx: RunContext, mcp_session: MCPSession, object_id: str, limit: int, *,
                dry_run: bool = False) -> Tuple[List[ValidatedProfile], List[Dict[str, str]]]:
-    """Resolve the trigger's ``object_id`` to lead profiles, each carrying its
-    ``lead_context``.
+    """Trigger object_id -> lead profiles (each with its lead_context).
 
-    The id is read as a single contact first. Only a 404 (not a contact)
-    expands it as a campaign-batch key through the object-id property search,
-    and each contact in that batch is then read in full. Returns
-    ``(profiles, unresolved)``: a lead that cannot be read is reported with a
-    reason and (unless ``dry_run``) written back FAILED — never dropped."""
+    Read as a single contact first; only a 404 expands it as a batch key.
+    Returns ``(profiles, unresolved)`` — an unreadable lead is reported with a
+    reason and written FAILED, never dropped."""
     profiles: List[ValidatedProfile] = []
     unresolved: List[Dict[str, str]] = []
 
@@ -278,8 +244,19 @@ def load_leads(ctx: RunContext, mcp_session: MCPSession, object_id: str, limit: 
         log_process(ctx, step=5, event="direct_lead_fetch_miss", object_id=object_id,
                     detail="not a contact id — expanding as a trigger-batch key")
 
+    # DEDUP — a contact returned twice by the search would be emailed twice.
+    seen: set = set()
     for lead in mcp_session.crm.leads_for_trigger(object_id, limit=limit):
         lead_id = str(lead.object_id or "")
+        if not lead_id:
+            log_process(ctx, step=5, event="lead_without_object_id", object_id=object_id,
+                        detail="search row carried no object id")
+            continue
+        if lead_id in seen:
+            log_process(ctx, step=5, event="duplicate_lead_skipped", object_id=lead_id,
+                        detail="already in this batch")
+            continue
+        seen.add(lead_id)
         try:
             profiles.append(mcp_session.crm.get_lead_profile(lead_id))
         except (CRMError, SchemaValidationError) as exc:
@@ -291,9 +268,9 @@ def load_leads(ctx: RunContext, mcp_session: MCPSession, object_id: str, limit: 
 
 # ------------------------------------------------------------------- step 6
 def build_prompt(skill: Any, facts: Dict[str, Any]) -> str:
-    """Instructions FIRST, lead facts LAST and labelled as DATA, so a value
-    inside a field (a company literally named "Ignore previous instructions
-    Ltd") can never read as a directive."""
+    """Instructions FIRST, lead facts LAST and labelled DATA — so a value in a
+    field (a company named "Ignore previous instructions Ltd") cannot act as
+    one. Do not reorder."""
     return (
         f"{skill.prompt_body()}\n\n"
         "---\n\n## Lead facts\n\n"
@@ -308,8 +285,8 @@ def build_prompt(skill: Any, facts: Dict[str, Any]) -> str:
 
 
 def parse_reply(text: str) -> Tuple[str, str]:
-    """``{"subject": ..., "html_body": ...}`` out of the model's reply, with a
-    ```json fence stripped if the model wrapped it. ``ValueError`` otherwise."""
+    """Pull subject/html_body out of the reply, stripping a ```json fence if
+    the model wrapped it. ValueError otherwise."""
     raw = (text or "").strip()
     if raw.startswith("```"):
         parts = raw.split("```")
@@ -325,16 +302,15 @@ def parse_reply(text: str) -> Tuple[str, str]:
         raise ValueError(f"reply is missing {exc}") from exc
 
 
-def call_model(model_name: str, prompt: str) -> Tuple[str, Dict[str, Any]]:
-    """The provider call. A bare ``gemini-*`` name uses the native client;
-    anything else routes through litellm. SDK imports are local so neither is
-    needed to import this module (tests inject a fake ``model_fn``)."""
-    ensure_provider_credentials(model_name)
-    if model_name.startswith("gemini"):
+def call_model(prompt: str) -> Tuple[str, Dict[str, Any]]:
+    """The provider call. ``gemini-*`` uses the native client, anything else
+    litellm. SDK imports are local so neither is needed to import this."""
+    ensure_provider_credentials(MODEL)
+    if MODEL.startswith("gemini"):
         from google import genai  # type: ignore
 
         response = genai.Client().models.generate_content(
-            model=model_name, contents=prompt,
+            model=MODEL, contents=prompt,
             config={"temperature": CONSTRUCTION_TEMPERATURE})
         usage = getattr(response, "usage_metadata", None)
         return (response.text or ""), {
@@ -345,7 +321,7 @@ def call_model(model_name: str, prompt: str) -> Tuple[str, Dict[str, Any]]:
     import litellm  # type: ignore
 
     kwargs: Dict[str, Any] = {
-        "model": model_name,
+        "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": CONSTRUCTION_TEMPERATURE,
         "drop_params": True,  # strip params the target model does not accept
@@ -364,19 +340,13 @@ def call_model(model_name: str, prompt: str) -> Tuple[str, Dict[str, Any]]:
     }
 
 
-def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "", *,
-                    model_fn: Optional[ModelFn] = None,
-                    model_name: Optional[str] = None) -> Tuple[str, str, str]:
-    """Draft the email for one lead: gate on lead_context, select the skill,
-    make the ONE model call, parse, finalise in code. Returns
-    ``(subject, html_body, skill_name)``.
+def construct_email(ctx: RunContext, profile: ValidatedProfile,
+                    cta_url: str = "") -> Tuple[str, str, str]:
+    """Gate on lead_context, select the skill, ONE model call, parse, finalise.
 
-    Raises ``MissingLeadContext`` when the lead has no research context and
-    ``SkillError`` when the model is unreachable or its reply is unusable —
-    there is no template fallback, so the caller flags the lead rather than
-    sending un-approved copy."""
-    model_name = model_name or MODEL
-    model_fn = model_fn or call_model
+    Raises MissingLeadContext (no research yet) or SkillError (model
+    unreachable / reply unusable). There is NO template fallback — the caller
+    flags the lead rather than sending un-approved copy."""
     object_id = profile.object_id
 
     # --- gate
@@ -399,20 +369,20 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
 
     # --- the one model call
     prompt = build_prompt(skill, skills.lead_facts(context))
-    provider = "google-genai" if model_name.startswith("gemini") else "litellm"
+    provider = "google-genai" if MODEL.startswith("gemini") else "litellm"
     log_process(ctx, step=6, event="model_call_started", object_id=object_id,
-                model=model_name, provider=provider, temperature=CONSTRUCTION_TEMPERATURE,
+                model=MODEL, provider=provider, temperature=CONSTRUCTION_TEMPERATURE,
                 prompt_chars=len(prompt))
     started = time.perf_counter()
     try:
-        text, usage = model_fn(model_name, prompt)
+        text, usage = call_model(prompt)
     except Exception as exc:  # noqa: BLE001 — surfaced as an unresolved lead
         log_process(ctx, step=6, event="model_call_failed", object_id=object_id,
-                    model=model_name, error=str(exc),
+                    model=MODEL, error=str(exc),
                     duration_ms=round((time.perf_counter() - started) * 1000, 1))
-        raise SkillError(f"model call failed ({model_name}): {exc}") from exc
+        raise SkillError(f"model call failed ({MODEL}): {exc}") from exc
     usage = usage or {}
-    log_model(ctx, model_name=model_name, provider=provider,
+    log_model(ctx, model_name=MODEL, provider=provider,
               input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
               duration_ms=round((time.perf_counter() - started) * 1000, 1),
               prompt=prompt, completion=text)
@@ -422,9 +392,9 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
     except (ValueError, TypeError):
         log_process(ctx, step=6, event="model_output_unusable", object_id=object_id)
         raise SkillError(
-            f'model {model_name} replied, but not as {{"subject": ..., "html_body": ...}} JSON')
-    # --- finalise in code, never asked of the model: cta/sender substituted,
-    #     any model-written opt-out stripped, the one compliant footer appended.
+            f'model {MODEL} replied, but not as {{"subject": ..., "html_body": ...}} JSON')
+    # Finalise in code, never asked of the model: a model-written opt-out link
+    # is a compliance problem, so ours is the only one that ships.
     subject, html_body = skills.finalise(subject, body, context)
     if not subject.strip() or not html_body.strip():
         raise SkillError(f"skill '{skill.name}': draft was empty after post-processing")
@@ -437,23 +407,29 @@ def construct_email(ctx: RunContext, profile: ValidatedProfile, cta_url: str = "
 def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile,
              subject: str, html_body: str, skill_name: str,
              mailgun: Optional[Any] = None, dry_run: bool = False) -> Dict[str, Any]:
-    """Send one email through Mailgun, tagged with the lead's object id so the
-    returning event names its own lead. A rejected send does not raise — it is
-    written back as a terminal status and reported."""
+    """Send one email, tagged with the lead's object id so the returning event
+    names its own lead. A rejected send is written back FAILED, never raised."""
     if dry_run:
         log_process(ctx, step=7, event="send_skipped_dry_run",
                     object_id=profile.object_id, to=profile.email_id, skill=skill_name)
         return {"status": "dry-run", "object_id": profile.object_id, "to": profile.email_id,
                 "subject": subject, "skill": skill_name}
 
-    client = mailgun or MailgunClient()
+    # The lead was already claimed SENT by work_lead, before construction —
+    # that is where the long model call opens a re-trigger window. Nothing to
+    # claim here; the failure paths below release it.
+    #
+    # max_retries=1 — NEVER RETRY A SEND. A timeout or 5xx means "no reply",
+    # not "not sent": Mailgun may have accepted it and answered late. Retrying
+    # that ambiguity is what delivered one lead 2-3 copies. A failed send goes
+    # FAILED and the next trigger re-sends, guarded by ALREADY_SENT_STATUSES.
+    client = mailgun or MailgunClient(max_retries=1)
     try:
         sent = client.send_email(
             to=profile.email_id, subject=subject, html=html_body,
             tags=["lqabr", "email-outreach", f"trigger-{ctx.object_id}"],
-            # lqabr_object_id IS the lead: Mailgun echoes it on every event so
-            # the inbound path names the HubSpot record with no lookup. run_id
-            # rides along only to keep that event's logs correlated.
+            # lqabr_object_id IS the lead — echoed on every event, which is
+            # what replaces run state. run_id only keeps the logs correlated.
             variables={"lqabr_object_id": profile.object_id, "lqabr_run_id": ctx.run_id},
         )
     except MailgunError as exc:
@@ -461,48 +437,66 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
                   method="POST", status_code=None, error=str(exc))
         log_process(ctx, step=7, event="send_rejected", object_id=profile.object_id,
                     reason=str(exc))
+        # Release the claim: FAILED is retryable, so a later campaign works it.
         _set_email_status(ctx, mcp_session, profile.object_id, FAILED_STATUS, step=7,
                           reason="send rejected by Mailgun")
         return {"status": "rejected", "object_id": profile.object_id, "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        # Claimed SENT but nothing went out — the claim MUST be released before
+        # this propagates, or the lead is silently never contacted again.
+        log_process(ctx, step=7, event="send_failed_unexpected", object_id=profile.object_id,
+                    error=str(exc), detail="claim released before re-raising")
+        _set_email_status(ctx, mcp_session, profile.object_id, FAILED_STATUS, step=7,
+                          reason="unexpected send failure")
+        raise
 
     message_id = str(sent.get("id") or "")
     log_audit(ctx, step=7, direction="outbound", endpoint=MAILGUN_SEND_ENDPOINT,
               method="POST", status_code=200, message_id=message_id)
 
-    result: Dict[str, Any] = {"status": "sent", "message_id": message_id,
-                              "object_id": profile.object_id, "to": profile.email_id,
-                              "skill": skill_name}
-    # Mark SENT so a redelivered trigger does not email the lead twice.
-    try:
-        mcp_session.crm.mark_sent(profile.object_id)
-    except (CRMError, SchemaValidationError) as exc:
-        log_process(ctx, step=7, event="sent_status_writeback_failed",
-                    object_id=profile.object_id, error=str(exc))
-        result["warning"] = f"crm-error: SENT status writeback failed: {exc}"
-    return result
+    # No status write here — SENT was claimed before construction.
+    return {"status": "sent", "message_id": message_id,
+            "object_id": profile.object_id, "to": profile.email_id,
+            "skill": skill_name}
 
 
 # ------------------------------------------------------------- the campaign
 def work_lead(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile, *,
-              cta_url: str = "", mailgun: Optional[Any] = None, dry_run: bool = False,
-              model_fn: Optional[ModelFn] = None
+              cta_url: str = "", mailgun: Optional[Any] = None, dry_run: bool = False
               ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, str]]]:
-    """Steps 6 + 7 for ONE lead. Returns ``(result, unresolved)``; exactly one
-    of the two is set."""
+    """Construct + send for ONE lead. Returns ``(result, unresolved)`` —
+    exactly one is set."""
     lead_id = profile.object_id
+    previous_status = profile.email_status
 
-    if profile.email_status in ALREADY_SENT_STATUSES:
+    if previous_status in ALREADY_SENT_STATUSES:
         log_process(ctx, step=7, event="send_skipped_already_sent",
-                    object_id=lead_id, email_status=profile.email_status)
+                    object_id=lead_id, email_status=previous_status)
         return {"status": "skipped-already-sent", "object_id": lead_id,
-                "email_status": profile.email_status}, None
+                "email_status": previous_status}, None
+
+    # CLAIM BEFORE CONSTRUCTION, not before the send. construct_email is a model
+    # call that can take well over a minute; a caller that times out and retries
+    # inside that window starts a second run, which reads the lead, still sees
+    # PENDING, and sends a second email. Claiming here means the retry's own
+    # profile read returns SENT and it skips above. Every path that then fails to
+    # send releases the claim.
+    claimed = False
+    if not dry_run:
+        claimed = _set_email_status(ctx, mcp_session, lead_id, "SENT", step=7,
+                                    reason="claimed before construction")
+        if not claimed:
+            log_process(ctx, step=7, event="send_claim_failed", object_id=lead_id,
+                        detail="proceeding unguarded — a concurrent trigger could double-send")
 
     try:
-        subject, html_body, skill_name = construct_email(
-            ctx, profile, cta_url=cta_url, model_fn=model_fn)
+        subject, html_body, skill_name = construct_email(ctx, profile, cta_url=cta_url)
     except MissingLeadContext as exc:
-        # Left where it is, NOT marked FAILED: the lead is fine, the run was
-        # premature. A later campaign picks it up once research lands.
+        # NOT FAILED: the lead is fine, the run was premature. Put the status
+        # back exactly where it was so a later campaign sees it untouched.
+        if claimed:
+            _set_email_status(ctx, mcp_session, lead_id, previous_status or "PENDING",
+                              step=5, reason="claim released — awaiting research")
         log_process(ctx, step=5, event="lead_unresolved", object_id=lead_id,
                     reason=f"lead-context: {exc}", status_written=False)
         return None, {"object_id": lead_id, "reason": f"lead-context: {exc}"}
@@ -521,19 +515,17 @@ def work_lead(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfil
 def run_campaign(object_id: str, limit: int = 0, dry_run: bool = False,
                  run_id: Optional[str] = None,
                  session: Optional[MCPSession] = None,
-                 mailgun: Optional[Any] = None,
-                 model_fn: Optional[ModelFn] = None) -> Dict[str, Any]:
-    """The trigger entry point: bind the run, resolve the object id to leads,
-    and work each ONE AT A TIME. Nothing is dropped silently — every lead that
-    could not be emailed is in ``unresolved`` with a reason."""
+                 mailgun: Optional[Any] = None) -> Dict[str, Any]:
+    """The trigger entry point. Works leads ONE AT A TIME; every lead that was
+    not emailed is in ``unresolved`` with a reason, never dropped."""
     ctx, mcp_session = start_run(object_id, run_id, session)
     profiles, unresolved = load_leads(ctx, mcp_session, object_id,
                                       limit or DEFAULT_BATCH_LIMIT, dry_run=dry_run)
 
     results: List[Dict[str, Any]] = []
     for profile in profiles:
-        result, problem = work_lead(ctx, mcp_session, profile, mailgun=mailgun,
-                                    dry_run=dry_run, model_fn=model_fn)
+        result, problem = work_lead(ctx, mcp_session, profile,
+                                    mailgun=mailgun, dry_run=dry_run)
         if result is not None:
             results.append(result)
         if problem is not None:
