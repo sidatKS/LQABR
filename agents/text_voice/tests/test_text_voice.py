@@ -52,9 +52,9 @@ class FakeMCP:
             "voice_status_written_ms": self.voice_status_written_ms_result,
         }
 
-    def upsert_lead(self, object_id, voice_status=None, probability=None,
+    def upsert_lead(self, contact_id, voice_status=None, probability=None,
                     outcome=None, current=None):
-        self.calls.append(("upsert_lead", object_id, voice_status, probability,
+        self.calls.append(("upsert_lead", contact_id, voice_status, probability,
                            outcome, current))
         if self.upsert_results:
             result = self.upsert_results.pop(0)
@@ -63,8 +63,8 @@ class FakeMCP:
             return result
         return {"status": "updated", "object_id": object_id}
 
-    def record_call_outcome(self, object_id, outcome, detail=None, current=None):
-        self.calls.append(("record_call_outcome", object_id, outcome, detail))
+    def record_call_outcome(self, contact_id, outcome, detail=None, current=None):
+        self.calls.append(("record_call_outcome", contact_id, outcome, detail))
         if self.record_call_outcome_error:
             raise self.record_call_outcome_error
         return self.record_call_outcome_result
@@ -542,9 +542,9 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
                             "classified_by": "model"})
     monkeypatch.setattr(tv_agent, "_object_id_for_report", lambda report: "123")
     monkeypatch.setattr(tv_agent, "push_to_mcp",
-                        lambda object_id, outcome, summary="", recording_url="",
+                        lambda contact_id, outcome, summary="", recording_url="",
                                current=None:
-                            {"status": "ok", "object_id": object_id, "probability": 60,
+                            {"status": "ok", "contact_id": contact_id, "probability": 60,
                              "promoted_to_scheduling": True, "failures": []})
 
     report = {"call": {"id": "call-1"}, "endedReason": "customer-ended-call",
