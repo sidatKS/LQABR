@@ -37,7 +37,8 @@ gateway:
     # anyone who learns the URL can inject routing triggers.
     # Secret: HUBSPOT_APP_SECRET (private-app client secret).
     signature:
-      enabled: true
+      enabled: false   # LOCAL DEV (session 2026-08-21): no HUBSPOT_APP_SECRET yet.
+                       # Re-enable with the private-app client secret before prod.
       header: X-HubSpot-Signature-v3
       timestamp_header: X-HubSpot-Request-Timestamp
       # HubSpot rejects/replays outside 5 minutes; match it.
@@ -60,7 +61,7 @@ gateway:
 # ---------------------------------------------------------------------
 vapi:
   report:
-    enabled: true
+    enabled: false   # MVP: no gateway relay of Vapi reports
     # Must match the assistant's Server URL in the Vapi dashboard, which is
     # {GATEWAY_BASE_URL}/call-report. Confirmed against txtv's OpenAPI
     # (POST /lead, POST /call-report, GET /healthz) on 2026-08-04.
@@ -100,8 +101,8 @@ protocols:
 # Rev 3 FR-7. Four streams, collected to the runtime's own logging standard.
 audit:
   level: standard                 # minimal | standard | verbose
-  sink: stdout                    # stdout -> Cloud Logging; "file" for local dev
-  file_path: ./logs/gateway.jsonl # used only when sink: file
+  sink: file                      # LOCAL DEV: native file log under logs/gateway/
+  file_path: ./logs/gateway/gateway.jsonl # relative to CWD -> run uvicorn from repo root
   streams:
     audit: true                   # network activity: where from, when, which endpoint
     process: true                 # the routing decision + property/value behind it

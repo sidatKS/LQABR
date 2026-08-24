@@ -138,15 +138,7 @@ class VapiClient:
             if resp.status_code >= 400:
                 raise VapiError(f"Vapi {method} {path} failed: "
                                 f"HTTP {resp.status_code}: {resp.text[:500]}")
-            if not resp.text:
-                return "return", {}
-            try:
-                return "return", resp.json()
-            except ValueError as exc:
-                # A 2xx with a non-JSON body must fail as a VapiError, not
-                # escape as a raw decode exception past the error taxonomy.
-                raise VapiError(f"Vapi {method} {path} returned a non-JSON "
-                                f"2xx body: {resp.text[:200]}") from exc
+            return "return", resp.json() if resp.text else {}
 
         return retrying_call(send, handle, url=url, method=method,
                              label=f"Vapi {method} {path}", service="vapi",
@@ -196,6 +188,7 @@ def place_call(lead: VoiceLead, lead_context: Optional[str] = None) -> Dict[str,
         "status": "initiated",
         "call_id": call_id,
         "to": lead.phone_number,
+        "lead_context": sent_context,
         "lead_context_chars": len(sent_context),
     }
 
@@ -327,7 +320,7 @@ def _handoff_new_lead(object_id: str, correlation_id: str) -> None:
                                 "Step 3/4 did not complete — see reason",
                                 level=level, object_id=object_id,
                                 reason=result.get("reason"))
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_LEAD, "error",
                             "unhandled error in the Step 3->4 handoff",
                             level=logging.ERROR, object_id=object_id,
