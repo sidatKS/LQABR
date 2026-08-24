@@ -55,3 +55,49 @@ def test_the_campaign_route_has_its_own_configurable_path():
     settings = get_settings(refresh=True)
     assert settings.route_campaign_a2a == "/research/campaign/a2a"
     assert settings.route_campaign_a2a != settings.route_a2a
+
+
+# --- the gateway mirrors every id at the top level, in both spellings -------
+# agents/gateway/lib/soloai/protocols/a2a.py builds metadata AND, via its
+# compat shim, object_id/objectId/summary_ref_id/summaryRefId at the top level.
+# Metadata is authoritative; an id that resolves one way and not the other is
+# a trap for the next caller.
+
+def test_the_real_gateway_envelope_parses_both_ways():
+    meta = {"trigger_id": "T-1", "object_id": "328843080440", "run_id": "gw-1",
+            "route_id": "R-blog-summary", "source": "hubspot",
+            "summary_ref_id": "328843080440"}
+    env = A2AEnvelope(jsonrpc="2.0", id="x", method="message/send",
+                      params={"metadata": meta},
+                      object_id=meta["object_id"], objectId=meta["object_id"],
+                      summary_ref_id=meta["summary_ref_id"],
+                      summaryRefId=meta["summary_ref_id"])
+    assert env.campaign_target().object_id == "328843080440"
+    assert env.target().object_id == "328843080440"
+    assert env.target().summary_ref_id == "328843080440"
+
+
+def test_summary_ref_id_resolves_the_same_three_ways_as_object_id():
+    assert A2AEnvelope(params={"metadata": {"summary_ref_id": "M"}}).target().summary_ref_id == "M"
+    assert A2AEnvelope(summary_ref_id="S").target().summary_ref_id == "S"
+    assert A2AEnvelope(summaryRefId="C").target().summary_ref_id == "C"
+
+
+def test_metadata_wins_over_the_top_level_mirror():
+    """The mirror is a compat shim; metadata is the contract."""
+    env = A2AEnvelope(params={"metadata": {"object_id": "META",
+                                           "summary_ref_id": "META-REF"}},
+                      object_id="TOP", summaryRefId="TOP-REF")
+    assert env.target().object_id == "META"
+    assert env.target().summary_ref_id == "META-REF"
+
+
+def test_a_stray_blog_published_at_is_ignored():
+    """The gateway stopped sending it (dispatch.py, 2026-08-24) and the MCP
+    stopped keying on it. An old caller sending it must not break the run."""
+    env = A2AEnvelope(params={"metadata": {"object_id": "1",
+                                           "summary_ref_id": "2",
+                                           "blog_published_at": "2026-08-17T10:00:00Z"}})
+    target = env.target()
+    assert target.object_id == "1" and target.summary_ref_id == "2"
+    assert not hasattr(target, "blog_published_at")
