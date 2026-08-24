@@ -140,22 +140,34 @@ class A2AEnvelope(BaseModel):
     id: Optional[Any] = None
     method: str = ""
     params: Optional[Dict[str, Any]] = None
+    #: The gateway's compat shim mirrors every id at the top level, in BOTH
+    #: spellings, for agents that are plain REST rather than A2A. Metadata is
+    #: authoritative; these are the fallbacks.
     object_id: Optional[str] = None
     objectId: Optional[str] = None  # noqa: N815 - the wire spells it this way
+    summary_ref_id: Optional[str] = None
+    summaryRefId: Optional[str] = None  # noqa: N815
 
     def _meta(self) -> Dict[str, Any]:
         return ((self.params or {}).get("metadata") or {})
 
+    @staticmethod
+    def _first(*candidates: Any) -> str:
+        for candidate in candidates:
+            if candidate and str(candidate).strip():
+                return str(candidate).strip()
+        return ""
+
     def target(self) -> ResearchTarget:
         meta = self._meta()
-        object_id = ""
-        for candidate in (meta.get("object_id"), self.object_id, self.objectId):
-            if candidate and str(candidate).strip():
-                object_id = str(candidate).strip()
-                break
         return ResearchTarget(
-            object_id=object_id,
-            summary_ref_id=str(meta.get("summary_ref_id") or "").strip(),
+            object_id=self._first(meta.get("object_id"),
+                                  self.object_id, self.objectId),
+            # Read the same three ways as object_id. The gateway puts this in
+            # metadata today, but an id that resolves one way and not the
+            # other is a trap waiting for the next caller.
+            summary_ref_id=self._first(meta.get("summary_ref_id"),
+                                       self.summary_ref_id, self.summaryRefId),
         )
 
     def campaign_target(self) -> CampaignTarget:
