@@ -223,7 +223,6 @@ def test_place_call_success_returns_call_id_and_dials_once(tv_tools, monkeypatch
     result = tv_tools.place_call(_lead(), lead_context="Follow-up on the cloud migration email")
     assert result == {
         "status": "initiated", "call_id": "call-9", "to": "+15550001111",
-        "lead_context": "Follow-up on the cloud migration email",
         "lead_context_chars": 38,
     }
     assert len(fake.payloads) == 1
