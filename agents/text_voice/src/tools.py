@@ -138,7 +138,15 @@ class VapiClient:
             if resp.status_code >= 400:
                 raise VapiError(f"Vapi {method} {path} failed: "
                                 f"HTTP {resp.status_code}: {resp.text[:500]}")
-            return "return", resp.json() if resp.text else {}
+            if not resp.text:
+                return "return", {}
+            try:
+                return "return", resp.json()
+            except ValueError as exc:
+                # A 2xx with a non-JSON body must fail as a VapiError, not
+                # escape as a raw decode exception past the error taxonomy.
+                raise VapiError(f"Vapi {method} {path} returned a non-JSON "
+                                f"2xx body: {resp.text[:200]}") from exc
 
         return retrying_call(send, handle, url=url, method=method,
                              label=f"Vapi {method} {path}", service="vapi",
@@ -188,7 +196,6 @@ def place_call(lead: VoiceLead, lead_context: Optional[str] = None) -> Dict[str,
         "status": "initiated",
         "call_id": call_id,
         "to": lead.phone_number,
-        "lead_context": sent_context,
         "lead_context_chars": len(sent_context),
     }
 
@@ -320,10 +327,11 @@ def _handoff_new_lead(object_id: str, correlation_id: str) -> None:
                                 "Step 3/4 did not complete — see reason",
                                 level=level, object_id=object_id,
                                 reason=result.get("reason"))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_LEAD, "error",
                             "unhandled error in the Step 3->4 handoff",
-                            level=logging.ERROR, object_id=object_id)
+                            level=logging.ERROR, object_id=object_id,
+                            error=f"{type(exc).__name__}: {exc}"[:300])
 
 
 def _handoff_call_report(message: Dict[str, Any], correlation_id: str) -> None:
@@ -336,10 +344,11 @@ def _handoff_call_report(message: Dict[str, Any], correlation_id: str) -> None:
             import text_voice  # type: ignore
         try:
             text_voice.handle_call_report(message)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_REPORT, "error",
                             "unhandled error in the Step 7->8 handoff",
-                            level=logging.ERROR, call_id=call_id)
+                            level=logging.ERROR, call_id=call_id,
+                            error=f"{type(exc).__name__}: {exc}"[:300])
 
 
 __all__ = [
