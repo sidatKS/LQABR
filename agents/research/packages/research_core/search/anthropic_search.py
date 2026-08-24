@@ -109,6 +109,7 @@ class AnthropicWebSearch:
         to understand. Anything unrecognised is skipped, never fatal.
         """
         texts: List[str] = []
+        all_texts: List[str] = []
         sources: List[str] = []
         searches = 0
 
@@ -123,17 +124,22 @@ class AnthropicWebSearch:
                 value = _get(block, "text", "") or ""
                 if value:
                     texts.append(value)
+                    all_texts.append(value)
                 for citation in (_get(block, "citations", []) or []):
                     url = _get(citation, "url", "") or ""
                     if url and url not in sources:
                         sources.append(url)
             elif kind in ("server_tool_use", "web_search_tool_use"):
                 searches += 1
+                # Anything said BEFORE a search is the model narrating its own
+                # tool use ("I'll search for ..."), not the note. Drop it.
+                texts.clear()
             elif kind == "web_search_tool_result":
                 # Some SDK versions emit only the RESULT block, so counting
                 # tool_use alone reported 0 searches on a run that clearly made
                 # them. Count results too; the pair is halved above.
                 searches += 1
+                texts.clear()
                 for item in (_get(block, "content", []) or []):
                     url = _get(item, "url", "") or ""
                     if url and url not in sources:
@@ -143,7 +149,12 @@ class AnthropicWebSearch:
         # Joined with NO separator: the API splits one sentence into several
         # text blocks wherever a citation attaches, so a blank-line join
         # injected breaks mid-sentence and shredded the prose.
-        return "".join(texts).strip(), sources, searches
+        #
+        # `texts` holds only the blocks after the LAST search, which is the
+        # model's actual answer. `all_texts` is the fallback for the odd
+        # response that ends on a search block and would otherwise be empty.
+        return ("".join(texts).strip() or "".join(all_texts).strip(),
+                sources, searches)
 
     def research(self, prompt: str, *, system: str = "") -> ResearchFindings:
         """One grounded pass. Raises SearchError; never returns a fabricated note."""

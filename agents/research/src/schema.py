@@ -46,6 +46,64 @@ class ResearchRequest(BaseModel):
         )
 
 
+class CampaignTarget(BaseModel):
+    """One published post, fanned out over every lead in its industry.
+
+    `object_id` is the blog post's record id — exactly what the gateway's
+    blog-summary route hands over, and exactly what the MCP's
+    get_blog_summary takes. `industry` normally comes FROM the post;
+    supplying it here overrides that, for a re-run against one industry.
+    """
+
+    object_id: str = ""
+    industry: str = ""
+    limit: int = 100
+
+
+class CampaignRequest(BaseModel):
+    """POST /research/campaign."""
+
+    target: Optional[CampaignTarget] = None
+    object_id: str = ""
+    industry: str = ""
+    limit: int = 100
+
+    def resolved(self) -> CampaignTarget:
+        t = self.target or CampaignTarget()
+        return CampaignTarget(
+            object_id=(t.object_id or self.object_id or "").strip(),
+            industry=(t.industry or self.industry or "").strip(),
+            limit=t.limit or self.limit or 100,
+        )
+
+
+class CampaignLeadResult(BaseModel):
+    """One lead's outcome inside a campaign. A failure here never stops the
+    others — it is reported with its reason and the campaign continues."""
+
+    object_id: str = ""
+    status: str = ""        # completed | failed | skipped
+    chars: int = 0
+    error: str = ""
+
+
+class CampaignResponse(BaseModel):
+    run_id: str = ""
+    status: str = "completed"   # completed | partial | failed
+    object_id: str = ""         # the blog post this campaign ran from
+    industry: str = ""
+    #: How many leads matched the industry — the count asked for before any
+    #: context is written.
+    leads_found: int = 0
+    written: int = 0
+    failed: int = 0
+    skipped: int = 0
+    results: List[CampaignLeadResult] = Field(default_factory=list)
+    blog: Dict[str, Any] = Field(default_factory=dict)
+    model: str = ""
+    error: str = ""
+
+
 class HubSpotOutcome(BaseModel):
     status: str = ""
     object_id: str = ""
@@ -98,6 +156,21 @@ class A2AEnvelope(BaseModel):
             object_id=object_id,
             blog_published_at=str(meta.get("blog_published_at") or "").strip(),
             summary_ref_id=str(meta.get("summary_ref_id") or "").strip(),
+        )
+
+    def campaign_target(self) -> CampaignTarget:
+        """The same envelope read as a POST, not a contact.
+
+        On the blog-summary route the gateway's `object_id` IS the published
+        post — so it maps to CampaignTarget.object_id, never to a contact id.
+        `industry` and `limit` are optional overrides for a hand-driven re-run;
+        normally the industry comes off the post itself.
+        """
+        meta = self._meta()
+        return CampaignTarget(
+            object_id=self.target().object_id,
+            industry=str(meta.get("industry") or "").strip(),
+            limit=int(meta.get("limit") or 100),
         )
 
     def run_id(self) -> str:

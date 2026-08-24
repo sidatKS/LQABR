@@ -113,6 +113,11 @@ class Settings:
     mcp_tool_read_lead: str = "get_lead_profile"
     mcp_tool_read_blog: str = "get_blog_summary"
     mcp_tool_write: str = "upsert_lead_profile"
+    #: Campaign mode only: every lead in one industry. NOT on the central MCP
+    #: as of 2026-08-24 (its surface is the four tools above plus
+    #: upsert_blog_summary), so /research/campaign fails loudly with the tool
+    #: name until it lands. Name it here the moment it does — no code edit.
+    mcp_tool_list_leads: str = "list_leads_by_industry"
     mcp_assert_tools: bool = True
     #: warn = log and keep serving if the MCP is asleep at boot (default)
     #: strict = refuse to start   |   off = do not check at all
@@ -144,16 +149,34 @@ class Settings:
 
     # ── HTTP surface ─────────────────────────────────────────
     routes: str = "all"                 # all | api
-    route_a2a: str = "/research/a2a"
+    route_a2a: str = "/research/a2a"          # gateway -> ONE CONTACT
+    route_campaign_a2a: str = "/research/campaign/a2a"   # gateway -> ONE POST
     route_run: str = "/research/run"
     cors_origins: List[str] = field(default_factory=lambda: ["http://localhost:5173"])
     port: int = 8086
+
+    # ── direct HubSpot (campaign lead lookup ONLY — see hubspot_direct.py) ──
+    #: The MCP has no lead-listing tool, so "which leads are in this industry"
+    #: is the one read that goes straight to HubSpot. Everything else — every
+    #: lead read and every write — stays on the MCP. Set
+    #: `use_direct_lead_lookup=False` the day the MCP grows the tool.
+    use_direct_lead_lookup: bool = True
+    #: Empty means "the default in hubspot_direct.py". The hostname literal
+    #: lives only in that one exempted module, so the standalone guard stays
+    #: strict about every other file.
+    hubspot_base_url: str = ""
+    hubspot_token_secret: str = "lqabr-hubspot-access-token"
+    hubspot_timeout_seconds: int = 30
 
     # ── secrets + logging ────────────────────────────────────
     secrets_source: str = "env"         # env | secret_manager | auto
     gcp_project: str = ""
     log_level: str = "INFO"
     log_file: str = ""
+    # console shape only — the log FILE is always JSON. "auto" means text when
+    # stdout is a terminal (a human is reading) and JSON when it is not (Cloud
+    # Run, a pipe), so deployed structured logging is never traded for looks.
+    log_format: str = "auto"            # auto | text | json
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -185,6 +208,9 @@ class Settings:
                                     _cfg(cfg, "mcp", "tool_read_blog", "get_blog_summary")),
             mcp_tool_write=_str("LQABR_RESEARCH_MCP_TOOL_WRITE",
                                 _cfg(cfg, "mcp", "tool_write", "upsert_lead_profile")),
+            mcp_tool_list_leads=_str("LQABR_RESEARCH_MCP_TOOL_LIST_LEADS",
+                                     _cfg(cfg, "mcp", "tool_list_leads",
+                                          "list_leads_by_industry")),
             mcp_assert_tools=_bool("LQABR_RESEARCH_MCP_ASSERT_TOOLS",
                                    _cfg(cfg, "mcp", "assert_tools", True)),
             mcp_startup_check=_str("LQABR_RESEARCH_MCP_STARTUP_CHECK",
@@ -223,6 +249,9 @@ class Settings:
             routes=_str("LQABR_RESEARCH_ROUTES", _cfg(cfg, "service", "routes", "all")).lower(),
             route_a2a=_str("LQABR_RESEARCH_ROUTE_A2A",
                            _cfg(cfg, "service", "route_a2a", "/research/a2a")),
+            route_campaign_a2a=_str(
+                "LQABR_RESEARCH_ROUTE_CAMPAIGN_A2A",
+                _cfg(cfg, "service", "route_campaign_a2a", "/research/campaign/a2a")),
             route_run=_str("LQABR_RESEARCH_ROUTE_RUN",
                            _cfg(cfg, "service", "route_run", "/research/run")),
             cors_origins=_list("LQABR_RESEARCH_CORS_ORIGINS",
@@ -230,12 +259,24 @@ class Settings:
                                           ["http://localhost:5173"]) or ())),
             port=_int("PORT", _cfg(cfg, "service", "port", 8086)),
 
+            use_direct_lead_lookup=_bool(
+                "LQABR_RESEARCH_USE_DIRECT_LEAD_LOOKUP",
+                _cfg(cfg, "hubspot", "use_direct_lead_lookup", True)),
+            hubspot_base_url=_str("LQABR_RESEARCH_HUBSPOT_BASE_URL",
+                                  _cfg(cfg, "hubspot", "base_url", "")),
+            hubspot_token_secret=_str("LQABR_RESEARCH_HUBSPOT_TOKEN_SECRET",
+                                      _cfg(cfg, "hubspot", "token_secret",
+                                           "lqabr-hubspot-access-token")),
+            hubspot_timeout_seconds=_int("LQABR_RESEARCH_HUBSPOT_TIMEOUT_SECONDS",
+                                         _cfg(cfg, "hubspot", "timeout_seconds", 30)),
             secrets_source=_str("LQABR_RESEARCH_SECRETS_SOURCE",
                                 _cfg(cfg, "secrets", "source", "env")).lower(),
             gcp_project=_str("LQABR_RESEARCH_GCP_PROJECT", _cfg(cfg, "secrets", "gcp_project", "")),
             log_level=_str("LQABR_RESEARCH_LOG_LEVEL",
                            _cfg(cfg, "logging", "level", "INFO")).upper(),
             log_file=_resolve_path(log_file),
+            log_format=_str("LQABR_RESEARCH_LOG_FORMAT",
+                            _cfg(cfg, "logging", "format", "auto")).lower(),
         )
 
     # ------------------------------------------------------------------

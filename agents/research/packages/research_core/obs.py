@@ -67,7 +67,11 @@ class _Stream:
             "ts": time.time(),
             **redact(fields),
         }
-        self._logger.info(json.dumps(record, default=repr, ensure_ascii=False))
+        # The JSON string IS the message, so the file handler needs no work.
+        # The record rides along on `extra` so the console formatter can render
+        # it without parsing its own output back.
+        self._logger.info(json.dumps(record, default=repr, ensure_ascii=False),
+                          extra={"lqabr_record": record})
         return record
 
 
@@ -97,15 +101,176 @@ class Observability:
 _OBS: Observability | None = None
 
 
-def configure_logging(level: str = "INFO", log_file: str = "") -> None:
-    """JSON lines to stdout and, when log_file is set, also to that file — the
-    agent writes its own log, no shell redirect. Idempotent across calls."""
+# ── console rendering ───────────────────────────────────────────────────────
+# Only the CONSOLE is reshaped. The log file stays JSON lines, always.
+
+_DIM, _RESET = "\033[2m", "\033[0m"
+_STREAM_COLOUR = {"process": "\033[36m", "audit": "\033[2m", "system": "\033[35m"}
+_RED, _YELLOW, _GREEN = "\033[31m", "\033[33m", "\033[32m"
+
+_SKIP = ("stream", "run_id", "event", "ts")
+#: Console only — the JSON keeps these. `note` on a write is a fixed sentence
+#: repeated identically on every lead; on a terminal it is the thing that pushes
+#: the line past the wrap point and mangles it.
+_CONSOLE_SKIP = ("note",)
+#: Nothing may wrap. A wrapped line redraws over its neighbour and the log
+#: becomes unreadable exactly when a run is busiest. Measured from the real
+#: terminal, with a sane fallback when there isn't one.
+_MAX_LINE = 165
+
+_BAD = ("failed", "stopped", "error", "unreachable", "rejected")
+_MEH = ("skipped", "degraded", "dropped", "override")
+
+
+def _terminal_width(fallback: int = _MAX_LINE) -> int:
+    try:
+        import shutil
+        return max(90, shutil.get_terminal_size(fallback=(fallback, 24)).columns - 1)
+    except Exception:  # noqa: BLE001 - width is a nicety, never a failure
+        return fallback
+
+# Windows consoles default to cp1252, which cannot encode these — a log line
+# must never be the thing that raises. Chosen per stream, not assumed.
+_GLYPHS_UNICODE = {"call": "→", "ok": "✓", "bad": "✗", "warn": "!", "plain": "·"}
+_GLYPHS_ASCII = {"call": "->", "ok": "+", "bad": "x", "warn": "!", "plain": "."}
+
+
+def _glyphs_for(stream: Any) -> Dict[str, str]:
+    encoding = getattr(stream, "encoding", "") or ""
+    try:
+        "".join(_GLYPHS_UNICODE.values()).encode(encoding)
+    except (LookupError, UnicodeEncodeError, TypeError):
+        return _GLYPHS_ASCII
+    return _GLYPHS_UNICODE
+
+
+def _value(value: Any) -> str:
+    """One field, short enough to sit on a terminal line."""
+    if isinstance(value, (list, tuple)):
+        head = ", ".join(str(v) for v in list(value)[:3])
+        extra = len(value) - 3
+        return f"[{head}{f' +{extra}' if extra > 0 else ''}]"
+    text = str(value).replace("\n", " ")
+    return text if len(text) <= 90 else text[:89] + "…"
+
+
+class ConsoleFormatter(logging.Formatter):
+    """One event, one readable line — the shape a person scanning a run needs.
+
+    Falls back to the raw message for anything not emitted through a _Stream
+    (a stray library warning), so nothing is ever swallowed.
+    """
+
+    def __init__(self, colour: bool = True,
+                 glyphs: Optional[Dict[str, str]] = None,
+                 width: int = _MAX_LINE) -> None:
+        super().__init__("%(message)s")
+        self._colour = colour
+        self._g = glyphs or _GLYPHS_ASCII
+        self._width = max(90, int(width))
+
+    def _paint(self, text: str, code: str) -> str:
+        return f"{code}{text}{_RESET}" if self._colour else text
+
+    def format(self, record: logging.LogRecord) -> str:
+        data = getattr(record, "lqabr_record", None)
+        if not isinstance(data, dict):
+            return record.getMessage()
+
+        clock = time.strftime("%H:%M:%S", time.localtime(data.get("ts", time.time())))
+        event = str(data.get("event", ""))
+        stream = str(data.get("stream", ""))
+
+        # An outbound call has a fixed shape; spell it as one, not as key=value.
+        if event in ("outbound_call", "http_out"):
+            status = data.get("status", data.get("status_code"))
+            took = data.get("duration_ms")
+            where = data.get("endpoint") or data.get("url") or ""
+            line = (f"{data.get('method', '')} {where} "
+                    f"{status if status is not None else '-'}"
+                    f"{f' {took:.0f}ms' if isinstance(took, (int, float)) else ''}")
+            attempt = data.get("attempt", 1)
+            if isinstance(attempt, int) and attempt > 1:
+                line += f" (attempt {attempt})"
+            body = self._paint(f"{self._g['call']} {data.get('service', '?'):<9} {line}",
+                               _DIM)
+            if data.get("error"):
+                body += " " + self._paint(str(data["error"])[:90], _RED)
+            return f"{self._paint(clock, _DIM)} {body}"
+
+        # A campaign is a queue, so say where you are in it. "3/5 · 2 left" is
+        # the one thing a person watching a long run actually wants.
+        if event in ("campaign_lead_start", "campaign_lead_done"):
+            done = event.endswith("_done")
+            at, total = int(data.get("position", 0)), int(data.get("of", 0))
+            status = str(data.get("status", ""))
+            mark = (self._g["bad"] if status == "failed" else
+                    self._g["ok"] if done else self._g["plain"])
+            colour = (_RED if status == "failed" else
+                      _GREEN if done else _STREAM_COLOUR.get(stream, ""))
+            # "left" only on the DONE line: on the start line it would count
+            # the lead currently being worked, which reads as one too many.
+            tail = (f" {status} chars={data.get('chars', 0)}"
+                    f"  ({max(total - at, 0)} left)" if done else "  working…")
+            line = f"lead {at}/{total}".ljust(12) + f"{data.get('object_id', '')}{tail}"
+            out = (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
+                   f"{self._paint(line, colour)}")
+            if data.get("error"):
+                out += " " + self._paint(str(data["error"])[:80], _RED)
+            return out
+
+        mark, colour = self._g["plain"], _STREAM_COLOUR.get(stream, "")
+        if any(word in event for word in _BAD) or data.get("error"):
+            mark, colour = self._g["bad"], _RED
+        elif any(word in event for word in _MEH):
+            mark, colour = self._g["warn"], _YELLOW
+        elif event.endswith(("_ok", "_complete", "_found")):
+            mark, colour = self._g["ok"], _GREEN
+
+        pairs = [(k, v) for k, v in data.items()
+                 if k not in _SKIP and k not in _CONSOLE_SKIP
+                 and v not in ("", None, [], {})]
+        # Trim against the PLAIN width, then paint — colour codes are invisible
+        # on screen but would otherwise eat most of the budget.
+        plain = f"{clock} {mark} {event:<24} "
+        budget = self._width - len(plain)
+        rendered, used = [], 0
+        for key, value in pairs:
+            piece = f"{key}={_value(value)}"
+            if used + len(piece) + 1 > budget:
+                rendered.append("…")
+                break
+            rendered.append(f"{self._paint(key, _DIM)}={_value(value)}")
+            used += len(piece) + 1
+        return (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
+                f"{self._paint(f'{event:<24}', colour)} "
+                f"{' '.join(rendered)}".rstrip())
+
+
+def _console_handler(log_format: str) -> logging.Handler:
+    """`auto` means: text when a person is watching, JSON when a machine is.
+
+    stdout is what Cloud Logging ingests, so an unattached stdout keeps its
+    structured fields — readability never costs production observability.
+    """
+    handler = logging.StreamHandler(sys.stdout)
+    tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    wants_text = log_format == "text" or (log_format == "auto" and tty)
+    handler.setFormatter(
+        ConsoleFormatter(colour=tty, glyphs=_glyphs_for(sys.stdout),
+                         width=_terminal_width()) if wants_text
+        else logging.Formatter("%(message)s"))
+    return handler
+
+
+def configure_logging(level: str = "INFO", log_file: str = "",
+                      log_format: str = "auto") -> None:
+    """Readable console, JSON file. The agent writes its own log, no shell
+    redirect. Idempotent across calls."""
     root = logging.getLogger("lqabr.research")
     fmt = logging.Formatter("%(message)s")
     if not root.handlers:
-        stream = logging.StreamHandler(sys.stdout)
-        stream.setFormatter(fmt)
-        root.addHandler(stream)
+        root.addHandler(_console_handler(log_format))
         root.propagate = False
     if log_file and not any(isinstance(h, logging.FileHandler)
                             and getattr(h, "_lqabr_path", "") == log_file

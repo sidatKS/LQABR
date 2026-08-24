@@ -65,13 +65,19 @@ class HubSpotMCP:
     def client(self) -> MCPClient:
         return self._client
 
-    def ensure_ready(self) -> List[str]:
-        """Startup check — the three tools we are configured to use must exist."""
-        return self._client.ensure_ready([
-            self._settings.mcp_tool_read_lead,
-            self._settings.mcp_tool_read_blog,
-            self._settings.mcp_tool_write,
-        ])
+    def ensure_ready(self, include_campaign: bool = False) -> List[str]:
+        """Startup check — the tools we are configured to use must exist.
+
+        The campaign tool is asserted only when asked for: single-lead runs
+        must keep working on an MCP that has no lead-listing tool yet, while
+        /research/campaign refuses to pretend.
+        """
+        required = [self._settings.mcp_tool_read_lead,
+                    self._settings.mcp_tool_read_blog,
+                    self._settings.mcp_tool_write]
+        if include_campaign:
+            required.append(self._settings.mcp_tool_list_leads)
+        return self._client.ensure_ready(required)
 
     # -------------------------------------------------------------- reads
     def read_lead(self, object_id: str) -> Optional[LeadFacts]:
@@ -115,34 +121,110 @@ class HubSpotMCP:
                                has_existing_context=bool(lead.existing_lead_context))
         return lead
 
-    def read_blog(self, blog_published_at: str) -> Optional[BlogFacts]:
-        """The post that triggered the run, keyed on its publication timestamp —
-        which is how the central MCP indexes the blog store."""
+    def list_leads_by_industry(self, industry: str,
+                               limit: int = 100) -> Optional[List[str]]:
+        """Every lead in one industry — the campaign fan-out.
+
+        Returns contact object_ids, or None when the lookup could not be made
+        (tool absent, MCP down, bad reply). None and [] mean different things:
+        None is "we could not ask", [] is "asked, nobody matched" — the caller
+        reports them differently and never treats a failure as an empty
+        campaign.
+        """
+        settings = self._settings
+        industry = (industry or "").strip()
+        if not industry:
+            self._obs.process.emit("leads_list_skipped",
+                                   reason="bad-data: no industry to match on")
+            return None
+
+        # The one read that bypasses the MCP, because the MCP has no
+        # lead-listing tool. Scoped to this lookup and removable in one config
+        # flip — see research_core/hubspot_direct.py.
+        if settings.use_direct_lead_lookup:
+            try:
+                from ..hubspot_direct import HubSpotDirect, HubSpotDirectError
+            except ImportError:  # pragma: no cover
+                from hubspot_direct import HubSpotDirect, HubSpotDirectError  # type: ignore
+            try:
+                ids = HubSpotDirect(settings=settings,
+                                    obs=self._obs).list_leads_by_industry(
+                                        industry, limit=limit)
+            except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+                self._obs.process.emit("leads_list_failed", industry=industry,
+                                       source="hubspot_direct", reason=str(exc))
+                return None
+            self._obs.process.emit("leads_list_ok", industry=industry,
+                                   source="hubspot_direct", count=len(ids))
+            return ids
+
+        try:
+            result = self._client.call_tool(settings.mcp_tool_list_leads,
+                                            {"industry": industry, "limit": limit})
+        except MCPError as exc:
+            self._obs.process.emit("leads_list_failed", industry=industry,
+                                   tool=settings.mcp_tool_list_leads, reason=str(exc))
+            return None
+
+        flat = _flatten(result)
+        if flat.get("error") or flat.get("failure_kind"):
+            self._obs.process.emit("leads_list_rejected", industry=industry,
+                                   reason=str(flat.get("error") or flat.get("failure_kind")))
+            return None
+
+        rows = result if isinstance(result, list) else (
+            flat.get("leads") or flat.get("results") or flat.get("contacts") or [])
+        if not isinstance(rows, list):
+            self._obs.process.emit("leads_list_rejected", industry=industry,
+                                   reason=f"unexpected reply shape: {type(rows).__name__}")
+            return None
+
+        ids: List[str] = []
+        for row in rows:
+            if isinstance(row, str):
+                ids.append(row.strip())
+                continue
+            if isinstance(row, dict):
+                found = _first(row, "object_id", "contact_hs_id", "contact_id", "id")
+                if found:
+                    ids.append(str(found).strip())
+        ids = [i for i in ids if i]
+        self._obs.process.emit("leads_list_ok", industry=industry, count=len(ids))
+        return ids
+
+    def read_blog(self, object_id: str) -> Optional[BlogFacts]:
+        """The post that triggered the run, read by its Ticket record id.
+
+        The MCP keys the blog store on the ticket's object_id (changed
+        2026-08-24 from the publication timestamp), which is exactly what the
+        gateway's blog-summary route hands over — so the ticket id fetches the
+        post with no timestamp round-trip.
+        """
         settings = self._settings
         try:
             result = self._client.call_tool(settings.mcp_tool_read_blog,
-                                            {"blog_published_at": str(blog_published_at)})
+                                            {"object_id": str(object_id)})
         except MCPError as exc:
             self._obs.process.emit("blog_read_failed",
-                                   blog_published_at=blog_published_at, reason=str(exc))
+                                   object_id=object_id, reason=str(exc))
             return None
 
         flat = _flatten(result)
         # Not-found is a VALID result on this tool, never an error.
         if not flat or flat.get("found") is False:
-            self._obs.process.emit("blog_read_empty", blog_published_at=blog_published_at)
+            self._obs.process.emit("blog_read_empty", object_id=object_id)
             return None
 
         blog = BlogFacts(
-            blog_published_at=_first(flat, "blog_published_at") or str(blog_published_at),
+            blog_published_at=_first(flat, "blog_published_at"),
             blog_summary=_first(flat, "blog_summary"),
             blog_industry=_first(flat, "blog_industry"),
-            ticket_id=_first(flat, "ticket_hs_id", "ticket_id"),
+            ticket_id=_first(flat, "ticket_hs_id", "ticket_id") or str(object_id),
         )
         warnings = flat.get("warnings")
         if warnings:
             self._obs.process.emit("blog_read_warnings",
-                                   blog_published_at=blog_published_at, warnings=warnings)
+                                   object_id=object_id, warnings=warnings)
         self._obs.process.emit("blog_read_ok", blog_published_at=blog.blog_published_at,
                                ticket_id=blog.ticket_id, chars=len(blog.blog_summary))
         return blog
