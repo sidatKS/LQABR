@@ -109,19 +109,44 @@ else
   echo "  A campaign overwrites lead_context on real contacts."
 fi
 
+# Are the runtime deps actually importable? Writing a perfect .env and then
+# failing on "No module named uvicorn" wastes the reader's next five minutes,
+# so say it here. Ubuntu has no bare `python` — only an activated venv provides
+# one — which is why every command below says python3.
+PY_OK=0
+python3 -c 'import uvicorn, fastapi, anthropic' >/dev/null 2>&1 && PY_OK=1
+
+if [ "$PY_OK" = "0" ]; then
+  cat <<EOF
+Next: the dependencies are NOT installed in this Python
+      ($(python3 -c 'import sys; print(sys.executable)' 2>/dev/null || echo python3)).
+
+  python3 -m venv ~/lqabr-venv
+  source ~/lqabr-venv/bin/activate
+  pip install -r "$(pwd)/requirements.txt"
+
+Then come back to the "Start it" block below.
+
+EOF
+fi
+
 cat <<'EOF'
-
 Start it:
-  source .env is NOT enough on its own — see the ordering note below.
-
   cd agents/research
+  source ~/lqabr-venv/bin/activate
   set -a && source .env && set +a
-  python -m uvicorn service_app:app --port 8086 --app-dir src
+  python3 -m uvicorn service_app:app --port 8086 --app-dir src
 
-  Order matters: sourcing .env AFTER exporting a variable overwrites it.
-  Everything this agent needs is in .env, so source it FIRST.
+  Two things that bite:
+  - Order matters. Sourcing .env AFTER exporting a variable overwrites it.
+    Everything this agent needs is in .env, so source it FIRST.
+  - Use python3, not python. Ubuntu ships no bare `python`; you only get one
+    inside an activated virtualenv.
+
+  The HubSpot MCP container must be up on :8080 or every run fails at the
+  first read:  docker ps --filter name=lqabr-mcp-gcp
 
 Check it:
-  curl -s localhost:8086/health   | python3 -m json.tool   # dry_run, MCP, tools
+  curl -s localhost:8086/health    | python3 -m json.tool  # dry_run, MCP, tools
   curl -s localhost:8086/mcp/tools | python3 -m json.tool  # names vs the server
 EOF

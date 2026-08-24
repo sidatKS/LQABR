@@ -63,7 +63,7 @@ cd agents/research
 ./setup_env.sh                 # .env from Secret Manager; writes OFF
                                # ./setup_env.sh --live  when you mean it
 set -a && source .env && set +a
-python -m uvicorn service_app:app --port 8086 --app-dir src
+python3 -m uvicorn service_app:app --port 8086 --app-dir src
 ```
 
 Source `.env` FIRST — exporting a variable and then sourcing `.env` overwrites

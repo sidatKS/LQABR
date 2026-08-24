@@ -94,8 +94,9 @@ When you actually want to write to HubSpot:
 
 ```bash
 cd agents/research
+source ~/lqabr-venv/bin/activate
 set -a && source .env && set +a
-python -m uvicorn service_app:app --port 8086 --app-dir src
+python3 -m uvicorn service_app:app --port 8086 --app-dir src
 ```
 
 **Source `.env` first.** Exporting a variable and *then* sourcing `.env`
@@ -146,7 +147,8 @@ different records — swapping them reads the wrong row.
 
 ```bash
 cd agents/research
-PYTHONPATH=src:packages python -m pytest -q
+source ~/lqabr-venv/bin/activate
+PYTHONPATH=src:packages python3 -m pytest -q
 ```
 
 ---
@@ -278,7 +280,7 @@ docker start lqabr-mcp-gcp 2>/dev/null || true
 
 cd /mnt/c/Users/<you>/LQABR/agents/research
 set -a && source .env && set +a
-python -m uvicorn service_app:app --port 8086 --app-dir src
+python3 -m uvicorn service_app:app --port 8086 --app-dir src
 ```
 
 ### Reaching it from Windows
