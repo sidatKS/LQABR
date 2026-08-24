@@ -177,13 +177,9 @@ dispatch:
 # back to Step-1 behaviour. Token comes from HUBSPOT_PRIVATE_APP_TOKEN only.
 # =====================================================================
 audience:
-  enabled: true
+  enabled: false
   industry_property: blog_industry   # Ticket property naming the target industry
   blog_route_id: R-blog-summary      # which route triggers resolution
   page_size: 100                     # HubSpot search page size (max 100)
   max_audience: 1000                 # ceiling on leads per post (bounded fan-out)
-  # Per HubSpot call. A full resolution (ticket + paginated company/contact
-  # searches) can exceed HubSpot's ~5s delivery budget; the redelivery is
-  # absorbed by deterministic trigger ids + idempotent agents, not by this
-  # timeout.
-  timeout_seconds: 8
+  timeout_seconds: 8                 # per HubSpot call; within the 5s ingress budget

@@ -323,7 +323,8 @@ def _handoff_new_lead(object_id: str, correlation_id: str) -> None:
         except Exception:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_LEAD, "error",
                             "unhandled error in the Step 3->4 handoff",
-                            level=logging.ERROR, object_id=object_id)
+                            level=logging.ERROR, object_id=object_id,
+                            error=f"{type(exc).__name__}: {exc}"[:300])
 
 
 def _handoff_call_report(message: Dict[str, Any], correlation_id: str) -> None:
@@ -336,10 +337,11 @@ def _handoff_call_report(message: Dict[str, Any], correlation_id: str) -> None:
             import text_voice  # type: ignore
         try:
             text_voice.handle_call_report(message)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_REPORT, "error",
                             "unhandled error in the Step 7->8 handoff",
-                            level=logging.ERROR, call_id=call_id)
+                            level=logging.ERROR, call_id=call_id,
+                            error=f"{type(exc).__name__}: {exc}"[:300])
 
 
 __all__ = [

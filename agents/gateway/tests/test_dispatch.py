@@ -72,6 +72,12 @@ class TestA2AMessage:
             "batch_id", "object_ids", "batch_size", "trigger_ids",
             # Rev 5 audience resolution: the blog Ticket id travels on the wire.
             "summary_ref_id",
+            # Blog-ticket research hand-off (audience disabled): the ticket's own
+            # fields under HubSpot's original names, plus the correlation id as
+            # camelCase ``triggerId``. Emitted ONLY for agent == "research".
+            # propertyValue is deliberately NOT forwarded.
+            "objectId", "propertyName", "subscriptionType", "eventId",
+            "triggerId",
         }
 
     @pytest.mark.parametrize("field", ["property_name", "property_value"])
