@@ -13,7 +13,7 @@ from lqabr_core.types import VoiceLead
 
 
 def _lead(**kw):
-    base = dict(phone_number="+15555550123", contact_id="C1",
+    base = dict(phone_number="+15555550123", object_id="C1",
                 employee_id="E1", full_name="Ada Lovelace",
                 company_name="Analytical Engines", industry="software",
                 job_title="Engineer")

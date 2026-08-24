@@ -201,13 +201,13 @@ class VoiceLead:
     frequency_of_purchase: Optional[str] = None
 
     # --- plumbing (not spec fields, but needed to write back) -------------
-    # Renamed from `hubspot_contact_id` -> `contact_id` (2026-08-06, user
-    # request) to stop the exact class of naming-mismatch bug that crashed
-    # VoiceLead.__init__() at runtime. `hubspot_company_id` is left as-is:
-    # `company_id` above is already a distinct field (the business
-    # `company_id` property on the associated Company), so renaming
+    # Renamed hubspot_contact_id -> contact_id (2026-08-06), then contact_id
+    # -> object_id (2026-08-24) to match LeadProfile's vocabulary and
+    # HubSpot's own webhook payloads (`objectId`). `hubspot_company_id` is
+    # left as-is: `company_id` above is already a distinct field (the
+    # business `company_id` property on the associated Company), so renaming
     # `hubspot_company_id` -> `company_id` would collide with it.
-    contact_id: Optional[str] = None
+    object_id: Optional[str] = None
     hubspot_company_id: Optional[str] = None
     full_name: Optional[str] = None
     company_name: Optional[str] = None

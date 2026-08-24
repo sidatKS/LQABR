@@ -1,4 +1,4 @@
-"""Rev 5 STEP 2 and STEP 4 — the two inbound routes, and the one leg out."""
+"""Rev 5 STEP 4 and STEP 2 — the one leg out, then the two inbound routes."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def retrying_call(send: Callable[[], requests.Response],
         started = time.perf_counter()
         try:
             resp = send()
-        except (requests.RequestException, *retry_exceptions) as exc:
+        except (requests.RequestException, OSError, *retry_exceptions) as exc:
             last_error = str(exc)
             obs.log_http_out(method, url, attempt=attempt + 1, error=last_error,
                              duration_ms=(time.perf_counter() - started) * 1000,
@@ -77,11 +77,17 @@ def cap_lead_context(raw: Optional[str]) -> str:
 
 def build_call_payload(lead: VoiceLead, lead_context: Optional[str] = None) -> Dict[str, Any]:
     """The POST /call body: destination, assistant id, personalization."""
+    if not VAPI_ASSISTANT_ID:
+        raise VapiError(
+            "LQABR_VAPI_ASSISTANT_ID is unset. The call script now lives only in the "
+            "Vapi dashboard (assistant 4f00be12-203d-468f-a11d-f45798165983); the "
+            "in-code transient assistant was removed 2026-08-07. Set the env var."
+        )
     variables = lead.personalization()
     variables["sender_name"] = SENDER_NAME
     variables["lead_context"] = cap_lead_context(lead_context)
-    if lead.contact_id:
-        variables["object_id"] = str(lead.contact_id)
+    if lead.object_id:
+        variables["object_id"] = str(lead.object_id)
     if lead.employee_id:
         variables["employee_id"] = str(lead.employee_id)
 
@@ -94,14 +100,7 @@ def build_call_payload(lead: VoiceLead, lead_context: Optional[str] = None) -> D
     }
     if VAPI_PHONE_NUMBER_ID:
         payload["phoneNumberId"] = VAPI_PHONE_NUMBER_ID
-    if VAPI_ASSISTANT_ID:
-        payload["assistantId"] = VAPI_ASSISTANT_ID
-    else:
-        raise VapiError(
-            "LQABR_VAPI_ASSISTANT_ID is unset. The call script now lives only in the "
-            "Vapi dashboard (assistant 4f00be12-203d-468f-a11d-f45798165983); the "
-            "in-code transient assistant was removed 2026-08-07. Set the env var."
-        )
+    payload["assistantId"] = VAPI_ASSISTANT_ID
     return payload
 
 
@@ -225,6 +224,21 @@ app = FastAPI(title="LQABR text_voice agent (Rev 5)",
 
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
+    """Readiness, not liveness: 503 unless this instance can actually dial.
+
+    The Vapi client is built lazily on the first call, so without this check a
+    misconfigured instance passes health checks, is marked healthy, takes
+    traffic, writes a claim, and only then discovers it has no credential.
+    """
+    missing = [name for name, value in (
+        ("LQABR_VAPI_PHONE_NUMBER_ID", VAPI_PHONE_NUMBER_ID),
+        ("LQABR_VAPI_ASSISTANT_ID", VAPI_ASSISTANT_ID),
+        ("LQABR_VAPI_API_KEY", os.environ.get(
+            VAPI_CREDENTIAL_NAME.upper().replace("-", "_"), "")),
+    ) if not value]
+    if missing:
+        raise HTTPException(status_code=503,
+                            detail=f"config incomplete: {', '.join(missing)} unset")
     return {"status": "ok"}
 
 
