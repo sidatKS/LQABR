@@ -1,0 +1,82 @@
+# =====================================================================
+# agents/research — agent config map
+# ---------------------------------------------------------------------
+# Precedence, highest first:
+#   1. environment variable (LQABR_RESEARCH_*)   per-deployment override
+#   2. this file                                 the agent's config map
+#   3. code default                              last resort
+#
+# Point elsewhere with LQABR_RESEARCH_CONFIG_FILE=/path/to/config.yaml
+# =====================================================================
+
+model:
+  # Bare Anthropic model id. An `anthropic/`-prefixed (LiteLLM) value is also
+  # accepted — the prefix is stripped before the SDK call.
+  name: claude-sonnet-4-6
+  temperature: 1.0
+  max_tokens: 2000
+
+# The runtime connection to the HubSpot MCP container. This is the ONLY door to
+# HubSpot: the agent holds no HubSpot token and never calls api.hubapi.com.
+mcp:
+  base_url: http://localhost:8091/mcp
+  protocol_version: "2025-06-18"
+  # A research pass is two CRM hops plus a model call; the central server's
+  # upsert can take ~25s on its own, so leave real headroom.
+  timeout_seconds: 60
+  max_retries: 3
+  backoff_base_seconds: 1.0
+  backoff_cap_seconds: 8.0
+  retryable_statuses: [429, 500, 502, 503, 504]
+  # Names on that server, DISCOVERED via tools/list at startup and asserted.
+  # A rename there is a change here, never a code edit.
+  tool_read_lead: get_lead_profile
+  tool_read_blog: get_blog_summary
+  tool_write: upsert_lead_profile
+  assert_tools: true
+  # warn = log and keep serving if the MCP is asleep at boot (default)
+  # strict = refuse to start   |   off = do not check at all
+  startup_check: warn
+
+hubspot:
+  # The contact property this agent owns. The gateway's R2-lead-context route
+  # watches it: writing it is what raises the SECOND trigger.
+  context_property: lead_context
+  # true = compute and log the write but never send it. Use for the first run.
+  dry_run: false
+  # true = leave a lead alone when it already carries a context note.
+  skip_if_context_present: false
+
+search:
+  enabled: true
+  # How many searches the model may run in one pass. Higher = better grounded,
+  # slower, more expensive.
+  max_uses: 5
+  timeout_seconds: 90
+  # Confine or exclude sources. Set ONE of these, never both.
+  allowed_domains: []
+  blocked_domains: []
+
+note:
+  # HubSpot multi-line text caps at 65 536 chars; stay under it rather than
+  # discovering the limit as a 400 at write time.
+  max_chars: 60000
+  target_words: 160
+  include_sources: true
+
+service:
+  port: 8086
+  routes: all              # all | api
+  route_a2a: /research/a2a
+  route_run: /research/run
+  cors_origins:
+    - http://localhost:5173
+
+secrets:
+  source: env              # env | secret_manager | auto
+  gcp_project: ""
+
+logging:
+  # Relative to the repo root, or absolute. Empty disables file logging.
+  file: logs/agents/research/agent.log
+  level: INFO

@@ -1,0 +1,31 @@
+# =====================================================================
+# agents/summary — agent config map
+# ---------------------------------------------------------------------
+# Central tunables for the Summary agent. Precedence, highest first:
+#   1. environment variable (LQABR_SUMMARY_*)   — per-deployment override
+#   2. this file                                — the agent's config map
+#   3. code default                             — last resort
+#
+# Point somewhere else with LQABR_SUMMARY_CONFIG_FILE=/path/to/config.yaml
+# =====================================================================
+
+# The runtime connection to the HubSpot MCP server (FastMCP, streamable-HTTP).
+mcp:
+  # Per-request HTTP timeout. The central server's upsert_blog_summary can
+  # take ~25s (it searches HubSpot on blog_published_at, then upserts), so the
+  # ceiling is 60s to leave cold-call headroom rather than fail the first hit.
+  timeout_seconds: 60
+  # Total attempts = max_retries (1 initial + retries share the same counter).
+  max_retries: 3
+  # Exponential backoff between retries: delay = base * 2**(attempt-1), capped.
+  backoff_base_seconds: 1.0
+  backoff_cap_seconds: 8.0
+  # HTTP statuses that are retried (transient). A 404 is always handled
+  # separately as an expired MCP session and re-initialized.
+  retryable_statuses: [429, 500, 502, 503, 504]
+
+# Agent's own logging. `file` is relative to the repo root (or absolute).
+# Empty string disables file logging (stdout only).
+# Precedence: LQABR_SUMMARY_LOG_FILE env > this > code default.
+logging:
+  file: logs/agents/summary/agent.log

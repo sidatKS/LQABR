@@ -1,0 +1,5 @@
+# HubSpot MCP HTTP server (mcp/http_server.py) — transport deps only.
+# The tool logic lives in mcp/hubspot + lqabr_core (installed separately).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+requests>=2.32

@@ -1,0 +1,9 @@
+# agents/research — runtime dependencies.
+# Standalone: nothing from packages/lqabr_core, nothing from another agent.
+anthropic>=0.40          # the model call AND the server-side web_search tool
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+requests>=2.32.0         # the MCP transport
+PyYAML>=6.0              # the config map
+python-dotenv>=1.0.1     # local .env; no-op on Cloud Run

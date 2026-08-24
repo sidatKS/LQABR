@@ -465,6 +465,11 @@ class RoutingDecision:
     #: Set only on audience-expanded research hand-offs (Rev 5): the blog Ticket
     #: id the lead was selected for. None for every other route.
     summary_ref_id: Optional[str] = None
+    #: Set alongside summary_ref_id on research hand-offs: the blog post's
+    #: publication timestamp, which is the key the central MCP reads a blog
+    #: summary by. Without it the agent has the ticket id but no way to fetch
+    #: the summary through the MCP. None for every other route.
+    blog_published_at: Optional[str] = None
 
     def audit_fields(self) -> Dict[str, Any]:
         return {
