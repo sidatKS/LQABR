@@ -183,5 +183,110 @@ Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The file at
 
 ---
 
+## Appendix: WSL (Windows)
+
+The reference machine is **Ubuntu 24.04 under WSL2**, with Docker installed
+*inside* WSL — not Docker Desktop. Everything above still applies; these are
+the differences that will bite you.
+
+### Install WSL, then work inside it
+
+From **PowerShell as Administrator**, once:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Reboot, set a username and password, then open **Ubuntu** — not PowerShell.
+Every command in this guide runs in the Ubuntu shell.
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip docker.io git
+sudo usermod -aG docker "$USER"      # then close and reopen the shell
+```
+
+There is no systemd here, so start the Docker daemon per session:
+
+```bash
+sudo service docker start
+service docker status                # expect "active"
+```
+
+### 1. gcloud is not on PATH in a non-login shell
+
+The SDK installs to `~/google-cloud-sdk` and is wired up by `.bashrc`. A script,
+a cron job, or a `wsl -e bash -c` invocation gets neither and fails with
+`gcloud: command not found`.
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+```
+
+Put that line at the top of anything that shells out to `gcloud`.
+
+### 2. Where you clone matters
+
+| Location | Trade-off |
+|---|---|
+| `/mnt/c/Users/<you>/LQABR` | Visible to Windows editors. **Slow** file I/O, and `chmod` does nothing. |
+| `~/LQABR` | Much faster, real Unix permissions. Reachable from Windows Explorer via the `\\wsl$` share. |
+
+Either works. Prefer `~` unless Windows tools need to edit the files directly.
+
+### 3. chmod is a no-op on /mnt/c
+
+DrvFs ignores permissions, so `.env` stays world-readable however you chmod it.
+`setup_env.sh` detects this and reports the mode it actually got rather than
+claiming one it did not. The file is git-ignored, but it holds a live API key —
+on a shared machine, clone to `~` instead.
+
+### 4. CRLF line endings break credentials
+
+A `.env` touched by a Windows editor gets CRLF. The carriage return rides along
+inside the value and the HTTP layer rejects it:
+
+```
+Invalid leading whitespace, reserved character(s), or ... in header value
+```
+
+```bash
+sed -i 's/\r$//' .env
+```
+
+`setup_env.sh` always writes LF, so this only happens to hand-edited files.
+
+### The venv belongs on the Linux side
+
+Even with the repo on `/mnt/c`, keep the virtualenv in the Linux filesystem —
+`~/lqabr-venv`, not inside the repo. A venv on DrvFs is slow and its activation
+scripts carry the wrong paths.
+
+```bash
+python3 -m venv ~/lqabr-venv
+source ~/lqabr-venv/bin/activate
+pip install -r agents/research/requirements.txt
+```
+
+### One block, every session
+
+```bash
+source ~/google-cloud-sdk/path.bash.inc
+source ~/lqabr-venv/bin/activate
+sudo service docker start
+docker start lqabr-mcp-gcp 2>/dev/null || true
+
+cd /mnt/c/Users/<you>/LQABR/agents/research
+set -a && source .env && set +a
+python -m uvicorn service_app:app --port 8086 --app-dir src
+```
+
+### Reaching it from Windows
+
+`localhost:8086` works from a Windows browser — WSL2 forwards it. The reverse
+(WSL reaching a service running on Windows) needs the host IP, not `localhost`.
+
+---
+
 See also: `RUNBOOK.md` (day-to-day), `API.md` (the HTTP contract),
 `ENV_VARS.md` (every knob), `DESIGN.md` (why each piece exists).
