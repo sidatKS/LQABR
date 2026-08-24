@@ -129,6 +129,11 @@ class A2AClient:
         metadata = A2AClient._guard_metadata(dict(metadata or {}))
         if not trigger_id:
             raise PayloadGuardError("a dispatch must carry a trigger_id")
+        # The correlation id is injected into params.metadata. The blog-ticket
+        # hand-off carries it as camelCase ``triggerId`` already, so skip the
+        # snake_case ``trigger_id`` for that path; every other agent still gets
+        # ``trigger_id`` exactly as before.
+        _correlation = {} if "triggerId" in metadata else {"trigger_id": trigger_id}
         envelope = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
@@ -139,7 +144,7 @@ class A2AClient:
                     "parts": [{"kind": "text", "text": trigger_id}],
                     "messageId": str(uuid.uuid4()),
                 },
-                "metadata": {**metadata, "trigger_id": trigger_id},
+                "metadata": {**metadata, **_correlation},
             },
         }
 
@@ -154,14 +159,23 @@ class A2AClient:
         #
         # Remove this block once the agents read params.metadata.object_id.
         envelope["trigger_id"] = trigger_id
-        for snake, camel in (("object_id", "objectId"), ("object_ids", "objectIds"),
-                             ("batch_id", "batchId"), ("summary_ref_id", "summaryRefId")):
-            value = metadata.get(snake)
-            if value is not None:
-                if snake == "object_ids":
-                    value = list(value)
-                envelope[snake] = value
-                envelope[camel] = value
+        object_id = metadata.get("object_id") or metadata.get("objectId")
+        if object_id is not None:
+            envelope["object_id"] = object_id
+            envelope["objectId"] = object_id
+        # Grouped hand-off: the same mirroring for the plural form.
+        object_ids = metadata.get("object_ids")
+        if object_ids is not None:
+            envelope["object_ids"] = list(object_ids)
+            envelope["objectIds"] = list(object_ids)
+        batch_id = metadata.get("batch_id")
+        if batch_id is not None:
+            envelope["batch_id"] = batch_id
+            envelope["batchId"] = batch_id
+        summary_ref_id = metadata.get("summary_ref_id")
+        if summary_ref_id is not None:
+            envelope["summary_ref_id"] = summary_ref_id
+            envelope["summaryRefId"] = summary_ref_id
 
         return envelope
 

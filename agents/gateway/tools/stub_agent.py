@@ -60,23 +60,32 @@ async def receive(agent: str, request: Request) -> Dict[str, Any]:
     print("\n" + "=" * 62)
     print(f"  {agent.upper()} AGENT WOKEN")
     print("=" * 62)
-    print(f"  trigger_id : {trigger_id}")
     object_ids = metadata.get('object_ids')
+    is_ticket = metadata.get('propertyName') is not None  # HubSpot-named ticket hand-off
+    if is_ticket:
+        print(f"  triggerId       : {metadata.get('triggerId')}")
+    else:
+        print(f"  trigger_id : {trigger_id}")
     if object_ids is not None:
         print(f"  object_ids : {object_ids}")
         print(f"  count      : {len(object_ids)} contacts to fetch (grouped, one industry)")
+    elif is_ticket:
+        print(f"  objectId        : {metadata.get('objectId')}   <- the blog TICKET")
+        print(f"  propertyName    : {metadata.get('propertyName')}")
+        print(f"  subscriptionType: {metadata.get('subscriptionType')}")
+        print(f"  eventId         : {metadata.get('eventId')}")
     else:
         print(f"  object_id  : {metadata.get('object_id')}   <- the contact to fetch")
     if metadata.get('summary_ref_id') is not None:
         print(f"  summary_ref: {metadata.get('summary_ref_id')}   <- blog ticket (read the summary)")
-    print(f"  run_id     : {metadata.get('run_id')}")
-    print(f"  from       : {metadata.get('source')} v{metadata.get('gateway_version')}")
     print(f"  correlation: x-lqabr-trigger-id = "
           f"{request.headers.get('x-lqabr-trigger-id')}")
     print("-" * 62)
     print(f"  A real agent would now call:")
     if object_ids is not None:
         print(f"    POST /crm/v3/objects/contacts/batch/read  ids={object_ids}")
+    elif is_ticket:
+        print(f"    GET /crm/v3/objects/tickets/{metadata.get('objectId')}")
     else:
         print(f"    GET /crm/v3/objects/contacts/{metadata.get('object_id')}")
     print("=" * 62, flush=True)
@@ -152,6 +161,6 @@ def healthz() -> Dict[str, str]:
 if __name__ == "__main__":
     import uvicorn
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9001
-    print(f"stub agent listening on http://127.0.0.1:{port}", flush=True)
+    print(f"stub agent [v2 HubSpot-named fields] listening on http://127.0.0.1:{port}", flush=True)
     print("waiting for the gateway to hand something over...", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

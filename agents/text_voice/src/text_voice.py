@@ -14,6 +14,7 @@ from lqabr_core.secrets import get_secret
 from lqabr_core.types import VoiceLead, VoiceOutcome
 
 try:
+    from .mcp_client import StepFiveMCPClient
     from .tools import VapiError, place_call
 except ImportError:  # pragma: no cover - uvicorn/pytest put src/ on sys.path
     from tools import VapiError, place_call  # type: ignore
@@ -305,7 +306,7 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
     lead = VoiceLead(**read["lead"])
 
     try:
-        mcp.upsert_lead(lead.contact_id, voice_status="INITIATED")
+        mcp.upsert_lead(lead.contact_id, voice_status="INITIATED", current=lead)
     except CRMError as exc:
         obs.log_process(obs.STEP_PLACE_CALL, "degraded",
                         "voice_status=INITIATED write failed — dialling anyway, "
@@ -320,14 +321,14 @@ def handle_new_lead(object_id: str) -> Dict[str, Any]:
             placed = place_call(lead, lead_context=lead_context)
         except VapiError as exc:
             step_result["status"] = "error"
-            _release_claim(lead.contact_id, f"vapi-error: {exc}")
+            _release_claim(lead.contact_id, f"vapi-error: {exc}", current=lead)
             return {"status": "error", "step": "4",
                     "contact_id": lead.contact_id,
                     "reason": f"vapi-error: {exc}"}
         except Exception as exc:  # noqa: BLE001 — e.g. a SecretNotFoundError
             step_result["status"] = "error"
             _release_claim(lead.contact_id,
-                           f"pre-dial failure: {type(exc).__name__}")
+                           f"pre-dial failure: {type(exc).__name__}", current=lead)
             return {"status": "error", "step": "4",
                     "contact_id": lead.contact_id,
                     "reason": f"pre-dial failure: {type(exc).__name__}: {exc}"}
@@ -391,7 +392,7 @@ def _release_claim(contact_id: Optional[str], reason: str) -> None:
     if not contact_id:
         return
     try:
-        mcp.upsert_lead(contact_id, voice_status="FAILED")
+        mcp.upsert_lead(contact_id, voice_status="FAILED", current=current)
     except CRMError as exc:
         obs.log_process(obs.STEP_PLACE_CALL, "degraded",
                         "call was never placed but the FAILED rollback also "

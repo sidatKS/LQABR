@@ -61,7 +61,7 @@ class FakeMCP:
             return result
         return {"status": "updated", "contact_id": contact_id}
 
-    def record_call_outcome(self, contact_id, outcome, detail=None):
+    def record_call_outcome(self, contact_id, outcome, detail=None, current=None):
         self.calls.append(("record_call_outcome", contact_id, outcome, detail))
         if self.record_call_outcome_error:
             raise self.record_call_outcome_error
@@ -502,7 +502,7 @@ def test_release_claim_writes_failed(tv_agent, monkeypatch):
     fake = FakeMCP()
     monkeypatch.setattr(tv_agent, "mcp", fake)
     tv_agent._release_claim("123", "vapi-error: boom")
-    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None)]
+    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None, None)]
 
 
 def test_release_claim_swallows_crm_error_rather_than_raising(tv_agent, monkeypatch):
@@ -536,7 +536,8 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
                             "classified_by": "model"})
     monkeypatch.setattr(tv_agent, "_contact_id_for_report", lambda report: "123")
     monkeypatch.setattr(tv_agent, "push_to_mcp",
-                        lambda contact_id, outcome, summary="", recording_url="", call_id="":
+                        lambda contact_id, outcome, summary="", recording_url="",
+                               current=None:
                             {"status": "ok", "contact_id": contact_id, "probability": 60,
                              "promoted_to_scheduling": True, "failures": []})
 
@@ -671,6 +672,10 @@ def test_handle_new_lead_dials_with_empty_context_when_the_property_is_unset(
     assert result["status"] == "initiated"
     assert seen["lead_context"] == ""
 
+    monkeypatch.setattr(tv_agent, "place_call", fake_place_call)
+    result = tv_agent.handle_new_lead("904")
+    assert result["status"] == "initiated"
+    assert seen["lead_context"] == ""
 
 def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
     """User request 2026-08-17: the text itself, not only its length. Step 3
