@@ -89,9 +89,14 @@ Edit `config/agents_registry.yaml` to change any of this — never the code.
 
 | Route | Trigger | Value acted on | Owning agent |
 |---|---|---|---|
-| `R1-contact-created` | Contact created | *(any)* | Email |
-| `R2-decision-maker` | `decision_maker` changed | `true` | Email |
+| `R2-lead-context` | `lead_context` changed | *(non-empty)* | Email |
 | `R3-email-opened` | `lqabr_email_status` changed | `OPENED` | Voice |
+| `R-blog-summary` | `blog_summary` changed (Ticket) | *(non-empty)* | Research |
+
+`R1-contact-created` (Contact created -> Email) was disabled 25-Aug-2026;
+email now triggers off `lead_context` only. `R2-decision-maker` was replaced
+by `R2-lead-context` earlier -- see `config/agents_registry.yaml` for the
+full history in comments.
 
 Onboarding a third agent is: add it under `agents:`, add a route, set its
 `endpoint_env`. No code change, no redeploy of routing logic.

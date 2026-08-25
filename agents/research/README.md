@@ -13,7 +13,7 @@ blog_summary written on a Ticket
 
 ## What it does
 
-1. **Reads the lead** — `get_lead_profile(object_id)` → industry, company name,
+1. **Reads the lead** — `get_lead_profile(objectId)` → industry, company name,
    job title, and the three ids the write tool requires back.
 2. **Reads the post** — `get_blog_summary(blog_published_at)` → the summary the
    Summary Agent wrote, plus its industry.
@@ -54,24 +54,36 @@ that is configuration, not an import.
 
 ## Run
 
+New machine? Follow `docs/SETUP.md` — clone to first campaign, ~10 minutes.
+
 ```bash
 pip install -r agents/research/requirements.txt
-cp agents/research/.env.example agents/research/.env    # then set ANTHROPIC_API_KEY
 
-uvicorn service_app:app --port 8086 --app-dir agents/research/src
+cd agents/research
+./setup_env.sh                 # .env from Secret Manager; writes OFF
+                               # ./setup_env.sh --live  when you mean it
+set -a && source .env && set +a
+python3 -m uvicorn service_app:app --port 8086 --app-dir src
 ```
+
+Source `.env` FIRST — exporting a variable and then sourcing `.env` overwrites
+it. The HubSpot MCP container must be up (`:8080`) or every run fails at the
+first read.
 
 Headless, one lead:
 
 ```bash
-python agents/research/src/agent.py \
-  --object-id 533963448020 --blog-published-at 2026-08-27T09:30:00Z --dry-run
+python3 agents/research/src/agent.py \
+  --object-id 533963448020 --summary-object-id 330008697562 --dry-run
 ```
 
-Tests (offline, no credentials):
+Tests (offline, no credentials) — run from the agent directory, not the repo
+root: from the root, pytest takes the root as rootdir and tries to collect the
+whole repo.
 
 ```bash
-python3 -m pytest -c agents/research/tests/pytest.ini -q
+cd agents/research
+PYTHONPATH=src:packages python -m pytest -q
 ```
 
 ## Configuration
@@ -87,4 +99,5 @@ the config map.
 - `docs/DESIGN.md` — why each piece exists, and the decisions behind it
 - `docs/API.md` — the HTTP contract
 - `docs/ENV_VARS.md` — every knob
+- `docs/SETUP.md` — a new machine, from clone to first campaign
 - `docs/RUNBOOK.md` — start it, verify it, read the failures

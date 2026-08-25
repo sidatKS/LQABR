@@ -93,7 +93,9 @@ class TestProbes:
     def test_root_describes_what_the_service_refuses_to_carry(self, client):
         body = client.get("/").json()
         assert body["carries"] == "trigger_id only"
-        assert len(body["routes"]) == 4
+        # 3, not 4: R1-contact-created was disabled 25-Aug-2026 (email
+        # triggers off lead_context only now).
+        assert len(body["routes"]) == 3
 
     def test_metrics_exposes_handoff_counters(self, client):
         body = client.get("/metrics").json()

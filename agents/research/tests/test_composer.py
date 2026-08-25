@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from composer import Composer, build_query, load_system_prompt
+from composer import (Composer, build_query, load_system_prompt,
+                      strip_preamble)
 from research_core.search.base import SearchError
 from research_core.settings import get_settings
 
@@ -37,12 +38,6 @@ def test_compose_returns_note_with_sources(lead, blog, fake_search):
     assert note.sources == ["https://example.com/a"]
 
 
-def test_sources_can_be_turned_off(lead, blog, fake_search, monkeypatch):
-    monkeypatch.setenv("LQABR_RESEARCH_INCLUDE_SOURCES", "0")
-    note = Composer(provider=fake_search, settings=get_settings(refresh=True)).compose(lead, blog)
-    assert note.sources == []
-
-
 def test_search_failure_propagates(lead, blog):
     from conftest import FakeSearch
     provider = FakeSearch(raises=SearchError("provider down"))
@@ -50,10 +45,15 @@ def test_search_failure_propagates(lead, blog):
         Composer(provider=provider, settings=get_settings(refresh=True)).compose(lead, blog)
 
 
-def test_note_appends_sources_for_hubspot(lead, blog, fake_search):
+def test_the_crm_field_is_prose_only(lead, blog, fake_search):
+    """The cited URLs were 48% of everything written over one live campaign,
+    and the Email agent — the field's only reader — cannot use them."""
     note = Composer(provider=fake_search, settings=get_settings(refresh=True)).compose(lead, blog)
     text = note.as_hubspot_text()
-    assert "Sources: https://example.com/a" in text
+    assert "Sources:" not in text and "https://" not in text
+    assert text == note.text.strip()
+    # still collected, so the count is logged and the response carries them
+    assert note.sources == ["https://example.com/a"]
 
 
 def test_note_is_truncated_to_the_cap(lead, blog):
@@ -61,3 +61,42 @@ def test_note_is_truncated_to_the_cap(lead, blog):
     provider = FakeSearch(text="x" * 100, sources=[])
     note = Composer(provider=provider, settings=get_settings(refresh=True)).compose(lead, blog)
     assert len(note.as_hubspot_text(max_chars=10)) == 10
+
+
+# --- the note must be the note, not the model talking about writing it -------
+# Both shapes below came off a real run (2026-08-24, FINANCIAL_SERVICES):
+# tool-use narration between searches, and a research recap followed by an
+# announcement line. Neither belongs on a HubSpot contact.
+
+NOTE = ("Brex is now a wholly owned subsidiary of Capital One after a $5.15 "
+        "billion acquisition, and its core identity is an AI-native finance "
+        "platform combining corporate cards, spend management and banking.")
+
+
+def test_announcement_line_and_rule_are_dropped():
+    raw = ("Brex is a modern AI-native platform. The search did not surface a "
+           "President by that name.\n\n"
+           "Here is the `lead_context` note:\n\n---\n\n") + NOTE
+    assert strip_preamble(raw) == NOTE
+
+
+def test_the_recap_before_the_announcement_goes_too():
+    raw = "A recap paragraph about the search.\n\nHere is the note:\n\n" + NOTE
+    assert "recap paragraph" not in strip_preamble(raw)
+
+
+def test_a_clean_note_is_returned_untouched():
+    assert strip_preamble(NOTE) == NOTE
+
+
+def test_here_is_mid_sentence_is_not_a_marker():
+    """Only a colon at END OF LINE announces a note — prose keeps its words."""
+    raw = ("MoneyLion's pitch is simple: here is your whole financial life in "
+           "one app. That framing is exactly what a governed-AI story respects.")
+    assert strip_preamble(raw) == raw
+
+
+def test_nothing_is_dropped_when_too_little_would_survive():
+    """A short tail means the marker was misread — keep the original."""
+    raw = "Here is the note:\n\nToo short."
+    assert strip_preamble(raw) == raw.strip()

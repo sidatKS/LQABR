@@ -100,8 +100,11 @@ class Settings:
 
     # ── model ────────────────────────────────────────────────
     model: str = "claude-sonnet-4-6"
-    temperature: float = 1.0
     max_tokens: int = 2000
+    #: The model credential's NAME in Secret Manager — never its value. Resolved
+    #: at run time exactly like the HubSpot token, so no key is written to disk
+    #: and a rotation needs no change on anyone's machine.
+    model_token_secret: str = "lqabr-anthropic-api-key"
 
     # ── MCP (the runtime connection to the HubSpot MCP container) ──
     mcp_base_url: str = "http://localhost:8091/mcp"
@@ -113,6 +116,16 @@ class Settings:
     mcp_tool_read_lead: str = "get_lead_profile"
     mcp_tool_read_blog: str = "get_blog_summary"
     mcp_tool_write: str = "upsert_lead_profile"
+    #: Campaign mode only: every lead in one industry. NOT on the central MCP
+    #: as of 2026-08-24 (its surface is the four tools above plus
+    #: upsert_blog_summary), so /research/campaign fails loudly with the tool
+    #: name until it lands. Name it here the moment it does — no code edit.
+    mcp_tool_list_leads: str = "list_leads_by_industry"
+    #: What the MCP calls the record id in its tool arguments. It was
+    #: `object_id`; on 2026-08-25 the container began REQUIRING `objectId` and
+    #: rejecting the old spelling ("Unexpected keyword argument"). A rename on
+    #: their side is a config change on ours, never a code edit.
+    mcp_object_id_arg: str = "objectId"
     mcp_assert_tools: bool = True
     #: warn = log and keep serving if the MCP is asleep at boot (default)
     #: strict = refuse to start   |   off = do not check at all
@@ -140,20 +153,37 @@ class Settings:
     # ── note shape ───────────────────────────────────────────
     note_max_chars: int = 60_000
     note_target_words: int = 160
-    include_sources: bool = True
 
     # ── HTTP surface ─────────────────────────────────────────
-    routes: str = "all"                 # all | api
-    route_a2a: str = "/research/a2a"
-    route_run: str = "/research/run"
+    route_campaign_a2a: str = "/research/campaign/a2a"   # gateway -> ONE POST
     cors_origins: List[str] = field(default_factory=lambda: ["http://localhost:5173"])
-    port: int = 8086
+
+    # ── direct HubSpot (campaign lead lookup ONLY — see hubspot_direct.py) ──
+    #: The MCP has no lead-listing tool, so "which leads are in this industry"
+    #: is the one read that goes straight to HubSpot. Everything else — every
+    #: lead read and every write — stays on the MCP. Set
+    #: `use_direct_lead_lookup=False` the day the MCP grows the tool.
+    use_direct_lead_lookup: bool = True
+    #: Empty means "the default in hubspot_direct.py". The hostname literal
+    #: lives only in that one exempted module, so the standalone guard stays
+    #: strict about every other file.
+    hubspot_base_url: str = ""
+    hubspot_token_secret: str = "lqabr-hubspot-access-token"
+    hubspot_timeout_seconds: int = 30
 
     # ── secrets + logging ────────────────────────────────────
     secrets_source: str = "env"         # env | secret_manager | auto
     gcp_project: str = ""
     log_level: str = "INFO"
     log_file: str = ""
+    # console shape only — the log FILE is always JSON. "auto" means text when
+    # stdout is a terminal (a human is reading) and JSON when it is not (Cloud
+    # Run, a pipe), so deployed structured logging is never traded for looks.
+    log_format: str = "auto"            # auto | text | json
+    #: Payload previews and the parameter bag on every outbound call — the
+    #: "what exactly did we send the model / the MCP" detail. On by default so
+    #: a run is legible without remembering a flag; 0 gives the terser shape.
+    log_detail: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -169,8 +199,10 @@ class Settings:
 
         return cls(
             model=_str("LQABR_RESEARCH_MODEL", _cfg(cfg, "model", "name", "claude-sonnet-4-6")),
-            temperature=_float("LQABR_RESEARCH_TEMPERATURE", _cfg(cfg, "model", "temperature", 1.0)),
             max_tokens=_int("LQABR_RESEARCH_MAX_TOKENS", _cfg(cfg, "model", "max_tokens", 2000)),
+            model_token_secret=_str("LQABR_RESEARCH_MODEL_TOKEN_SECRET",
+                                    _cfg(cfg, "model", "token_secret",
+                                         "lqabr-anthropic-api-key")),
 
             mcp_base_url=_str("LQABR_RESEARCH_MCP_BASE_URL",
                               _cfg(cfg, "mcp", "base_url", "http://localhost:8091/mcp")),
@@ -185,6 +217,11 @@ class Settings:
                                     _cfg(cfg, "mcp", "tool_read_blog", "get_blog_summary")),
             mcp_tool_write=_str("LQABR_RESEARCH_MCP_TOOL_WRITE",
                                 _cfg(cfg, "mcp", "tool_write", "upsert_lead_profile")),
+            mcp_tool_list_leads=_str("LQABR_RESEARCH_MCP_TOOL_LIST_LEADS",
+                                     _cfg(cfg, "mcp", "tool_list_leads",
+                                          "list_leads_by_industry")),
+            mcp_object_id_arg=_str("LQABR_RESEARCH_MCP_OBJECT_ID_ARG",
+                                   _cfg(cfg, "mcp", "object_id_arg", "objectId")),
             mcp_assert_tools=_bool("LQABR_RESEARCH_MCP_ASSERT_TOOLS",
                                    _cfg(cfg, "mcp", "assert_tools", True)),
             mcp_startup_check=_str("LQABR_RESEARCH_MCP_STARTUP_CHECK",
@@ -217,37 +254,45 @@ class Settings:
                                 _cfg(cfg, "note", "max_chars", 60_000)),
             note_target_words=_int("LQABR_RESEARCH_NOTE_TARGET_WORDS",
                                    _cfg(cfg, "note", "target_words", 160)),
-            include_sources=_bool("LQABR_RESEARCH_INCLUDE_SOURCES",
-                                  _cfg(cfg, "note", "include_sources", True)),
 
-            routes=_str("LQABR_RESEARCH_ROUTES", _cfg(cfg, "service", "routes", "all")).lower(),
-            route_a2a=_str("LQABR_RESEARCH_ROUTE_A2A",
-                           _cfg(cfg, "service", "route_a2a", "/research/a2a")),
-            route_run=_str("LQABR_RESEARCH_ROUTE_RUN",
-                           _cfg(cfg, "service", "route_run", "/research/run")),
+            route_campaign_a2a=_str(
+                "LQABR_RESEARCH_ROUTE_CAMPAIGN_A2A",
+                _cfg(cfg, "service", "route_campaign_a2a", "/research/campaign/a2a")),
             cors_origins=_list("LQABR_RESEARCH_CORS_ORIGINS",
                                tuple(_cfg(cfg, "service", "cors_origins",
                                           ["http://localhost:5173"]) or ())),
-            port=_int("PORT", _cfg(cfg, "service", "port", 8086)),
 
+            use_direct_lead_lookup=_bool(
+                "LQABR_RESEARCH_USE_DIRECT_LEAD_LOOKUP",
+                _cfg(cfg, "hubspot", "use_direct_lead_lookup", True)),
+            hubspot_base_url=_str("LQABR_RESEARCH_HUBSPOT_BASE_URL",
+                                  _cfg(cfg, "hubspot", "base_url", "")),
+            hubspot_token_secret=_str("LQABR_RESEARCH_HUBSPOT_TOKEN_SECRET",
+                                      _cfg(cfg, "hubspot", "token_secret",
+                                           "lqabr-hubspot-access-token")),
+            hubspot_timeout_seconds=_int("LQABR_RESEARCH_HUBSPOT_TIMEOUT_SECONDS",
+                                         _cfg(cfg, "hubspot", "timeout_seconds", 30)),
             secrets_source=_str("LQABR_RESEARCH_SECRETS_SOURCE",
                                 _cfg(cfg, "secrets", "source", "env")).lower(),
             gcp_project=_str("LQABR_RESEARCH_GCP_PROJECT", _cfg(cfg, "secrets", "gcp_project", "")),
             log_level=_str("LQABR_RESEARCH_LOG_LEVEL",
                            _cfg(cfg, "logging", "level", "INFO")).upper(),
             log_file=_resolve_path(log_file),
+            log_format=_str("LQABR_RESEARCH_LOG_FORMAT",
+                            _cfg(cfg, "logging", "format", "auto")).lower(),
+            log_detail=_bool("LQABR_RESEARCH_LOG_DETAIL",
+                             _cfg(cfg, "logging", "detail", True)),
         )
 
     # ------------------------------------------------------------------
-    @property
-    def serves_api(self) -> bool:
-        return self.routes in ("all", "api")
-
     def redacted(self) -> Dict[str, object]:
         """Safe to log at startup: every knob, no secret values."""
         data = {key: value for key, value in self.__dict__.items()
                 if key not in ("mcp_auth_token",)}
         data["mcp_auth_token"] = "set" if self.mcp_auth_token else "unset"
+        #: `mcp_auth_token` is a VALUE and is blanked by the redactor, so the
+        #: one fact worth seeing at boot gets a name of its own.
+        data["mcp_protected"] = bool(self.mcp_auth_token)
         return data
 
 

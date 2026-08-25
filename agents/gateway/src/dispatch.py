@@ -119,17 +119,25 @@ class Dispatcher:
         return self._batch_size
 
     def _metadata(self, decision: RoutingDecision, run_id: str) -> Dict[str, Any]:
-        # Research hand-off (blog-ticket route, audience resolution disabled):
-        # forward ONLY the ticket's own details, under HubSpot's original field
-        # names. The agent receives the ticket exactly as HubSpot named it and
-        # nothing else. The trigger_id is supplied by the A2A envelope itself
-        # (the message body), not here, so it is not "extra" wire metadata.
-        if decision.agent == "research":
+        # Research, email and voice hand-off: forward ONLY the HubSpot
+        # event's own details, under HubSpot's original field names. The
+        # agent receives the event exactly as HubSpot sent it and nothing
+        # else. The trigger_id is supplied by the A2A envelope itself (the
+        # message body), not here, so it is not "extra" wire metadata.
+        # Email/voice 25-Aug-2026: at Saroja's explicit instruction,
+        # gateway-only change -- agents/email's and agents/text_voice's own
+        # request parsing are untouched.
+        if decision.agent in ("research", "email", "voice"):
             return {
                 "objectId": decision.object_id,
                 "propertyName": decision.property_name,
-                "subscriptionType": "ticket.propertyChange",
+                "propertyValue": decision.property_value,
+                "subscriptionType": decision.subscription_type,
+                "portalId": decision.portal_id,
                 "eventId": decision.event_id,
+                "occurredAt": decision.occurred_at,
+                "attemptNumber": decision.attempt_number,
+                "changeSource": decision.change_source,
                 "triggerId": decision.trigger_id,
             }
         metadata: Dict[str, Any] = {
@@ -151,11 +159,14 @@ class Dispatcher:
 
     def dispatch(self, decision: RoutingDecision, run_id: str) -> DispatchResult:
         """Hand off one trigger. Always returns; never raises for a remote fault."""
+        metadata = self._metadata(decision, run_id)
         try:
             response: A2AResponse = self._client.send_trigger(
                 endpoint=decision.endpoint,
                 trigger_id=decision.trigger_id,
-                metadata=self._metadata(decision, run_id),
+                metadata=metadata,
+                on_send=lambda body: self._audit.record_dispatch_payload(
+                    run_id, decision, body),
             )
         except PayloadGuardError as exc:
             # A programming error, not a transport one: something tried to
@@ -278,11 +289,14 @@ class Dispatcher:
         head = chunk[0]
         event_ids = tuple(d.event_id for d in chunk)
         started = time.perf_counter()
+        metadata = self._batch_metadata(chunk, run_id, batch_id)
         try:
             response: A2AResponse = self._client.send_trigger(
                 endpoint=head.endpoint,
                 trigger_id=batch_id,
-                metadata=self._batch_metadata(chunk, run_id, batch_id),
+                metadata=metadata,
+                on_send=lambda body: self._audit.record_dispatch_payload(
+                    run_id, head, body),
             )
         except PayloadGuardError as exc:
             self._audit.record_batch_dispatch(

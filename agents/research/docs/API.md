@@ -38,13 +38,13 @@ The domain entry point. **Synchronous** — the caller gets the outcome.
 
 ```bash
 curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
-  -d '{"object_id":"533963448020","blog_published_at":"2026-08-27T09:30:00Z"}'
+  -d '{"objectId":"533963448020","blog_published_at":"2026-08-27T09:30:00Z"}'
 ```
 
 Nested form is equivalent:
 
 ```json
-{ "target": { "object_id": "533963448020",
+{ "target": { "objectId": "533963448020",
               "blog_published_at": "2026-08-27T09:30:00Z" } }
 ```
 
@@ -54,7 +54,7 @@ Response:
 {
   "run_id": "res-1a2b3c4d5e6f",
   "status": "completed",
-  "object_id": "533963448020",
+  "objectId": "533963448020",
   "lead": { "company": "Axiom Law", "industry": "HEALTHCARE", "...": "..." },
   "blog": { "blog_published_at": "2026-08-27T09:30:00Z", "...": "..." },
   "note": "Axiom Law's alternative-legal-services model puts it …",
@@ -83,9 +83,9 @@ Ids are read from `params.metadata`:
   "params": {
     "message": { "role": "user", "parts": [{ "kind": "text", "text": "trg-…" }] },
     "metadata": {
-      "object_id": "533963448020",
+      "objectId": "533963448020",
       "blog_published_at": "2026-08-27T09:30:00Z",
-      "summary_ref_id": "329444635358",
+      "summary_objectId": "329444635358",
       "run_id": "run-…"
     }
   }
@@ -96,10 +96,10 @@ Reply:
 
 ```json
 { "jsonrpc": "2.0", "id": "1",
-  "result": { "status": "accepted", "object_id": "533963448020", "run_id": "run-…" } }
+  "result": { "status": "accepted", "objectId": "533963448020", "run_id": "run-…" } }
 ```
 
-A payload with no `object_id` is answered `{"status": "rejected"}` — never a
+A payload with no `objectId` is answered `{"status": "rejected"}` — never a
 500, because a malformed hand-off is a routing problem, not a server fault.
 
 ## Failure reasons

@@ -462,6 +462,12 @@ class RoutingDecision:
     property_value: Optional[str]
     occurred_at: Optional[int]
     attempt_number: int
+    #: Forwarded verbatim on the research hand-off, which carries the HubSpot
+    #: event under HubSpot's own field names. None for every other route only
+    #: because nothing else reads them.
+    subscription_type: Optional[str] = None
+    portal_id: Optional[int] = None
+    change_source: Optional[str] = None
     #: Set only on audience-expanded research hand-offs (Rev 5): the blog Ticket
     #: id the lead was selected for. None for every other route.
     summary_ref_id: Optional[str] = None
@@ -722,6 +728,8 @@ class Router:
                 route_id=route.id, event_id=event.event_id, object_id=event.object_id,
                 property_name=event.property_name, property_value=event.property_value,
                 occurred_at=event.occurred_at, attempt_number=event.attempt_number,
+                subscription_type=event.subscription_type, portal_id=event.portal_id,
+                change_source=event.change_source,
             ))
 
         return result
