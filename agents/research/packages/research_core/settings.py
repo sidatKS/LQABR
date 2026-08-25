@@ -121,6 +121,11 @@ class Settings:
     #: upsert_blog_summary), so /research/campaign fails loudly with the tool
     #: name until it lands. Name it here the moment it does — no code edit.
     mcp_tool_list_leads: str = "list_leads_by_industry"
+    #: What the MCP calls the record id in its tool arguments. It was
+    #: `object_id`; on 2026-08-25 the container began REQUIRING `objectId` and
+    #: rejecting the old spelling ("Unexpected keyword argument"). A rename on
+    #: their side is a config change on ours, never a code edit.
+    mcp_object_id_arg: str = "objectId"
     mcp_assert_tools: bool = True
     #: warn = log and keep serving if the MCP is asleep at boot (default)
     #: strict = refuse to start   |   off = do not check at all
@@ -148,12 +153,9 @@ class Settings:
     # ── note shape ───────────────────────────────────────────
     note_max_chars: int = 60_000
     note_target_words: int = 160
-    include_sources: bool = True
 
     # ── HTTP surface ─────────────────────────────────────────
-    route_a2a: str = "/research/a2a"          # gateway -> ONE CONTACT
     route_campaign_a2a: str = "/research/campaign/a2a"   # gateway -> ONE POST
-    route_run: str = "/research/run"
     cors_origins: List[str] = field(default_factory=lambda: ["http://localhost:5173"])
 
     # ── direct HubSpot (campaign lead lookup ONLY — see hubspot_direct.py) ──
@@ -178,6 +180,10 @@ class Settings:
     # stdout is a terminal (a human is reading) and JSON when it is not (Cloud
     # Run, a pipe), so deployed structured logging is never traded for looks.
     log_format: str = "auto"            # auto | text | json
+    #: Payload previews and the parameter bag on every outbound call — the
+    #: "what exactly did we send the model / the MCP" detail. On by default so
+    #: a run is legible without remembering a flag; 0 gives the terser shape.
+    log_detail: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -214,6 +220,8 @@ class Settings:
             mcp_tool_list_leads=_str("LQABR_RESEARCH_MCP_TOOL_LIST_LEADS",
                                      _cfg(cfg, "mcp", "tool_list_leads",
                                           "list_leads_by_industry")),
+            mcp_object_id_arg=_str("LQABR_RESEARCH_MCP_OBJECT_ID_ARG",
+                                   _cfg(cfg, "mcp", "object_id_arg", "objectId")),
             mcp_assert_tools=_bool("LQABR_RESEARCH_MCP_ASSERT_TOOLS",
                                    _cfg(cfg, "mcp", "assert_tools", True)),
             mcp_startup_check=_str("LQABR_RESEARCH_MCP_STARTUP_CHECK",
@@ -246,16 +254,10 @@ class Settings:
                                 _cfg(cfg, "note", "max_chars", 60_000)),
             note_target_words=_int("LQABR_RESEARCH_NOTE_TARGET_WORDS",
                                    _cfg(cfg, "note", "target_words", 160)),
-            include_sources=_bool("LQABR_RESEARCH_INCLUDE_SOURCES",
-                                  _cfg(cfg, "note", "include_sources", True)),
 
-            route_a2a=_str("LQABR_RESEARCH_ROUTE_A2A",
-                           _cfg(cfg, "service", "route_a2a", "/research/a2a")),
             route_campaign_a2a=_str(
                 "LQABR_RESEARCH_ROUTE_CAMPAIGN_A2A",
                 _cfg(cfg, "service", "route_campaign_a2a", "/research/campaign/a2a")),
-            route_run=_str("LQABR_RESEARCH_ROUTE_RUN",
-                           _cfg(cfg, "service", "route_run", "/research/run")),
             cors_origins=_list("LQABR_RESEARCH_CORS_ORIGINS",
                                tuple(_cfg(cfg, "service", "cors_origins",
                                           ["http://localhost:5173"]) or ())),
@@ -278,6 +280,8 @@ class Settings:
             log_file=_resolve_path(log_file),
             log_format=_str("LQABR_RESEARCH_LOG_FORMAT",
                             _cfg(cfg, "logging", "format", "auto")).lower(),
+            log_detail=_bool("LQABR_RESEARCH_LOG_DETAIL",
+                             _cfg(cfg, "logging", "detail", True)),
         )
 
     # ------------------------------------------------------------------
@@ -286,6 +290,9 @@ class Settings:
         data = {key: value for key, value in self.__dict__.items()
                 if key not in ("mcp_auth_token",)}
         data["mcp_auth_token"] = "set" if self.mcp_auth_token else "unset"
+        #: `mcp_auth_token` is a VALUE and is blanked by the redactor, so the
+        #: one fact worth seeing at boot gets a name of its own.
+        data["mcp_protected"] = bool(self.mcp_auth_token)
         return data
 
 

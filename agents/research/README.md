@@ -13,7 +13,7 @@ blog_summary written on a Ticket
 
 ## What it does
 
-1. **Reads the lead** — `get_lead_profile(object_id)` → industry, company name,
+1. **Reads the lead** — `get_lead_profile(objectId)` → industry, company name,
    job title, and the three ids the write tool requires back.
 2. **Reads the post** — `get_blog_summary(blog_published_at)` → the summary the
    Summary Agent wrote, plus its industry.
@@ -74,7 +74,7 @@ Headless, one lead:
 
 ```bash
 python3 agents/research/src/agent.py \
-  --object-id 533963448020 --summary-ref-id 330008697562 --dry-run
+  --object-id 533963448020 --summary-object-id 330008697562 --dry-run
 ```
 
 Tests (offline, no credentials) — run from the agent directory, not the repo

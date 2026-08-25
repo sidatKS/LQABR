@@ -16,7 +16,7 @@ import os
 import time
 from typing import Any, List, Optional
 
-from ..obs import Observability, get_obs
+from ..obs import Observability, get_obs, preview, summarize_args
 from ..secrets import SecretError, resolve_secret
 from ..settings import Settings, get_settings
 from ..types import ResearchFindings
@@ -35,6 +35,26 @@ def _strip_provider_prefix(model: str) -> str:
     """
     text = str(model or "").strip()
     return text.split("/", 1)[1] if "/" in text else text
+
+
+def _field(obj: Any, key: str, default: Any = None) -> Any:
+    """One attribute, whether the reply is an SDK object or a plain dict."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _usage(message: Any) -> dict:
+    """What the call actually cost, when the reply says. Never fatal."""
+    usage = _field(message, "usage")
+    if usage is None:
+        return {}
+    server = _field(usage, "server_tool_use")
+    return {
+        "input_tokens": _field(usage, "input_tokens"),
+        "output_tokens": _field(usage, "output_tokens"),
+        "web_search_requests": _field(server, "web_search_requests") if server else None,
+    }
 
 
 def _supported_kwargs(fn: Any, payload: dict) -> tuple:
@@ -73,6 +93,7 @@ class AnthropicWebSearch:
         self._tool_type = os.environ.get("LQABR_RESEARCH_SEARCH_TOOL_TYPE", tool_type).strip()
         self._client = client
         self._api_key = api_key
+        self._system_logged = ""
 
     def _ensure_client(self) -> Any:
         if self._client is not None:
@@ -140,10 +161,7 @@ class AnthropicWebSearch:
         sources: List[str] = []
         searches = 0
 
-        def _get(obj: Any, key: str, default: Any = None) -> Any:
-            if isinstance(obj, dict):
-                return obj.get(key, default)
-            return getattr(obj, key, default)
+        _get = _field
 
         for block in (_get(message, "content", []) or []):
             kind = _get(block, "type", "")
@@ -188,13 +206,18 @@ class AnthropicWebSearch:
         settings = self._settings
         model = _strip_provider_prefix(settings.model)
         client = self._ensure_client()
+        tool = self._tool()
 
         payload = {
             "model": model,
             "max_tokens": int(settings.max_tokens),
             "messages": [{"role": "user", "content": prompt}],
-            "tools": [self._tool()],
         }
+        # `search_enabled=0` used to change nothing: the tool was attached
+        # regardless, so /health reported `search.enabled: false` while the
+        # agent ran (and billed) up to `max_uses` searches per lead.
+        if settings.search_enabled:
+            payload["tools"] = [tool]
         if system:
             payload["system"] = system
 
@@ -204,24 +227,64 @@ class AnthropicWebSearch:
                                    reason="this anthropic SDK version does not "
                                           "accept them; the call proceeds without")
 
+        # WHERE the model is called and WHAT is sent to it. The two payloads —
+        # the system prompt and the user prompt — follow as length-marked
+        # previews rather than in full: enough to see what was asked, never a
+        # 4,000-character block in the middle of a run.
+        self._obs.process.emit(
+            "model_request", model=model, max_tokens=payload.get("max_tokens"),
+            search_enabled=settings.search_enabled,
+            search_tool=tool.get("type") if settings.search_enabled else "",
+            search_max_uses=tool.get("max_uses") if settings.search_enabled else 0,
+            timeout_s=settings.search_timeout_seconds,
+            prompt_chars=len(prompt), system_chars=len(system),
+            endpoint=f"{self.name}.messages.create", sent_keys=sorted(payload),
+            # Only when it differs: the repo's ids are LiteLLM-shaped
+            # (`provider/model`) and the SDK wants the bare name.
+            model_configured=(settings.model if settings.model != model else ""),
+            allowed_domains=tool.get("allowed_domains", []),
+            blocked_domains=tool.get("blocked_domains", []),
+            # Logged in full the first time it is used and on any change;
+            # after that `system_chars` is the whole story.
+            system_preview=preview(system) if system != self._system_logged else "",
+            prompt_preview=preview(prompt))
+        self._system_logged = system
+
+        sent = summarize_args({"model": model,
+                               "max_tokens": payload.get("max_tokens"),
+                               "tool": tool.get("type") if settings.search_enabled else "none",
+                               "max_uses": tool.get("max_uses") if settings.search_enabled else 0,
+                               "prompt_chars": len(prompt),
+                               "system_chars": len(system)})
+
         started = time.monotonic()
         try:
             message = client.messages.create(**payload)
         except Exception as exc:  # noqa: BLE001 - surfaced as SearchError with the step named
             duration = round((time.monotonic() - started) * 1000, 1)
             self._obs.hop(service="anthropic", endpoint="messages.create",
-                          error=str(exc), duration_ms=duration)
+                          error=str(exc), duration_ms=duration, params=sent)
             raise SearchError(f"the web-search model call failed "
                               f"({type(exc).__name__}): {exc}") from exc
 
         duration = round((time.monotonic() - started) * 1000, 1)
         self._obs.hop(service="anthropic", endpoint="messages.create",
-                      status=200, duration_ms=duration)
+                      status=200, duration_ms=duration, params=sent)
 
         text, sources, searches = self._collect(message)
+        usage = _usage(message)
+        # The reply, before it is judged: token cost, why it stopped, how many
+        # searches it really ran, and the head of what it wrote back.
+        self._obs.process.emit(
+            "model_response", model=model, duration_ms=duration,
+            stop_reason=_field(message, "stop_reason", "") or "",
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            web_search_requests=usage.get("web_search_requests"),
+            searches=searches, sources=len(sources), source_urls=sources,
+            chars=len(text),
+            text_preview=preview(text))
         if not text:
             raise SearchError("the model returned no usable text for the research pass")
 
-        self._obs.process.emit("research_findings", model=model, searches=searches,
-                               sources=len(sources), chars=len(text))
         return ResearchFindings(text=text, sources=sources, searches=searches, model=model)

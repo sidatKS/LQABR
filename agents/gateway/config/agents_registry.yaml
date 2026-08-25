@@ -74,14 +74,22 @@ agents:
 #   agent             : owning agent key from `agents` above
 # ---------------------------------------------------------------------
 routes:
-  - id: R1-contact-created
-    description: >
-      New lead record inserted by the lead-profile agent. Subscribed in
-      addition to lead_context because a property set at creation time may
-      not raise a separate property-change event.
-    subscription_type: contact.creation
-    match: any                    # a creation event carries no property/value
-    agent: email
+  # R1-contact-created -- DISABLED 25-Aug-2026 at Saroja's instruction: email
+  # should trigger only off lead_context, not off contact creation. The
+  # HubSpot contact.creation webhook subscription is left as-is in the
+  # portal (see `subscriptions:` above) -- those events still arrive at
+  # /hubspot/events, they just no longer match any route here and are
+  # discarded as no_matching_route. Route has no `enabled:` flag (Route
+  # dataclass in router.py doesn't support one), so "disabled" means
+  # commented out, not present in the list Router.route_batch() sees.
+  # - id: R1-contact-created
+  #   description: >
+  #     New lead record inserted by the lead-profile agent. Subscribed in
+  #     addition to lead_context because a property set at creation time may
+  #     not raise a separate property-change event.
+  #   subscription_type: contact.creation
+  #   match: any                    # a creation event carries no property/value
+  #   agent: email
 
   - id: R2-lead-context
     description: >

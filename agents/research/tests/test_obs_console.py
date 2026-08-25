@@ -38,7 +38,7 @@ def _render(colour=False, glyphs=_GLYPHS_UNICODE, **event):
 
 
 def test_one_event_renders_as_one_line():
-    line = _render(event="campaign_blog_read", object_id="330008697562",
+    line = _render(event="campaign_blog_read", objectId="330008697562",
                    blog_industry="FINANCIAL_SERVICES", summary_chars=1261)
     assert "\n" not in line
     assert "campaign_blog_read" in line
@@ -47,16 +47,16 @@ def test_one_event_renders_as_one_line():
 
 def test_empty_fields_are_not_printed():
     """Noise is the whole complaint — a blank value earns no column."""
-    line = _render(event="campaign_start", object_id="1", industry_override="",
+    line = _render(event="campaign_start", objectId="1", blog_industry="",
                    leads=[], limit=100)
-    assert "industry_override" not in line
+    assert "blog_industry" not in line
     assert "leads=" not in line
     assert "limit=100" in line
 
 
 def test_a_failure_is_marked_differently_from_a_success():
     bad = _render(event="run_failed", step="research", reason="no model key")
-    good = _render(event="context_write_ok", object_id="1", chars=3941)
+    good = _render(event="context_write_ok", objectId="1", chars=3941)
     assert _GLYPHS_UNICODE["bad"] in bad
     assert _GLYPHS_UNICODE["ok"] in good
 
@@ -66,13 +66,23 @@ def test_a_long_list_is_summarised_not_dumped():
     assert "+17" in line and len(line) < 200
 
 
-def test_secrets_stay_redacted_in_the_readable_form():
+def test_a_credential_value_stays_redacted_in_the_readable_form():
     """The console must not become a way to read a value the JSON hides."""
-    line = _render(event="secret_resolved", secret="hs-token-abc123",
-                   source="secret_manager:proj/name")
-    assert "abc123" not in line
+    line = _render(event="model_call", api_key="sk-ant-abc123",
+                   authorization="Bearer xyz789", model="claude-sonnet-4-6")
+    assert "abc123" not in line and "xyz789" not in line
     assert "<redacted>" in line
+    assert "model=claude-sonnet-4-6" in line
+
+
+def test_a_credentials_NAME_is_printed_not_hidden():
+    """"Log the credential's name, never its value." Blanking the name is the
+    inverse of the rule, and it hid the only field `secret_resolved` carries."""
+    line = _render(event="secret_resolved", secret="lqabr-anthropic-api-key",
+                   source="secret_manager:proj/name")
+    assert "lqabr-anthropic-api-key" in line
     assert "secret_manager:proj/name" in line
+    assert "<redacted>" not in line
 
 
 def test_an_outbound_call_reads_as_a_call():
@@ -140,8 +150,8 @@ def _lines(events, width=165):
 def test_a_lead_line_says_where_it_is_in_the_queue():
     """The complaint this answers: \"I do not know how many are remaining\"."""
     start, done = _lines([
-        ("campaign_lead_start", {"object_id": "533970643697", "position": 2, "of": 5}),
-        ("campaign_lead_done", {"object_id": "533970643697", "position": 2,
+        ("campaign_lead_start", {"objectId": "533970643697", "position": 2, "of": 5}),
+        ("campaign_lead_done", {"objectId": "533970643697", "position": 2,
                                 "of": 5, "status": "completed", "chars": 3557}),
     ])
     assert "lead 2/5" in start and "working" in start
@@ -151,13 +161,13 @@ def test_a_lead_line_says_where_it_is_in_the_queue():
 def test_the_start_line_does_not_count_the_lead_it_is_working():
     """\"5 left\" while working lead 1 of 5 reads as one too many."""
     start = _lines([("campaign_lead_start",
-                     {"object_id": "1", "position": 1, "of": 5})])[0]
+                     {"objectId": "1", "position": 1, "of": 5})])[0]
     assert "left" not in start
 
 
 def test_a_failed_lead_still_reports_position_and_reason():
     line = _lines([("campaign_lead_done",
-                    {"object_id": "1", "position": 4, "of": 5, "status": "failed",
+                    {"objectId": "1", "position": 4, "of": 5, "status": "failed",
                      "chars": 0, "error": "crm-error: no lead for that id"})])[0]
     assert "lead 4/5" in line and "failed" in line
     assert "crm-error" in line and "(1 left)" in line
@@ -165,24 +175,15 @@ def test_a_failed_lead_still_reports_position_and_reason():
 
 def test_no_line_exceeds_the_terminal_width():
     """A wrapped line redraws over its neighbour — that is the log corrupting."""
-    events = [("context_write_ok", {"object_id": "533970643697", "chars": 3557,
+    events = [("context_write_ok", {"objectId": "533970643697", "chars": 3557,
                                     "property_name": "lead_context",
-                                    "note": "x" * 200}),
+                                    "summary": "x" * 200}),
               ("campaign_leads_found", {"industry": "FINANCIAL_SERVICES",
                                         "leads_found": 5,
                                         "leads": [str(n) for n in range(40)]})]
     for width in (90, 120, 165):
         for line in _lines(events, width=width):
             assert len(line) <= width, f"{len(line)} > {width}: {line!r}"
-
-
-def test_the_constant_write_note_is_not_printed_to_the_console():
-    """It is byte-identical on every lead: noise on screen, kept in the JSON."""
-    line = _lines([("context_write_ok",
-                    {"object_id": "1", "chars": 3557,
-                     "note": "this write raises HubSpot trigger 2"})])[0]
-    assert "raises HubSpot trigger" not in line
-    assert "chars=3557" in line
 
 
 def test_terminal_width_is_never_absurdly_narrow():

@@ -52,10 +52,8 @@ class FakeMCP:
             "voice_status_written_ms": self.voice_status_written_ms_result,
         }
 
-    def upsert_lead(self, contact_id, voice_status=None, probability=None,
-                    outcome=None, current=None):
-        self.calls.append(("upsert_lead", contact_id, voice_status, probability,
-                           outcome, current))
+    def upsert_lead(self, contact_id, voice_status=None, probability=None, outcome=None):
+        self.calls.append(("upsert_lead", contact_id, voice_status, probability, outcome))
         if self.upsert_results:
             result = self.upsert_results.pop(0)
             if isinstance(result, Exception):
@@ -598,7 +596,7 @@ def test_object_id_for_report_swallows_crm_error_and_returns_none(tv_agent, monk
 # `lead_context` is a real contact property on portal 246777241 (type string,
 # label "lead_context", description "Lead context notes"), verified against
 # the live properties API on 2026-08-17 rather than read off a UI label. It is
-# deliberately NOT a VoiceLead field — it is a Vapi-call concern,
+# deliberately NOT a VoiceLead field — VoiceLead lives in packages/lqabr_core,
 # which this agent does not own — so it travels as its own value from Step 3
 # through handle_new_lead into Step 4.
 # ==========================================================================
@@ -677,6 +675,70 @@ def test_handle_new_lead_dials_with_empty_context_when_the_property_is_unset(
     result = tv_agent.handle_new_lead("904")
     assert result["status"] == "initiated"
     assert seen["lead_context"] == ""
+
+    monkeypatch.setattr(tv_agent, "place_call", fake_place_call)
+    result = tv_agent.handle_new_lead("904")
+    assert result["status"] == "initiated"
+    assert seen["lead_context"] == ""
+
+def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
+    """User request 2026-08-17: the text itself, not only its length. Step 3
+    logs the RAW property value."""
+    fake = FakeMCP()
+    fake.get_lead_result = _voice_lead()
+    fake.lead_context_result = "Re: cutting your cloud spend"
+    monkeypatch.setattr(tv_agent, "mcp", fake)
+
+    logged = {}
+    real_step = tv_agent.obs.step
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def capturing_step(step_name, **fields):
+        with real_step(step_name, **fields) as outcome:
+            yield outcome
+            logged[step_name] = dict(outcome)
+
+    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
+    tv_agent.get_lead("904")
+
+    entry = logged[tv_agent.obs.STEP_READ_LEAD]
+    assert entry["lead_context"] == "Re: cutting your cloud spend"
+    assert entry["lead_context_chars"] == 28
+
+
+def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkeypatch):
+    """Step 4 logs the CAPPED value that went on the wire, which can differ
+    from the raw property Step 3 read — that difference is the whole point."""
+    fake = FakeMCP()
+    fake.get_lead_result = _voice_lead()
+    fake.lead_context_result = "the full untruncated raw value from HubSpot"
+    monkeypatch.setattr(tv_agent, "mcp", fake)
+    monkeypatch.setattr(tv_agent, "place_call",
+                        lambda lead, lead_context="": {
+                            "status": "initiated", "call_id": "c1",
+                            "to": lead.phone_number,
+                            "lead_context": "the full untrunc\u2026",   # as capped
+                            "lead_context_chars": 17})
+
+    logged = {}
+    real_step = tv_agent.obs.step
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def capturing_step(step_name, **fields):
+        with real_step(step_name, **fields) as outcome:
+            yield outcome
+            logged[step_name] = dict(outcome)
+
+    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
+    tv_agent.handle_new_lead("904")
+
+    entry = logged[tv_agent.obs.STEP_PLACE_CALL]
+    assert entry["lead_context"] == "the full untrunc\u2026"
+    assert entry["lead_context_chars"] == 17
 
 
 # ==========================================================================
