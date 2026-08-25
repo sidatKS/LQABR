@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 import json
 import os
 import threading
@@ -29,20 +28,18 @@ _PROTOCOL_VERSION = "2025-06-18"
 _VOICE_STATUS_VALUES = ("INITIATED", "COMPLETED", "FAILED",
                         "VOICEMAIL_LEFT", "CALL_PLACED")
 
-_OUTCOMES = {  # Step 7 outcome -> (voice_status, events applied in order)
-    "not_answered": ("FAILED", (EventType.CALL_NOT_ANSWERED,)),
-    "voicemail": ("VOICEMAIL_LEFT", (EventType.VOICEMAIL_LEFT,)),
-    "answered_not_engaged": ("COMPLETED", (EventType.CALL_ANSWERED,)),
-    "answered_and_engaged": ("COMPLETED", (EventType.CALL_ANSWERED,
-                                           EventType.CALL_ENGAGED)),
+_VOICE_STATUS_FOR_OUTCOME = {
+    "not_answered": "FAILED",
+    "voicemail": "VOICEMAIL_LEFT",
+    "answered_not_engaged": "COMPLETED",
+    "answered_and_engaged": "COMPLETED",
 }
-
-# upsert_lead_profile takes flat keyword arguments, not an object_id/properties
-# wrapper (confirmed live: that wrapper draws 5 validation errors — object_id
-# and properties are unexpected, employee_id/company_id/decision_maker_flag
-# are missing-required). These three are required on every write; the rest of
-# this map is VoiceLead field -> the matching write kwarg.
-_WRITE_IDENTITY_FIELDS = ("employee_id", "company_id", "decision_maker_flag")
+_EVENTS_FOR_OUTCOME = {
+    "not_answered": (EventType.CALL_NOT_ANSWERED,),
+    "voicemail": (EventType.VOICEMAIL_LEFT,),
+    "answered_not_engaged": (EventType.CALL_ANSWERED,),
+    "answered_and_engaged": (EventType.CALL_ANSWERED, EventType.CALL_ENGAGED),
+}
 
 _KEY_TO_FIELD = {
     "employee_id": "employee_id",
@@ -99,12 +96,6 @@ def _to_voice_lead(data: Dict[str, Any]) -> VoiceLead:
     return VoiceLead(**fields)
 
 
-def _lead_identity(lead: VoiceLead) -> Dict[str, Any]:
-    """The three fields upsert_lead_profile requires on every write."""
-    return {"employee_id": lead.employee_id, "company_id": lead.company_id,
-            "decision_maker_flag": lead.decision_maker}
-
-
 def _is_not_found(result: Any) -> bool:
     """The shapes that mean "no such lead" rather than "the CRM broke"."""
     if result is None or result == {}:
@@ -128,14 +119,8 @@ class StepFiveMCPClient:
         self._max_retries = max_retries
         self._backoff = backoff_seconds
         self._session_id: Optional[str] = None
-        self._handshaken = False
         self._lock = threading.Lock()
-        self._rpc_id = itertools.count(1)
-        # contact_id -> its last-known employee_id/company_id/decision_maker_flag,
-        # so a run of writes for the same lead (INITIATED -> CALL_PLACED ->
-        # outcome) resends the required identity fields without a fresh read
-        # each time.
-        self._write_key_cache: Dict[str, Dict[str, Any]] = {}
+        self._rpc_id = 0
 
     def _headers(self) -> Dict[str, str]:
         headers = {
@@ -167,10 +152,7 @@ class StepFiveMCPClient:
                         message = candidate
             return message
         if resp.text:
-            try:
-                body = resp.json()
-            except ValueError:
-                return None
+            body = resp.json()
             return body if isinstance(body, dict) else None
         return None
 
@@ -181,8 +163,9 @@ class StepFiveMCPClient:
 
     def _initialize(self) -> None:
         """initialize -> capture Mcp-Session-Id -> notifications/initialized."""
+        self._rpc_id += 1
         resp = self._post({
-            "jsonrpc": "2.0", "id": next(self._rpc_id), "method": "initialize",
+            "jsonrpc": "2.0", "id": self._rpc_id, "method": "initialize",
             "params": {
                 "protocolVersion": _PROTOCOL_VERSION,
                 "capabilities": {},
@@ -201,30 +184,29 @@ class StepFiveMCPClient:
         if done.status_code >= 400:
             raise CRMError(f"MCP initialized-notification failed: "
                            f"HTTP {done.status_code}: {done.text[:300]}")
-        self._handshaken = True
         obs.log_system("step5.tools",
                        detail=f"connected to the Step 5 MCP server at "
                               f"{self._base_url}")
 
     def _ensure_session(self) -> None:
         with self._lock:
-            if not self._handshaken:
+            if self._session_id is None:
                 self._initialize()
 
     def _call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
         """tools/call with the house retry contract, re-initializing a dropped session."""
         def send() -> requests.Response:
             self._ensure_session()
-            return self._post({"jsonrpc": "2.0", "id": next(self._rpc_id),
+            self._rpc_id += 1
+            return self._post({"jsonrpc": "2.0", "id": self._rpc_id,
                                "method": "tools/call",
                                "params": {"name": name,
                                           "arguments": arguments}})
 
         def handle(resp: requests.Response) -> Tuple[str, Any]:
-            if resp.status_code == 404 and self._handshaken:
+            if resp.status_code == 404 and self._session_id:
                 with self._lock:
                     self._session_id = None
-                    self._handshaken = False
                 return "retry", "MCP session expired (HTTP 404)"
             if resp.status_code in (429, 500, 502, 503, 504):
                 return "retry", f"HTTP {resp.status_code}: {resp.text[:200]}"
@@ -281,83 +263,48 @@ class StepFiveMCPClient:
             raise CRMError(f"MCP get_lead_profile returned an unexpected "
                            f"shape: {str(result)[:200]}")
         flat = _flatten(result)
-        lead = _to_voice_lead(result)
-        identity = _lead_identity(lead)
-        if all(identity.values()):
-            self._write_key_cache[str(object_id)] = identity
-        return lead, {
+        return _to_voice_lead(result), {
             "lead_context": str(flat.get("lead_context") or ""),
         }
 
-    def _identity_kwargs(self, contact_id: str,
-                         current: Optional[VoiceLead]) -> Dict[str, Any]:
-        """employee_id/company_id/decision_maker_flag — required on every write.
-
-        `current`, when the caller already has a fresh VoiceLead (Step 3/4's
-        own read, Step 8's idempotency check), skips the extra read this would
-        otherwise need; failing that, the per-contact cache from the last read
-        is used before falling back to a fresh get_lead().
-        """
-        key = str(contact_id)
-        if current is None and key in self._write_key_cache:
-            return self._write_key_cache[key]
-        if current is None:
-            current = self.get_lead(contact_id)  # caches identity as a side effect
-            if key in self._write_key_cache:
-                return self._write_key_cache[key]
-        identity = _lead_identity(current) if current else {}
-        missing = [f for f in _WRITE_IDENTITY_FIELDS if not identity.get(f)]
-        if missing:
-            raise CRMError(f"cannot write for {contact_id!r}: {missing} "
-                           f"unknown/blank on the current record")
-        self._write_key_cache[key] = identity
-        return identity
-
-    def _push_properties(self, contact_id: str, updates: Dict[str, Any],
-                         current: Optional[VoiceLead] = None) -> Dict[str, Any]:
-        """One upsert_lead_profile call — the only write path.
-
-        upsert_lead_profile takes flat keyword arguments, not an
-        object_id/properties wrapper (confirmed live 2026-08-21 — the wrapper
-        shape draws 5 validation errors). Every call resends the lead's
-        identity fields alongside whatever actually changed.
-        """
-        kwargs = dict(self._identity_kwargs(contact_id, current))
-        kwargs.update(updates)
-        kwargs["last_modified_voice"] = str(int(time.time() * 1000))
-        result = self._call_tool("upsert_lead_profile", kwargs)
+    def _push_properties(self, contact_id: str,
+                         properties: Dict[str, Any]) -> Dict[str, Any]:
+        """One upsert_lead_profile call — the only write path; stamps last_modfied_voice."""
+        properties = dict(properties)
+        properties["last_modfied_voice"] = str(int(time.time() * 1000))
+        result = self._call_tool("upsert_lead_profile",
+                                 {"object_id": str(contact_id),
+                                  "properties": properties})
         if isinstance(result, dict) and str(result.get("status", "")).lower() in (
                 "halted", "failed", "error"):
             raise CRMError(f"MCP upsert_lead_profile rejected the write: "
                            f"{json.dumps(result)[:300]}")
-        return {"status": "updated", "contact_id": contact_id, **updates}
+        return {"status": "updated", "contact_id": contact_id,
+                "properties": properties}
 
-    def upsert_lead(self, contact_id: str, voice_status: str,
-                    current: Optional[VoiceLead] = None) -> Dict[str, Any]:
+    def upsert_lead(self, contact_id: str, voice_status: str) -> Dict[str, Any]:
         if voice_status not in _VOICE_STATUS_VALUES:
             raise CRMError(f"voice_status {voice_status!r} is not one of "
                            f"the lqabr_voice_status values "
                            f"{_VOICE_STATUS_VALUES}")
         return self._push_properties(
-            contact_id, {"voice_status": voice_status}, current=current)
+            contact_id, {"lqabr_voice_status": voice_status})
 
-    def record_call_outcome(self, contact_id: str, outcome: str,
-                            current: Optional[VoiceLead] = None) -> Dict[str, Any]:
+    def record_call_outcome(self, contact_id: str, outcome: str) -> Dict[str, Any]:
         """Rev 5 Step 8: read probability, apply the outcome's event increments, one write."""
-        if outcome not in _OUTCOMES:
+        events = _EVENTS_FOR_OUTCOME.get(outcome)
+        if events is None:
             raise CRMError(f"unknown Step 7 outcome {outcome!r}; expected one "
-                           f"of {tuple(_OUTCOMES)}")
-        voice_status, events = _OUTCOMES[outcome]
+                           f"of {tuple(_EVENTS_FOR_OUTCOME)}")
 
         result: Dict[str, Any] = {"object_id": object_id, "outcome": outcome,
                                   "events": [], "failures": []}
-        if current is None:
-            try:
-                current = self.get_lead(contact_id)
-            except CRMError as exc:
-                result["failures"].append(f"crm-error: pre-write read: {exc}")
-                result["status"] = "partial"
-                return result
+        try:
+            current = self.get_lead(contact_id)
+        except CRMError as exc:
+            result["failures"].append(f"crm-error: pre-write read: {exc}")
+            result["status"] = "partial"
+            return result
         probability = current.probability if current else 0
 
         for event_type in events:
@@ -365,10 +312,10 @@ class StepFiveMCPClient:
             result["events"].append({"event_type": event_type.value,
                                      "probability": probability})
 
-        updates = {"probability": str(probability), "voice_status": voice_status}
+        properties = {"probability": str(probability),
+                      "lqabr_voice_status": _VOICE_STATUS_FOR_OUTCOME[outcome]}
         try:
-            result["upsert"] = self._push_properties(contact_id, updates,
-                                                      current=current)
+            result["upsert"] = self._push_properties(contact_id, properties)
         except CRMError as exc:
             result["failures"].append(f"crm-error: upsert_lead_profile: {exc}")
 

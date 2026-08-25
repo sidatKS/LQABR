@@ -32,14 +32,14 @@ Then a dry run — computes the note, logs the write, sends nothing:
 
 ```bash
 LQABR_RESEARCH_DRY_RUN=1 python3 agents/research/src/agent.py \
-  --object-id <CONTACT id> --summary-ref-id <BLOG POST id>
+  --object-id <CONTACT id> --summary-object-id <BLOG POST id>
 ```
 
 Then live:
 
 ```bash
 curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
-  -d '{"object_id":"<contact id>","blog_published_at":"<timestamp>"}' \
+  -d '{"objectId":"<contact id>","blog_published_at":"<timestamp>"}' \
   | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"], "|", d["hubspot"]["status"], "|", d["error"][:120])'
 ```
 
@@ -49,7 +49,13 @@ curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
 tail -f logs/agents/research/agent.log
 
 # just the outcome of the last run
-grep -E '"event":"(run_complete|run_failed|context_write_)' logs/agents/research/agent.log | tail -3
+grep -E '"event":"(run_complete|run_failed|campaign_complete)' logs/agents/research/agent.log | tail -3
+
+# every step of the last run, with its inputs, outputs and duration
+grep '"event":"step_' logs/agents/research/agent.log | tail -20
+
+# what was sent to the model, and what it cost
+grep -E '"event":"(model_request|model_response)"' logs/agents/research/agent.log | tail -2
 ```
 
 Streams: `process` (what it did and why), `audit` (every outbound hop —

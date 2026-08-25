@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from research_core.settings import Settings, get_settings
+from research_core.settings import get_settings
 
 
 def test_config_map_supplies_defaults():

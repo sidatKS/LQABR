@@ -30,7 +30,7 @@ def settings() -> Settings:
 @pytest.fixture
 def lead() -> LeadFacts:
     return LeadFacts(
-        object_id="533963448020", first_name="Mahesh", last_name="Puliganti",
+        objectId="533963448020", first_name="Mahesh", last_name="Puliganti",
         job_title="President", industry="HEALTHCARE", company="Axiom Law",
         company_about="Alternative legal services provider.",
         company_website="https://www.axiomlaw.com",

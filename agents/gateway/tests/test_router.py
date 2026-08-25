@@ -54,23 +54,33 @@ class TestAgentRegistry:
         """The real agents_registry.yaml is a deliverable — read it here first."""
         assert set(registry.agents) == {"email", "voice", "research"}
         assert [r.id for r in registry.routes] == [
-            "R1-contact-created", "R2-lead-context", "R3-email-opened",
-            "R-blog-summary",
+            # R1-contact-created disabled 25-Aug-2026 -- email triggers off
+            # lead_context only now, not off contact creation.
+            "R2-lead-context", "R3-email-opened", "R-blog-summary",
         ]
 
     def test_the_three_documented_mappings_resolve(self, registry):
-        """Rev 3 page 1: decision-maker -> email, opened -> voice,
-        plus Created -> email."""
+        """Rev 3 page 1: decision-maker -> email, opened -> voice.
+        Created -> email (R1) was removed 25-Aug-2026 -- see
+        test_contact_creation_no_longer_routes_to_email below."""
         cases = [
             (make_event("lead_context", "ctx"), "email", "R2-lead-context"),
             (make_event("lqabr_email_status", "OPENED"), "voice", "R3-email-opened"),
-            (make_event(None, None, subscription_type="contact.creation"),
-             "email", "R1-contact-created"),
         ]
         for payload, expected_agent, expected_route in cases:
             route = registry.match(gw_router.HubSpotEvent.from_payload(payload))
             assert route is not None, payload
             assert (route.agent, route.id) == (expected_agent, expected_route)
+
+    def test_contact_creation_no_longer_routes_to_email(self, registry):
+        """R1-contact-created was disabled 25-Aug-2026: email triggers off
+        lead_context only now. The portal's contact.creation webhook
+        subscription is untouched (see agents_registry.yaml's `subscriptions:`
+        block) -- those events still arrive here, they just don't match
+        anything any more and are discarded, not routed."""
+        route = registry.match(gw_router.HubSpotEvent.from_payload(
+            make_event(None, None, subscription_type="contact.creation")))
+        assert route is None
 
     def test_values_match_case_insensitively(self, registry):
         for value in ("opened", "OPENED", "Opened"):
@@ -389,15 +399,18 @@ class TestBatches:
             make_event("lqabr_email_status", "BOUNCED", event_id="e2"),
             make_event("lead_context", "ctx", event_id="e3"),
             make_event("lifecyclestage", "lead", event_id="e4"),
+            # contact.creation: no longer routes anywhere -- R1-contact-created
+            # was disabled 25-Aug-2026 -- so this is now a THIRD discard
+            # (no_matching_route), not a routed decision.
             make_event(None, None, subscription_type="contact.creation", event_id="e5"),
         ])
-        assert len(result.decisions) == 3
-        assert len(result.discarded) == 2
+        assert len(result.decisions) == 2
+        assert len(result.discarded) == 3
         summary = result.summary()
         assert summary["events_received"] == 5
-        assert summary["routed"] == 3
+        assert summary["routed"] == 2
         assert summary["discards_by_reason"] == {
-            "not_routing_condition": 1, "no_matching_route": 1}
+            "not_routing_condition": 1, "no_matching_route": 2}
 
     def test_event_without_object_id_is_a_routing_error_not_a_discard(self, router):
         """D-05: the agent resolves the lead by record id, so an event without

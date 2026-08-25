@@ -1,16 +1,19 @@
-"""The Research Agent's HTTP surface.
+"""The Research Agent's HTTP surface — one door in, two ways to look at it.
 
-    GET  /                 identity + route index
-    GET  /health /healthz  what this instance is bound to
+    POST /research/campaign/a2a   the gateway's hand-off: one published POST,
+                                  acknowledged in milliseconds, then every lead
+                                  in that post's industry researched in the
+                                  background
+    GET  /health                  what this instance is bound to
     GET  /mcp/tools               what the MCP exposes right now
-    POST /research/run            one contact       (hand-driven, curl, tests)
-    POST /research/campaign       one post -> its whole industry (synchronous)
-    POST /research/a2a            gateway hand-off, the id is a CONTACT
-    POST /research/campaign/a2a   gateway hand-off, the id is a POST
+    GET  /                        identity + route index (HEAD too: tunnels and
+                                  uptime monitors probe with it, and a 405
+                                  there reads as "service unhealthy")
 
-The two a2a routes differ by WHAT the id is, not by how they answer: a blog
-post sent to the contact route fails at read_lead, because a Ticket is not a
-lead. Both acknowledge immediately and work in the background.
+That is the whole surface. The gateway's `agents_registry.yaml` has exactly one
+route to this agent — `R-blog-summary`, `ticket.propertyChange` on
+`blog_summary` — so a single write path is all there is to serve. One lead on
+its own is the CLI (`agent.py`), which is hand-driven and needs both ids.
 
 Run locally:  uvicorn service_app:app --port 8086 --app-dir agents/research/src
 """
@@ -48,11 +51,11 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
 from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
 from research_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
+from research_core import SERVICE_NAME, __version__  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 
-from pipeline import run_campaign, run_research  # noqa: E402
-from schema import (A2AEnvelope, CampaignRequest, CampaignResponse,  # noqa: E402
-                    ResearchRequest, ResearchResponse)
+from pipeline import run_campaign  # noqa: E402
+from schema import A2AEnvelope  # noqa: E402
 
 SETTINGS = get_settings()
 
@@ -72,14 +75,14 @@ def _startup_mcp_check() -> Dict[str, Any]:
         state["error"] = str(exc)
         if SETTINGS.mcp_startup_check == "strict":
             raise
-        get_obs().process.emit("mcp_startup_check_failed", reason=str(exc))
+        get_obs().system.emit("mcp_startup_check_failed", reason=str(exc))
     except MCPError as exc:
         state["error"] = str(exc)
         if SETTINGS.mcp_startup_check == "strict":
             raise
-        get_obs().process.emit("mcp_startup_check_unreachable", reason=str(exc))
+        get_obs().system.emit("mcp_startup_check_unreachable", reason=str(exc))
     else:
-        get_obs().process.emit("mcp_startup_check_ok", tools=state["tools"])
+        get_obs().system.emit("mcp_startup_check_ok", tools=state["tools"])
     return state
 
 
@@ -88,16 +91,17 @@ _MCP_STATE: Dict[str, Any] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging(SETTINGS.log_level, SETTINGS.log_file, SETTINGS.log_format)
+    configure_logging(SETTINGS.log_level, SETTINGS.log_file, SETTINGS.log_format,
+                      detail=SETTINGS.log_detail)
     obs = get_obs(new_run_id(), refresh=True)
-    obs.process.emit("service_start", service="lqabr-research-agent", version="0.1.0",
-                     config=SETTINGS.redacted())
+    obs.system.emit("service_start", service=SERVICE_NAME, version=__version__,
+                    config=SETTINGS.redacted())
     _MCP_STATE.update(_startup_mcp_check())
     yield
-    get_obs().process.emit("service_stop", service="lqabr-research-agent")
+    get_obs().system.emit("service_stop", service=SERVICE_NAME)
 
 
-app = FastAPI(title="lqabr-research-agent", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=SERVICE_NAME, version=__version__, lifespan=lifespan)
 
 if SETTINGS.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=SETTINGS.cors_origins,
@@ -107,8 +111,8 @@ if SETTINGS.cors_origins:
 def _health_payload() -> Dict[str, Any]:
     return {
         "status": "UP",
-        "service": "lqabr-research-agent",
-        "version": "0.1.0",
+        "service": SERVICE_NAME,
+        "version": __version__,
         "model": SETTINGS.model,
         "dry_run": SETTINGS.dry_run,
         "search": {"enabled": SETTINGS.search_enabled,
@@ -132,10 +136,8 @@ def _health_payload() -> Dict[str, Any]:
 async def index() -> Dict[str, Any]:
     """Identity + route index. HEAD is accepted because tunnels and uptime
     monitors probe with it — a 405 there reads as "service unhealthy"."""
-    return {"service": "lqabr-research-agent", "version": "0.1.0",
-            "routes": ["/health", "/healthz", "/mcp/tools",
-                       SETTINGS.route_run, "/research/campaign",
-                       SETTINGS.route_a2a, SETTINGS.route_campaign_a2a]}
+    return {"service": SERVICE_NAME, "version": __version__,
+            "routes": ["/health", "/mcp/tools", SETTINGS.route_campaign_a2a]}
 
 
 @app.get("/health")
@@ -143,13 +145,13 @@ async def health() -> Dict[str, Any]:
     return _health_payload()
 
 
-@app.get("/healthz")
-async def healthz() -> Dict[str, Any]:
-    return _health_payload()
-
-
+# NOT `async def`: every one of these does blocking I/O — `requests` to the MCP
+# and to HubSpot, the Anthropic SDK for the model. Starlette offloads a plain
+# `def` handler to a threadpool; an `async def` one runs ON the event loop, so a
+# single research pass would freeze the whole process — /health included, and
+# the two a2a acknowledgements the gateway is waiting on inside ~5s.
 @app.get("/mcp/tools")
-async def mcp_tools() -> Dict[str, Any]:
+def mcp_tools() -> Dict[str, Any]:
     """What the MCP exposes right now, and whether our names are on it.
 
     `list_leads` is campaign-only: single-lead runs work without it, so it
@@ -169,51 +171,69 @@ async def mcp_tools() -> Dict[str, Any]:
             "missing": [name for name in configured.values() if name not in tools]}
 
 
-@app.post(SETTINGS.route_run, response_model=ResearchResponse)
-async def research_run(request: ResearchRequest) -> ResearchResponse:
-    """The domain entry point. Synchronous: the caller wants the outcome."""
-    return run_research(request.resolved())
+def _guarded(runner: Any, route: str) -> Any:
+    """Run in the background, but never disappear.
 
-
-@app.post("/research/campaign", response_model=CampaignResponse)
-async def research_campaign(request: CampaignRequest) -> CampaignResponse:
-    """One published post -> lead_context for every lead in its industry.
-
-    Synchronous on purpose: the caller asked how many leads matched and what
-    happened to each, so it waits for the counts. A campaign over many leads
-    is long — drive it from a job or a background caller, not a 5s webhook.
+    The gateway already holds `{"status": "accepted"}`. Anything the pipeline
+    does not catch — a ValueError out of get_settings on a bad env var, a
+    SecretError while building the Composer — would otherwise propagate out of
+    the background task with no `run_failed` anywhere, and the run simply never
+    happened. Flagged with a named reason, then re-raised for the server log.
     """
-    return run_campaign(request.resolved())
+    def _run(target: Any, *, run_id: str) -> None:
+        try:
+            runner(target, run_id=run_id)
+        except BaseException as exc:  # noqa: BLE001 - named, then re-raised
+            get_obs().process.emit(
+                "run_crashed", route=route, run_id=run_id,
+                objectId=getattr(target, "objectId", ""),
+                reason=f"{type(exc).__name__}: {exc}")
+            raise
+    return _run
 
 
-@app.post(SETTINGS.route_a2a)
-async def research_a2a(envelope: A2AEnvelope, background: BackgroundTasks) -> Dict[str, Any]:
-    """The gateway's hand-off.
+def _rejected(envelope: A2AEnvelope, route: str, reason: str) -> Dict[str, Any]:
+    get_obs().audit.emit("http_in", route=route, status=400, reason=reason)
+    return {"jsonrpc": "2.0", "id": envelope.id,
+            "result": {"status": "rejected", "reason": reason}}
 
-    Acknowledge immediately and do the work in the background: the gateway
-    answers HubSpot inside its ~5s delivery budget, and a research pass (search
-    + model + two CRM hops) is far longer than that. The outcome lands on the
-    log streams under the gateway's run id, which is how the two are tied.
+
+def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
+            target: Any, runner: Any, logged: Dict[str, Any],
+            result: Dict[str, Any], expects: str) -> Dict[str, Any]:
+    """Acknowledge, then work in the background.
+
+    The gateway answers HubSpot inside its ~5s delivery budget, and a research
+    pass (search + model + two CRM hops) is far longer than that. The outcome
+    lands on the log streams under the gateway's run id, which is how the two
+    are tied together.
     """
-    target = envelope.target()
+    if not target.objectId:
+        return _rejected(envelope, route, "payload carries no objectId")
+
+    # HubSpot names the record kind in the event. When it disagrees with the
+    # route, say so HERE — the alternative is a read that fails three steps
+    # later with a CRM error that reads like a record went missing.
+    kind = envelope.record_kind()
+    if kind and kind != expects:
+        return _rejected(
+            envelope, route,
+            f"bad-data: this route takes a {expects}, but the hand-off is a "
+            f"HubSpot {envelope.source()['subscription_type']} — id "
+            f"{target.objectId} is a {kind}. This agent researches a post's "
+            "whole industry; one lead on its own is the CLI (agent.py).")
+
     run_id = envelope.run_id() or new_run_id()
-    obs = get_obs()
+    get_obs().audit.emit("http_in", route=route, status=200,
+                         objectId=target.objectId, run_id=run_id,
+                         **envelope.source(), **logged)
+    background.add_task(_guarded(runner, route), target, run_id=run_id)
 
-    if not target.object_id:
-        obs.audit.emit("http_in", route=SETTINGS.route_a2a, status=400,
-                       error="payload carries no object_id")
-        return {"jsonrpc": "2.0", "id": envelope.id,
-                "result": {"status": "rejected", "reason": "payload carries no object_id"}}
-
-    obs.audit.emit("http_in", route=SETTINGS.route_a2a, status=200,
-                   object_id=target.object_id,
-                   summary_ref_id=target.summary_ref_id, run_id=run_id)
-
-    background.add_task(run_research, target, run_id=run_id)
-    result = {"status": "accepted", "object_id": target.object_id, "run_id": run_id}
+    body = {"status": "accepted", "objectId": target.objectId,
+            "run_id": run_id, **result}
     if envelope.jsonrpc == "2.0":
-        return {"jsonrpc": "2.0", "id": envelope.id, "result": result}
-    return result
+        return {"jsonrpc": "2.0", "id": envelope.id, "result": body}
+    return body
 
 
 @app.post(SETTINGS.route_campaign_a2a)
@@ -221,32 +241,19 @@ async def research_campaign_a2a(envelope: A2AEnvelope,
                                 background: BackgroundTasks) -> Dict[str, Any]:
     """The gateway's blog-summary hand-off — one post, the whole industry.
 
-    The sibling of /research/a2a, and the distinction matters: there the
-    `object_id` is a CONTACT, here it is the published POST. Sending a post to
-    the contact route fails at read_lead, because a Ticket is not a lead.
+    The ONLY route the gateway drives. Its `agents_registry.yaml` has exactly
+    one entry for this agent (`R-blog-summary`, `ticket.propertyChange` on
+    `blog_summary`); every contact event it sees goes to the Email or Voice
+    agent. `objectId` here is therefore always a published POST, never a
+    contact — a Ticket is not a lead, and `read_lead` would fail on one.
 
-    Acknowledge first for the same reason as the sibling — the gateway answers
-    HubSpot inside ~5s, and a campaign over N leads runs for minutes. The
-    outcome lands on the log streams under this run id.
+    One lead on its own is the CLI (`agent.py`), which is hand-driven and
+    needs both ids. There is no single-contact HTTP route, because nothing
+    dispatches to one and a contact event carries no blog-post id to research
+    against.
     """
     target = envelope.campaign_target()
-    run_id = envelope.run_id() or new_run_id()
-    obs = get_obs()
-
-    if not target.object_id:
-        obs.audit.emit("http_in", route=SETTINGS.route_campaign_a2a, status=400,
-                       error="payload carries no object_id")
-        return {"jsonrpc": "2.0", "id": envelope.id,
-                "result": {"status": "rejected",
-                           "reason": "payload carries no object_id"}}
-
-    obs.audit.emit("http_in", route=SETTINGS.route_campaign_a2a, status=200,
-                   object_id=target.object_id, industry=target.industry,
-                   limit=target.limit, run_id=run_id)
-
-    background.add_task(run_campaign, target, run_id=run_id)
-    result = {"status": "accepted", "object_id": target.object_id,
-              "run_id": run_id, "mode": "campaign"}
-    if envelope.jsonrpc == "2.0":
-        return {"jsonrpc": "2.0", "id": envelope.id, "result": result}
-    return result
+    return _accept(envelope, background, route=SETTINGS.route_campaign_a2a,
+                   target=target, runner=run_campaign,
+                   logged={"limit": target.limit},
+                   result={"mode": "campaign"}, expects="post")
