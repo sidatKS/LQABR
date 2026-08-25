@@ -306,22 +306,15 @@ def _glyphs_for(stream: Any) -> Dict[str, str]:
     return _GLYPHS_UNICODE
 
 
-#: Fields that carry the diagnosis, or the payload a person came to read.
-#: Capping these at the ordinary field width is exactly backwards — they matter
-#: most when they are longest. They render LAST and take whatever room is left,
-#: continuing on indented lines rather than being cut.
+#: Fields that carry the diagnosis. Capping these at the ordinary field width
+#: is exactly backwards — they matter most when they are longest. They render
+#: LAST and take whatever room is left on the line.
 _DIAGNOSTIC = ("reason", "error", "detail")
-_SPILL_SUFFIXES = ("_preview",)
 
 _FIELD_CHARS = 90
 
 
-def _spills(key: str) -> bool:
-    """True for a field that must never be truncated away."""
-    return key in _DIAGNOSTIC or str(key).endswith(_SPILL_SUFFIXES)
-
-
-def _value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
+def _value(value: Any, cap: int = _FIELD_CHARS) -> str:
     """One field, short enough to sit on a terminal line."""
     if isinstance(value, dict):
         inner = ", ".join(f"{k}={_value(v, 48, cut)}" for k, v in list(value.items())[:6])
@@ -332,7 +325,7 @@ def _value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
         extra = len(value) - 3
         return f"[{head}{f' +{extra}' if extra > 0 else ''}]"
     text = str(value).replace("\n", " ")
-    return text if len(text) <= cap else text[:max(1, cap - len(cut))] + cut
+    return text if len(text) <= cap else text[:cap - 1] + "…"
 
 
 class ConsoleFormatter(logging.Formatter):
@@ -517,11 +510,40 @@ class ConsoleFormatter(logging.Formatter):
             mark, colour = self._g["ok"], _GREEN
 
         plain = f"{clock} {mark} {event:<24} "
-        rendered, spill = self._fields(data, plain, _SKIP)
+        budget = self._width - len(plain)
+        # A diagnosis reads LAST and keeps whatever room is left, so a long
+        # reason is never cut in favour of a short bookkeeping field.
+        pairs.sort(key=lambda kv: kv[0] in _DIAGNOSTIC)
+        rendered, used, spill = [], 0, []
+        for key, value in pairs:
+            if key in _DIAGNOSTIC:
+                # Never lose a diagnosis to the line width. If it does not fit,
+                # it continues on indented lines below — a deliberate wrap,
+                # not the accidental kind that redraws over its neighbour.
+                text = str(value).replace("\n", " ").strip()
+                room = budget - used - len(key) - 2
+                if len(text) <= room:
+                    rendered.append(f"{self._paint(key, _DIM)}={text}")
+                    used += len(key) + 1 + len(text) + 1
+                else:
+                    spill.append((key, text))
+                continue
+            piece = f"{key}={_value(value)}"
+            if used + len(piece) + 1 > budget:
+                rendered.append("…")
+                break
+            rendered.append(f"{self._paint(key, _DIM)}={_value(value)}")
+            used += len(piece) + 1
+
         line = (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
                 f"{self._paint(f'{event:<24}', colour)} "
                 f"{' '.join(rendered)}".rstrip())
-        return self._continue(line, spill, colour)
+        for key, text in spill:
+            indent = " " * 11
+            for chunk in textwrap.wrap(f"{key}: {text}", width=self._width - 11,
+                                       subsequent_indent="  ") or [f"{key}:"]:
+                line += "\n" + indent + self._paint(chunk, colour)
+        return line
 
 
 def _console_handler(log_format: str) -> logging.Handler:
