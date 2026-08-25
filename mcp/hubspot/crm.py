@@ -410,7 +410,8 @@ class HubSpotCRM:
 
     # ---------------------------------------------------------- step 9 write
     def patch_object(self, object_id: str, properties: Dict[str, Any],
-                     verify_after_seconds: float = 2.0) -> Dict[str, Any]:
+                     verify_after_seconds: float = 2.0,
+                     object_type: str = "contact") -> Dict[str, Any]:
         """Validate against the same schema used for the read, then PATCH.
 
         This is the single write path: `lqabr_email_status`, `probability`
@@ -431,10 +432,12 @@ class HubSpotCRM:
            the write and compares THAT against what was sent too. Pass 0 to
            skip the re-read (tests; anywhere a synchronous delay is
            unwanted)."""
-        validated = validate_writeback(properties)
+        validated = validate_writeback(properties, object_type=object_type)
+        _otype = (object_type or "contact").strip().lower()
+        _obj_path = "tickets" if _otype == "ticket" else "contacts"
         self._obs.process(step=9, event="writeback_validated", object_id=str(object_id),
                           properties=sorted(validated.keys()))
-        result = self._request("PATCH", f"/crm/v3/objects/contacts/{object_id}",
+        result = self._request("PATCH", f"/crm/v3/objects/{_obj_path}/{object_id}",
                                step=9, json={"properties": validated})
         self._obs.process(step=9, event="writeback_applied", object_id=str(object_id),
                           written=validated)
@@ -462,7 +465,7 @@ class HubSpotCRM:
             time.sleep(verify_after_seconds)
             try:
                 refetched = self._request(
-                    "GET", f"/crm/v3/objects/contacts/{object_id}", step=9,
+                    "GET", f"/crm/v3/objects/{_obj_path}/{object_id}", step=9,
                     params={"properties": ",".join(sorted(validated.keys()))})
             except CRMError as exc:
                 self._obs.process(step=9, event="writeback_reread_failed",

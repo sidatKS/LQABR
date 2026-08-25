@@ -1,0 +1,35 @@
+# Local: the Summary Agent next to the HubSpot MCP container.
+#
+#     cd agents/summary
+#     HUBSPOT_MCP_IMAGE=<your image> docker compose -f infra/docker-compose.yml up --build
+#
+# The agent reaches the MCP by SERVICE NAME on the compose network, which is
+# the same wiring as production with a different URL — no code path differs
+# between the two.
+services:
+  hubspot-mcp:
+    image: ${HUBSPOT_MCP_IMAGE:-lqabr-hubspot-mcp:local}
+    container_name: hubspot-mcp
+    environment:
+      - HUBSPOT_ACCESS_TOKEN=${HUBSPOT_ACCESS_TOKEN:-}
+    ports:
+      - "8081:8080"
+
+  summary-agent:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: lqabr-summary-agent
+    depends_on:
+      - hubspot-mcp
+    environment:
+      - LQABR_SUMMARY_MCP_BASE_URL=http://hubspot-mcp:8080/mcp
+      - LQABR_SUMMARY_MODEL=${LQABR_SUMMARY_MODEL:-anthropic/claude-sonnet-5}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LQABR_SUMMARY_SECRETS_SOURCE=env
+      # Local runs default to dry: prove the summary before touching the CRM.
+      - LQABR_SUMMARY_DRY_RUN=${LQABR_SUMMARY_DRY_RUN:-1}
+      - LQABR_SUMMARY_MCP_STARTUP_CHECK=warn
+      - LQABR_SUMMARY_CORS_ORIGINS=http://localhost:5173
+    ports:
+      - "8080:8080"

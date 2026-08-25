@@ -242,7 +242,7 @@ A ticket is complete (ready for review / Testing) when:
 client-side action taken in the Claude app before a session starts. What follows is
 what must already be true, and how to verify it in the first minute.
 
-Canonical dev machine: **`desktop-vmn01k1`**. Repo root: `<REPO_ROOT>` (set this
+Canonical dev machine: **`desktop-vmn01k1`**. Repo root: `/mnt/c/Users/SwaroopKumar/Documents/Claude/Projects/LQABR` (set this
 path once and keep it stable — every instruction below assumes it).
 
 ### 11.1 Surfaces — what each one can and cannot do
@@ -250,7 +250,7 @@ path once and keep it stable — every instruction below assumes it).
 | Surface | Local file access | Use it for |
 |---|---|---|
 | **Claude Code** (terminal on `desktop-vmn01k1`) | Yes, direct | code changes, tests, git, `infra/gcp/` scripts |
-| **Cowork** (desktop project bound to `<REPO_ROOT>`) | Yes, for connected folders, while Claude Desktop is open on `desktop-vmn01k1` | multi-file work, docs, generated deliverables |
+| **Cowork** (desktop project bound to `/mnt/c/Users/SwaroopKumar/Documents/Claude/Projects/LQABR`) | Yes, for connected folders, while Claude Desktop is open on `desktop-vmn01k1` | multi-file work, docs, generated deliverables |
 | **Web Claude** (cloud sandbox) | **No** — only read-only project-knowledge copies under `/mnt/project/` | design review, planning, Jira edits, architecture reasoning |
 
 **Session boundary rule:** file I/O belongs to Claude Code and Cowork. The web
@@ -261,7 +261,7 @@ work from a stale pasted copy.
 ### 11.2 One-time: bind the repo to a desktop project
 
 1. Claude Desktop → sidebar → **New Project** → *use an existing folder on your
-   computer* → select `<REPO_ROOT>`.
+   computer* → select `/mnt/c/Users/SwaroopKumar/Documents/Claude/Projects/LQABR`.
 2. Approve the OS folder-permission prompt.
 3. Project → **Folder instructions**: "Read `CLAUDE.md` at the repo root before any
    code change and follow it — especially §7 (never push or open a PR without
@@ -276,7 +276,7 @@ no repo underneath it.
 ### 11.3 Preflight — run before touching anything
 
 ```bash
-cd <REPO_ROOT>
+cd /mnt/c/Users/SwaroopKumar/Documents/Claude/Projects/LQABR
 ls CLAUDE.md packages/lqabr_core agents infra   # is the right root actually mounted?
 git status -sb                                  # branch + clean tree before any edit
 git branch --show-current                       # must be epic/… or LQABR-<ticket>-… , never main

@@ -54,7 +54,7 @@ class FakeSession:
 def _lead(**overrides):
     from lqabr_core.types import VoiceLead
     base = dict(
-        employee_id="E1", contact_id="123", phone_number="+15550001111",
+        employee_id="E1", object_id="123", phone_number="+15550001111",
         full_name="Jane Smith", job_title="VP", company_name="Acme",
         industry="Manufacturing", decision_maker="yes",
     )
@@ -91,7 +91,7 @@ def test_build_call_payload_dashboard_assistant_sends_id_and_no_server_override(
 
 def test_build_call_payload_omits_hubspot_ids_when_absent(tv_tools, monkeypatch):
     monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
-    payload = tv_tools.build_call_payload(_lead(contact_id=None, employee_id=None))
+    payload = tv_tools.build_call_payload(_lead(object_id=None, employee_id=None))
     variables = payload["assistantOverrides"]["variableValues"]
     assert "object_id" not in variables
     assert "employee_id" not in variables
@@ -302,8 +302,8 @@ def client(tv_tools, monkeypatch):
     """A TestClient with the handoffs stubbed out — see module docstring for why."""
     recorded = {"lead": [], "report": []}
     monkeypatch.setattr(tv_tools, "_handoff_new_lead",
-                        lambda contact_id, correlation_id: recorded["lead"].append(
-                            (contact_id, correlation_id)))
+                        lambda object_id, correlation_id: recorded["lead"].append(
+                            (object_id, correlation_id)))
     monkeypatch.setattr(tv_tools, "_handoff_call_report",
                         lambda message, correlation_id: recorded["report"].append(
                             (message, correlation_id)))
@@ -381,11 +381,24 @@ def test_call_report_route_rejects_malformed_json(client):
     assert not client.recorded["report"]
 
 
-def test_healthz(tv_tools):
-    test_client = TestClient(tv_tools.app)
-    resp = test_client.get("/healthz")
+def test_healthz_ok_when_fully_configured(tv_tools, monkeypatch):
+    monkeypatch.setattr(tv_tools, "VAPI_PHONE_NUMBER_ID", "phone-1")
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setenv("LQABR_VAPI_API_KEY", "key-1")
+    resp = TestClient(tv_tools.app).get("/healthz")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_healthz_503_when_the_instance_cannot_dial(tv_tools, monkeypatch):
+    """Readiness, not liveness: an instance with no Vapi credential must not be
+    marked healthy and sent traffic — it would write a claim, then fail."""
+    monkeypatch.setattr(tv_tools, "VAPI_PHONE_NUMBER_ID", "")
+    monkeypatch.setattr(tv_tools, "VAPI_ASSISTANT_ID", "asst-1")
+    monkeypatch.setenv("LQABR_VAPI_API_KEY", "key-1")
+    resp = TestClient(tv_tools.app).get("/healthz")
+    assert resp.status_code == 503
+    assert "LQABR_VAPI_PHONE_NUMBER_ID" in resp.json()["detail"]
 
 
 # ======================================================================= _correlation_id

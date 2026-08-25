@@ -30,8 +30,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from audit import GatewayAudit
-from router import RoutingDecision
+try:
+    from .audit import GatewayAudit
+    from .router import RoutingDecision
+except ImportError:  # pragma: no cover
+    from audit import GatewayAudit  # type: ignore
+    from router import RoutingDecision  # type: ignore
 
 from soloai.protocols.a2a import A2AClient, A2AResponse, PayloadGuardError
 
@@ -115,6 +119,19 @@ class Dispatcher:
         return self._batch_size
 
     def _metadata(self, decision: RoutingDecision, run_id: str) -> Dict[str, Any]:
+        # Research hand-off (blog-ticket route, audience resolution disabled):
+        # forward ONLY the ticket's own details, under HubSpot's original field
+        # names. The agent receives the ticket exactly as HubSpot named it and
+        # nothing else. The trigger_id is supplied by the A2A envelope itself
+        # (the message body), not here, so it is not "extra" wire metadata.
+        if decision.agent == "research":
+            return {
+                "objectId": decision.object_id,
+                "propertyName": decision.property_name,
+                "subscriptionType": "ticket.propertyChange",
+                "eventId": decision.event_id,
+                "triggerId": decision.trigger_id,
+            }
         metadata: Dict[str, Any] = {
             "trigger_id": decision.trigger_id,
             # The HubSpot contact record id — what the agent actually calls the
@@ -130,6 +147,8 @@ class Dispatcher:
             metadata["route_id"] = decision.route_id
         if decision.summary_ref_id is not None:
             metadata["summary_ref_id"] = decision.summary_ref_id
+        if getattr(decision, "blog_published_at", None) is not None:
+            metadata["blog_published_at"] = decision.blog_published_at
         return metadata
 
     def dispatch(self, decision: RoutingDecision, run_id: str) -> DispatchResult:

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LQABR text_voice agent — dataflow</title>
+<style>
+  body { margin:0; background:#fff; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#111827; }
+  .canvas { position:relative; width:2000px; height:1700px; margin:0 auto; }
+  .tree { position:absolute; left:44px; top:1290px; width:1912px; box-sizing:border-box; border:1.2px solid #d1d5db; border-radius:10px; background:#fff; padding:14px 20px; }
+  .tree h3 { margin:0 0 8px; font-size:15px; }
+  .tree pre { margin:0; font-family:ui-monospace,Consolas,monospace; font-size:13px; line-height:1.62; color:#111827; }
+  .tree .c { color:#6b7280; }
+  .tree .f { color:#2563eb; }
+  h1 { position:absolute; left:44px; top:22px; font-size:30px; margin:0; font-weight:700; }
+  .sub { position:absolute; left:46px; top:66px; font-size:14px; color:#4b5563; }
+  .box { position:absolute; box-sizing:border-box; border-radius:10px; background:#fff; border:1.6px solid #2563eb; padding:12px 14px; }
+  .box h3 { margin:0 0 2px; font-size:15px; font-weight:700; }
+  .file { font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#2563eb; margin:0 0 6px; }
+  .box ul { margin:4px 0 0; padding-left:16px; }
+  .box li { font-size:12.5px; line-height:1.45; margin:2px 0; }
+  .chip { display:inline-block; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:5px; padding:1px 6px; margin-top:6px; }
+  .src { background:#dbeafe; border-color:#2563eb; }
+  .dark { background:#1d4ed8; border-color:#1d4ed8; color:#fff; }
+  .dark h3 { color:#fff; }
+  .dark li { color:#dbeafe; }
+  .green { background:#dcfce7; border-color:#16a34a; }
+  .dashed { border-style:dashed; border-color:#6b7280; }
+  .dest { position:absolute; box-sizing:border-box; border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.4; }
+  .dest b { display:block; font-size:12.5px; margin-bottom:2px; }
+  .dest .from { display:inline-block; font-size:11px; color:#6b7280; margin-bottom:3px; }
+  .halt { background:#fef2f2; border:1.6px solid #dc2626; }
+  .halt b { color:#dc2626; }
+  .warn { background:#fff7ed; border:1.6px solid #ea580c; }
+  .warn b { color:#ea580c; }
+  .keep { background:#f9fafb; border:1.6px solid #4b5563; }
+  .sect { position:absolute; font-size:15px; font-weight:700; }
+  .obs { position:absolute; left:44px; top:1108px; width:1912px; box-sizing:border-box; border:1.2px solid #d1d5db; border-radius:10px; background:#f9fafb; padding:10px 16px; font-size:12.5px; line-height:1.5; }
+  .verified { position:absolute; left:44px; top:1196px; width:1912px; box-sizing:border-box; border:1.6px solid #16a34a; border-radius:10px; background:#f0fdf4; padding:10px 16px; text-align:center; }
+  .verified .big { font-size:14.5px; font-weight:700; }
+  .verified .small { font-size:12px; color:#4b5563; margin-top:2px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+  svg.arrows { position:absolute; left:0; top:0; width:2000px; height:1290px; pointer-events:none; }
+  .albl { position:absolute; font-size:11.5px; color:#6b7280; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <h1>LQABR text_voice agent — dataflow: HubSpot trigger → Vapi call → HubSpot CRM</h1>
+  <div class="sub">Rev 5 · Vapi telephony, no Twilio, no gateway · model classifies outcomes (claude-sonnet-5 via litellm) · verified live 20 Aug 2026: dialed → answered → COMPLETED · probability 30 → 60</div>
+
+  <svg class="arrows">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#374151" stroke-width="1.6"/></marker></defs>
+    <line x1="312" y1="425" x2="354" y2="425" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="642" y1="425" x2="684" y2="425" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="992" y1="425" x2="1034" y2="425" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1342" y1="425" x2="1384" y2="425" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1520" y1="552" x2="1520" y2="644" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1386" y1="775" x2="1344" y2="775" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1036" y1="775" x2="994" y2="775" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="686" y1="775" x2="644" y2="775" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1290" y1="226" x2="1200" y2="294" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+    <line x1="1700" y1="226" x2="1590" y2="294" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+  </svg>
+  <div class="albl" style="left:1296px; top:252px;">vapi key (env-only) · anthropic key (Step 7)</div>
+  <div class="albl" style="left:1706px; top:252px;">assistant + script live on the dashboard</div>
+
+  <div class="box dashed" style="left:1250px; top:92px; width:330px; height:130px;">
+    <h3 style="font-size:13.5px;">Secrets</h3>
+    <ul>
+      <li><code>LQABR_VAPI_API_KEY</code> — env-only, fails fast on the dial path</li>
+      <li><code>lqabr-anthropic-api-key</code> — Secret Manager, fetched at Step 7</li>
+      <li>values never logged — names only, redacted</li>
+    </ul>
+  </div>
+  <div class="box dashed" style="left:1620px; top:92px; width:340px; height:130px;">
+    <h3 style="font-size:13.5px;">Vapi dashboard assistant · 4f00be12</h3>
+    <ul>
+      <li>owns the call script, voice, voicemail detection</li>
+      <li>owns the report destination (server URL)</li>
+      <li>code sends only ids + per-lead variables</li>
+    </ul>
+  </div>
+
+  <div class="box src" style="left:40px; top:300px; width:270px; height:250px;">
+    <h3>SOURCE · HubSpot trigger</h3>
+    <p class="file">portal 246777241</p>
+    <ul>
+      <li><code>lqabr_email_status</code> becomes <b>OPENED</b></li>
+      <li>workflow POSTs the contact's <code>object_id</code></li>
+      <li>A2A JSON-RPC envelope or flat body — both accepted</li>
+    </ul>
+    <span class="chip">POST /voice_agent/lead</span>
+  </div>
+
+  <div class="box" style="left:360px; top:300px; width:280px; height:250px;">
+    <h3>STEP 2 · RECEIVE</h3>
+    <p class="file">src/tools.py · lead()</p>
+    <ul>
+      <li>extract <code>object_id</code> — 400 if absent, visible failure</li>
+      <li>reuse caller's correlation id, or mint one</li>
+      <li><b>answer 200 fast</b> — no business logic inline</li>
+      <li>background task → <code>handle_new_lead()</code></li>
+      <li>a retry never becomes a second phone call</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:690px; top:300px; width:300px; height:250px;">
+    <h3>STEP 3 · READ + GATE + CLAIM</h3>
+    <p class="file">src/text_voice.py · get_lead() &nbsp;·&nbsp; mcp_client.py</p>
+    <ul>
+      <li>one MCP read — fills the write-key cache</li>
+      <li>gate: email_status must be <b>OPENED</b></li>
+      <li>stops: not-found · no phone · opted out · in-flight</li>
+      <li><code>crm-error</code> ≠ <code>not-found</code> — never conflated</li>
+      <li><b>claim voice_status=INITIATED before dialing</b> — a duplicate trigger stops at the gate</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1040px; top:300px; width:300px; height:250px;">
+    <h3>STEP 4 · DIAL</h3>
+    <p class="file">src/tools.py · place_call()</p>
+    <ul>
+      <li>opt-out re-checked — last line before a phone rings</li>
+      <li>variables: name, company, <code>lead_context</code> (capped 1000 chars on a word boundary), <code>object_id</code> rides the call</li>
+      <li>POST <code>api.vapi.ai/call</code> — 3 tries, backoff; only failures retried, a 2xx never re-dials</li>
+      <li>accepted → <b>CALL_PLACED</b> (no-downgrade guard)</li>
+    </ul>
+  </div>
+
+  <div class="box dark" style="left:1390px; top:300px; width:260px; height:250px;">
+    <h3>VAPI · THE LIVE CALL</h3>
+    <p class="file" style="color:#bfdbfe;">external — no agent code runs</p>
+    <ul>
+      <li>assistant opens on the researched <code>lead_context</code></li>
+      <li>3-question qualification script</li>
+      <li>voicemail detection by Vapi</li>
+      <li>call ends → end-of-call report POSTed straight back (no gateway)</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1390px; top:650px; width:260px; height:250px;">
+    <h3>STEP 6→7 · REPORT IN</h3>
+    <p class="file">src/tools.py · call_report()</p>
+    <ul>
+      <li>wrapped <code>message</code> envelope only</li>
+      <li>only <code>end-of-call-report</code> proceeds; other types acknowledged + ignored</li>
+      <li>200 fast → background task</li>
+      <li>same correlation id — one trace across both requests</li>
+    </ul>
+    <span class="chip">POST /voice_agent/vapi_report</span>
+  </div>
+
+  <div class="box" style="left:1040px; top:650px; width:300px; height:250px;">
+    <h3>STEP 7 · CLASSIFY</h3>
+    <p class="file">src/text_voice.py · summarise_report()</p>
+    <ul>
+      <li>terminal endedReason settles no-answer / voicemail — <b>no model spend</b></li>
+      <li>empty transcript = voicemail — silence is never credited as answered</li>
+      <li>else claude-sonnet-5 reads the transcript → one of 4 outcomes + summary</li>
+      <li>strict JSON reply, enum-validated; failure → deterministic fallback, Step 8 still runs</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:690px; top:650px; width:300px; height:250px;">
+    <h3>STEP 8 · WRITE BACK</h3>
+    <p class="file">mcp_client.py · record_call_outcome()</p>
+    <ul>
+      <li>idempotency: terminal status → skip, never double-applied</li>
+      <li>increments only from <code>lqabr_core.probability</code></li>
+      <li>engaged = two events: <b>30 → 45 → 60</b></li>
+      <li><b>one upsert</b>: voice_status + probability (write-keys from cache — no re-read)</li>
+      <li>partial write reported as <code>partial</code>, never success</li>
+    </ul>
+  </div>
+
+  <div class="box green" style="left:360px; top:650px; width:280px; height:250px;">
+    <h3>HubSpot CRM — system of record</h3>
+    <p class="file">via central MCP · lqabr-hubspot</p>
+    <ul>
+      <li>voice_status: COMPLETED / VOICEMAIL_LEFT / FAILED</li>
+      <li>probability updated; <code>last_modified_voice</code> auto-stamped by the server</li>
+      <li><b>probability ≥ 60 → lead moves to the Scheduling Agent</b></li>
+    </ul>
+  </div>
+
+  <div class="sect" style="left:44px; top:938px;">Never lose an outcome — every failure path has a destination</div>
+
+  <div class="dest halt" style="left:40px; top:966px; width:300px; height:118px;">
+    <b>⛔ Step 3 stop — not dialable</b>
+    <span class="from">from get_lead()</span>
+    not-found · no phone · opted out · not-qualified · in-flight — reason logged (WARNING, not ERROR), lead untouched, nothing dialed.
+  </div>
+  <div class="dest warn" style="left:362px; top:966px; width:300px; height:118px;">
+    <b>▲ Pre-dial failure — claim released</b>
+    <span class="from">from handle_new_lead()</span>
+    any raise out of place_call() → <code>_release_claim()</code> writes FAILED. A lead is never stranded on a blocking INITIATED.
+  </div>
+  <div class="dest warn" style="left:684px; top:966px; width:300px; height:118px;">
+    <b>▲ Model failure — deterministic fallback</b>
+    <span class="from">from summarise_report()</span>
+    outcome still produced, marked <code>classified_by=fallback</code>; Step 8 always runs — a call's record is never lost to an LLM outage.
+  </div>
+  <div class="dest keep" style="left:1006px; top:966px; width:300px; height:118px;">
+    <b>Unresolved contact — logged, not written</b>
+    <span class="from">from handle_call_report()</span>
+    no <code>object_id</code> in the report → outcome + summary land on process_log at ERROR; nothing is guessed into the CRM.
+  </div>
+  <div class="dest keep" style="left:1328px; top:966px; width:300px; height:118px;">
+    <b>Duplicate report — skipped</b>
+    <span class="from">idempotency pre-check</span>
+    voice_status already terminal → status <code>duplicate</code>, Step 8 skipped; probability can never be double-applied by a redelivery.
+  </div>
+  <div class="dest halt" style="left:1650px; top:966px; width:302px; height:118px;">
+    <b>⛔ Partial write — surfaced</b>
+    <span class="from">from record_call_outcome()</span>
+    failures listed in <code>failures[]</code>, status <code>partial</code> — "status written, probability not" is never disguised as success.
+  </div>
+
+  <div class="obs">
+    <b>Observability — every box above emits here.</b>&nbsp; three JSON streams → stdout (Cloud Logging): <b>system</b> (startup/config) · <b>process</b> (per-step decisions: started / ok / stopped / degraded / skipped / error) · <b>audit</b> (every MCP + Vapi call: endpoint, status, attempt, ms, credential <i>name</i>) — one <code>correlation_id</code> spans both requests of a call's life · Step 7 logs model, input/output tokens, latency per invocation.
+  </div>
+
+  <div class="verified">
+    <div class="big">✓ Verified live 20 Aug 2026 — trigger POST → INITIATED → dialed → answered → report via tunnel → COMPLETED · probability 30 → 60 → promoted to Scheduling</div>
+    <div class="small">93 unit tests green · 6 MCP round-trips per full call lifecycle (was 10) · one Vapi call and at most one model call per lead · 1,150 lines across three files · zero Twilio, zero gateway, zero ADK</div>
+  </div>
+
+  <div class="tree">
+    <h3>Folder structure — agents/text_voice/</h3>
+    <pre>
+agents/text_voice/
+├── Dockerfile                     <span class="c">container build for Cloud Run (uvicorn tools:app)</span>
+├── push_test.sh                   <span class="c">local end-to-end push test — reset lead → dial → report through a tunnel</span>
+├── requirements.txt        <span class="f">6</span>     <span class="c">the whole runtime set: litellm · requests · fastapi · uvicorn (+ lqabr_core, installed -e)</span>
+├── .env.example           <span class="f">83</span>     <span class="c">local dev template — Cloud Run injects the same names from Secret Manager</span>
+├── src/
+│   ├── tools.py          <span class="f">357</span>     <span class="c">STEPS 2 + 4 — the service edge: both routes in, the one Vapi dial out, shared retrying_call()</span>
+│   ├── text_voice.py     <span class="f">477</span>     <span class="c">STEPS 3 / 7 / 8 — the brain: gate checks, model classification, outcome write, both entrypoints</span>
+│   └── mcp_client.py     <span class="f">329</span>     <span class="c">STEP 5 — the CRM wire: MCP session + retries + field mapping; the only door to HubSpot</span>
+└── tests/
+    ├── conftest.py       <span class="f">125</span>     <span class="c">loads src/ modules by path — no ADK stubs, no network</span>
+    ├── test_tools.py     <span class="f">427</span>     <span class="c">routes, payload building, retry contract, Vapi client</span>
+    ├── test_text_voice.py <span class="f">738</span>    <span class="c">Steps 3/7/8 against a FakeMCP — gates, claims, outcomes, idempotency</span>
+    └── test_fixes.py     <span class="f">159</span>     <span class="c">regression pins for previously-fixed bugs</span>
+    </pre>
+  </div>
+</div>
+</body>
+</html>

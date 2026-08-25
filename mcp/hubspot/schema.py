@@ -94,6 +94,19 @@ REQUIRED_TO_SEND = ("email_id",)
 WRITABLE_CONTACT_PROPERTIES = frozenset({
     "firstname", "lastname", "jobtitle", "company_id", "email_id", "phone",
     "employee_id", "lqabr_email_status", "probability",
+    # MVP 2026-08-21: the Text/Voice agent (Rev 5) writes these two contact
+    # properties through the MCP. `last_modfied_voice` keeps the exact
+    # (misspelled) name the agent sends in agents/text_voice/src/mcp_client.py
+    # — the allowlist must match the wire name or HubSpot 400s the write.
+    "lqabr_voice_status", "last_modfied_voice",
+})
+
+#: Ticket properties this MCP is allowed to write. The Summary agent lands a
+#: blog summary + its industry on a HubSpot Ticket (the R-blog-summary
+#: campaign trigger). Env-overridable so a portal rename is a config change.
+WRITABLE_TICKET_PROPERTIES = frozenset({
+    os.environ.get("LQABR_HUBSPOT_SUMMARY_PROPERTY", "blog_summary"),
+    os.environ.get("LQABR_HUBSPOT_BLOG_INDUSTRY_PROPERTY", "blog_industry"),
 })
 
 #: Confirmed allowed values of the lqabr_email_status enumeration. Anything
@@ -358,7 +371,8 @@ def validate_profile(profile: LeadProfile) -> ValidatedProfile:
     )
 
 
-def validate_writeback(properties: Dict[str, Any]) -> Dict[str, str]:
+def validate_writeback(properties: Dict[str, Any],
+                       object_type: str = "contact") -> Dict[str, str]:
     """Validate the property bag going INTO HubSpot (step 9).
 
     Returns the bag normalised to the string values the REST API expects.
@@ -371,14 +385,18 @@ def validate_writeback(properties: Dict[str, Any]) -> Dict[str, str]:
     # `lead_context` is allowed here so the research agent's step-7 persist
     # goes through the SAME validation as every other write. The email agent
     # never writes it — it only reads it back at step 9.
-    allowed = (set(WRITABLE_CONTACT_PROPERTIES) | {campaign_complete_property()}
-               | {last_modified_email_property()} | {lead_context_property()}) - {""}
+    otype = (object_type or "contact").strip().lower()
+    if otype == "ticket":
+        allowed = set(WRITABLE_TICKET_PROPERTIES) - {""}
+    else:
+        allowed = (set(WRITABLE_CONTACT_PROPERTIES) | {campaign_complete_property()}
+                   | {last_modified_email_property()} | {lead_context_property()}) - {""}
     validated: Dict[str, str] = {}
 
     for name, value in properties.items():
         if name not in allowed:
             raise SchemaValidationError(
-                f"schema-error: '{name}' is not a writable contact property "
+                f"schema-error: '{name}' is not a writable {otype} property "
                 f"(allowed: {sorted(allowed)})")
         if value is None:
             continue

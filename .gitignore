@@ -20,6 +20,8 @@ venv/
 # Environment & secrets — never commit these
 .env
 .env.local
+.env.bak
+**/.env.bak
 .env.*.local
 *.key
 *.pem
@@ -61,102 +63,42 @@ data/incoming/*
 !data/incoming/.gitkeep
 
 # Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-*.egg-info/
 
 # Environment & secrets — never commit these
-.env
-.env.local
-.env.*.local
-*.key
-*.pem
-service-account*.json
-gcp-credentials*.json
 
 # GCP / gcloud local state
-.gcloud/
 
 # Editor & OS
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
 
 # Test coverage
-coverage/
-.nyc_output/
-htmlcov/
 
 # Logs
-*.log
-logs/
 
 # Turborepo / build cache
-.turbo/
-.cache/
 
 # ADK local dev artifacts (session store written by `adk web` / `adk run`)
-.adk/
 
 # Pytest
-.pytest_cache/
 
 # Real seed data — PII, never commit (kept locally only)
-data/incoming/*
-!data/incoming/.gitkeep
 
 # Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-*.egg-info/
 
 # Environment & secrets — never commit these
-.env
-.env.local
-.env.*.local
-*.key
-*.pem
-service-account*.json
-gcp-credentials*.json
 
 # GCP / gcloud local state
-.gcloud/
 
 # Editor & OS
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
 
 # Test coverage
-coverage/
-.nyc_output/
-htmlcov/
 
 # Logs
-*.log
-logs/
 
 # Turborepo / build cache
-.turbo/
-.cache/
 
 # ADK local dev artifacts (session store written by `adk web` / `adk run`)
-.adk/
 
 # Pytest
-.pytest_cache/
 
 # Email Agent runtime state (v2)
 # Run state written at step 7 so late Mailgun events still resolve to a lead.
@@ -169,3 +111,10 @@ _to_delete/
 
 # Claude Code local settings
 .claude/
+mcp/.env
+scripts/dev/ngrok.env
+ngrok/.env
+
+# Hand-made archives — a zip of the tree is never the source of truth.
+*.zip
+*.tar.gz

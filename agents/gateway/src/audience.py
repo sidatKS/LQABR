@@ -80,10 +80,23 @@ class HubSpotReader:
 
     def ticket_industry(self, ticket_id: str,
                         property_name: str = "blog_industry") -> Optional[str]:
+        industry, _ = self.ticket_routing_fields(ticket_id, property_name)
+        return industry
+
+    def ticket_routing_fields(
+            self, ticket_id: str, property_name: str = "blog_industry",
+            published_property: str = "blog_published_at",
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """ADDED 2026-08-22. The two ticket values a research hand-off needs:
+        the industry that selects the audience, and the publication timestamp
+        the central MCP reads the blog summary by (``get_blog_summary`` is keyed
+        on ``blog_published_at``, not on the ticket id). One GET for both —
+        asking for a second property costs nothing on a v3 read."""
         data = self._get(f"/crm/v3/objects/tickets/{ticket_id}",
-                         params={"properties": property_name})
-        value = (data.get("properties") or {}).get(property_name)
-        return value or None
+                         params={"properties": f"{property_name},{published_property}"})
+        props = data.get("properties") or {}
+        return (props.get(property_name) or None,
+                props.get(published_property) or None)
 
     def _search_ids(self, object_type: str, filters: List[Dict[str, Any]],
                     properties: List[str], max_results: int) -> List[str]:
@@ -158,9 +171,11 @@ class AudienceResolver:
 
     def __init__(self, reader: HubSpotReader, industry_property: str = "blog_industry",
                  max_audience: int = 1000,
-                 blog_route_id: str = "R-blog-summary") -> None:
+                 blog_route_id: str = "R-blog-summary",
+                 published_property: str = "blog_published_at") -> None:
         self._reader = reader
         self._industry_property = industry_property
+        self._published_property = published_property
         self._max = max(1, int(max_audience))
         self._route_id = blog_route_id
 
@@ -181,7 +196,8 @@ class AudienceResolver:
         """
         ticket_id = decision.object_id or ""
         summary_ref_id = ticket_id
-        industry = self._reader.ticket_industry(ticket_id, self._industry_property)
+        industry, published_at = self._reader.ticket_routing_fields(
+            ticket_id, self._industry_property, self._published_property)
         if not industry:
             return [], AudienceOutcome(decision.trigger_id, summary_ref_id, None, 0, 0)
         company_ids = self._reader.company_ids_for_industry(industry, self._max)
@@ -195,6 +211,7 @@ class AudienceResolver:
                 trigger_id=self._lead_trigger_id(summary_ref_id, cid),
                 object_id=cid,                      # the CONTACT to fetch
                 summary_ref_id=summary_ref_id,      # the blog Ticket
+                blog_published_at=published_at,      # the MCP's blog read key
                 property_name=self._industry_property,
                 property_value=industry,
             ))
