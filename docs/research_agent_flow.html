@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Research Agent — flow</title>
+<style>
+  body { margin:0; background:#fff; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#111827; }
+  .canvas { position:relative; width:1920px; height:1500px; margin:0 auto; }
+  h1 { position:absolute; left:44px; top:18px; font-size:29px; margin:0; font-weight:700; }
+  .sub { position:absolute; left:46px; top:58px; font-size:13.5px; color:#4b5563; }
+  .box { position:absolute; box-sizing:border-box; border-radius:10px; background:#fff; border:1.6px solid #2563eb; padding:11px 13px; }
+  .box h3 { margin:0 0 2px; font-size:14.5px; font-weight:700; }
+  .file { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:#2563eb; margin:0 0 6px; }
+  .box ul { margin:3px 0 0; padding-left:15px; }
+  .box li { font-size:12px; line-height:1.45; margin:2px 0; }
+  .step { position:absolute; top:-13px; left:13px; background:#2563eb; color:#fff; font-size:11px; font-weight:700;
+          border-radius:11px; padding:2px 9px; letter-spacing:.03em; }
+  .amber .step { background:#d97706; }
+  .green .step { background:#16a34a; }
+  .purple .step { background:#7c3aed; }
+  .chip { display:inline-block; font-family:ui-monospace,Consolas,monospace; font-size:11px; background:#eff6ff;
+          border:1px solid #bfdbfe; border-radius:5px; padding:1px 5px; margin-top:6px; }
+  .src { background:#dbeafe; border-color:#2563eb; }
+  .green { background:#f0fdf4; border-color:#16a34a; }
+  .amber { background:#fffbeb; border-color:#d97706; }
+  .purple { background:#f5f3ff; border-color:#7c3aed; }
+  .dashed { border-style:dashed; border-color:#9ca3af; background:#f9fafb; }
+  .red { background:#fef2f2; border-color:#dc2626; }
+  .lane { position:absolute; font-size:12px; font-weight:700; color:#6b7280; letter-spacing:.06em; }
+  .laneline { position:absolute; border-top:1px dashed #d1d5db; }
+  svg.arrows { position:absolute; left:0; top:0; width:1920px; height:1500px; pointer-events:none; }
+  .albl { position:absolute; font-size:11px; color:#6b7280; background:#fff; padding:0 5px; z-index:5;
+          white-space:nowrap; transform:translateX(-50%); }
+  .hop { position:absolute; font-size:11.5px; color:#15803d; background:#fff; padding:0 7px; font-weight:600; z-index:5; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; }
+  .term { position:absolute; box-sizing:border-box; background:#0f172a; color:#e2e8f0; border-radius:9px;
+          padding:12px 15px; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; line-height:1.62;
+          white-space:pre; overflow:hidden; }
+  .term .t { color:#64748b; }  .term .ok { color:#4ade80; }  .term .bad { color:#f87171; }
+  .term .warn { color:#fbbf24; } .term .call { color:#64748b; } .term .ev { color:#38bdf8; }
+  .term .k { color:#64748b; }
+  .note { position:absolute; box-sizing:border-box; border-radius:9px; padding:10px 13px; font-size:11.5px; line-height:1.5; }
+  .warn { background:#fff7ed; border:1.5px solid #ea580c; }
+  .warn b { color:#ea580c; }
+  table.f { border-collapse:collapse; width:100%; margin-top:4px; }
+  table.f td { font-size:11.5px; padding:2px 6px 2px 0; vertical-align:top; line-height:1.4; }
+  table.f td.s { font-family:ui-monospace,Consolas,monospace; color:#dc2626; white-space:nowrap; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <h1>Research Agent — one published post becomes lead_context for a whole industry</h1>
+  <div class="sub">FastAPI service, port 8086 · reads and writes HubSpot through the MCP, with one scoped direct read · a lead's failure is named and never silently dropped</div>
+
+  <svg class="arrows">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#374151" stroke-width="1.6"/></marker>
+      <marker id="g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#16a34a" stroke-width="1.8"/></marker>
+      <marker id="r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#dc2626" stroke-width="1.6"/></marker>
+    </defs>
+
+    <!-- entry -> campaign -->
+    <path d="M660 300 L660 330 L270 330 L270 372" fill="none" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- campaign row -->
+    <line x1="500" y1="462" x2="536" y2="462" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="916" y1="462" x2="952" y2="462" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- campaign -> per lead -->
+    <path d="M1170 552 L1170 582 L250 582 L250 624" fill="none" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- per-lead row -->
+    <line x1="440" y1="716" x2="476" y2="716" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="808" y1="716" x2="844" y2="716" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1176" y1="716" x2="1212" y2="716" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1544" y1="716" x2="1580" y2="716" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- loop back -->
+    <path d="M1750 810 L1750 846 L250 846 L250 812" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#a)"/>
+    <!-- per lead -> results -->
+    <path d="M1750 810 L1830 810 L1830 880 L1500 880 L1500 926" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#g)"/>
+  </svg>
+
+  <div class="albl" style="left:518px; top:444px;">industry</div>
+  <div class="albl" style="left:934px; top:444px;">N leads</div>
+  <div class="albl" style="left:458px; top:698px;">lead</div>
+  <div class="albl" style="left:826px; top:698px;">facts</div>
+  <div class="albl" style="left:1194px; top:698px;">raw text</div>
+  <div class="albl" style="left:1562px; top:698px;">the note</div>
+  <div class="hop" style="left:820px; top:838px; color:#7c3aed;">next lead — the blog is NOT re-read</div>
+  <div class="hop" style="left:1560px; top:872px;">all leads done</div>
+
+  <!-- ═══════════ 1 · ENTRY ═══════════ -->
+  <div class="lane" style="left:44px; top:100px;">1 · HOW A RUN STARTS — three doors, one pipeline</div>
+  <div class="laneline" style="left:44px; top:120px; width:1832px;"></div>
+
+  <div class="box src" style="left:60px; top:140px; width:400px; height:160px;">
+    <h3>POST /research/campaign</h3>
+    <p class="file">one post → every lead in its industry</p>
+    <ul>
+      <li>body: <code>object_id</code> of the blog Ticket</li>
+      <li>optional <code>industry</code> override, <code>limit</code></li>
+      <li><b>synchronous</b> — the caller wants the counts</li>
+      <li>long: drive it from a job, not a 5s webhook</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:480px; top:140px; width:400px; height:160px;">
+    <h3>POST /research/run</h3>
+    <p class="file">exactly one lead</p>
+    <ul>
+      <li><code>object_id</code> = the CONTACT</li>
+      <li><code>summary_ref_id</code> = the BLOG POST</li>
+      <li>different records — mixing them reads the wrong row</li>
+      <li>hand-driven: curl, tests, a re-run of one lead</li>
+    </ul>
+  </div>
+
+  <div class="box purple" style="left:900px; top:140px; width:400px; height:160px;">
+    <h3>POST /research/a2a</h3>
+    <p class="file">the Agent Gateway's hand-off</p>
+    <ul>
+      <li>A2A JSON-RPC <code>message/send</code> envelope</li>
+      <li>no <code>object_id</code> ⇒ rejected, with the reason</li>
+      <li><b>acknowledges, then works in the background</b> — the gateway must answer HubSpot inside ~5s</li>
+    </ul>
+  </div>
+
+  <div class="box dashed" style="left:1320px; top:140px; width:556px; height:160px;">
+    <h3>Boot — a mismatch surfaces here, not as a silent no-op</h3>
+    <p class="file">service_app.py · lifespan → ensure_ready()</p>
+    <ul>
+      <li><code>GET /health</code> — model, dry_run, MCP url, tools, search</li>
+      <li><code>GET /mcp/tools</code> — what the MCP exposes vs what we configured</li>
+      <li>startup check <code>warn</code> logs it · <code>strict</code> refuses to start</li>
+      <li><code>list_leads</code> is campaign-only, so it shows as missing, not fatal</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ 2 · CAMPAIGN ═══════════ -->
+  <div class="lane" style="left:44px; top:348px;">2 · THE CAMPAIGN — <code>run_campaign()</code>, once per post</div>
+  <div class="laneline" style="left:44px; top:368px; width:1832px;"></div>
+
+  <div class="box" style="left:60px; top:390px; width:440px; height:162px;">
+    <span class="step">STEP 1</span>
+    <h3>Read the post</h3>
+    <p class="file">hubspot.read_blog(object_id) — MCP</p>
+    <ul>
+      <li>the Ticket's own record id, exactly what the gateway sends</li>
+      <li>gives <code>blog_summary</code> + <code>blog_industry</code></li>
+      <li>read <b>once</b> and carried into every lead below</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:536px; top:390px; width:380px; height:162px;">
+    <span class="step">STEP 2</span>
+    <h3>Pick the industry</h3>
+    <p class="file">target.industry or blog.blog_industry</p>
+    <ul>
+      <li>a caller override wins — and is logged as an override</li>
+      <li>neither present ⇒ stop: there is nothing to select leads by</li>
+    </ul>
+  </div>
+
+  <div class="box amber" style="left:952px; top:390px; width:440px; height:162px;">
+    <span class="step">STEP 3</span>
+    <h3>Who is in that industry</h3>
+    <p class="file">hubspot_direct.py — the ONE direct call</p>
+    <ul>
+      <li>industry lives on the <b>Company</b>, not the Contact</li>
+      <li>companies search → each company's associated contacts → dedup</li>
+      <li><b>read-only, enforced by a test</b> — no PATCH/PUT/POST-write</li>
+    </ul>
+  </div>
+
+  <div class="box red" style="left:1412px; top:390px; width:464px; height:162px;">
+    <h3>“could not ask” ≠ “nobody matched”</h3>
+    <ul>
+      <li>lookup <b>fails</b> → the campaign does not run at all</li>
+      <li>lookup <b>succeeds with 0</b> → completed, <code>leads_found=0</code></li>
+      <li>collapsing these two would report a clean campaign that silently skipped every lead</li>
+    </ul>
+    <span class="chip">token ← Secret Manager, never env</span>
+  </div>
+
+  <!-- ═══════════ 3 · PER LEAD ═══════════ -->
+  <div class="lane" style="left:44px; top:598px;">3 · PER LEAD — <code>run_research()</code>, once per contact, each independent</div>
+  <div class="laneline" style="left:44px; top:618px; width:1832px;"></div>
+
+  <div class="box" style="left:60px; top:640px; width:380px; height:170px;">
+    <span class="step">STEP 1</span>
+    <h3>Read the lead</h3>
+    <p class="file">get_lead_profile — MCP</p>
+    <ul>
+      <li>company, job title, industry, existing context</li>
+      <li>unknown lead ⇒ <code>crm-error</code>, this lead only</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:476px; top:640px; width:332px; height:170px;">
+    <span class="step">STEP 2</span>
+    <h3>Skip gate</h3>
+    <p class="file">skip_if_context_present</p>
+    <ul>
+      <li><b>default false</b> → a re-run overwrites</li>
+      <li>set true to make a campaign resumable without redoing work</li>
+      <li>skipped ≠ failed in the counts</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:844px; top:640px; width:332px; height:170px;">
+    <span class="step">STEP 3</span>
+    <h3>Research</h3>
+    <p class="file">composer → web search + model</p>
+    <ul>
+      <li>prompt carries THIS company + the post</li>
+      <li>~3 searches, ~25 cited sources</li>
+      <li>search failure ⇒ no write, never a fabricated note</li>
+    </ul>
+  </div>
+
+  <div class="box green" style="left:1212px; top:640px; width:332px; height:170px;">
+    <span class="step">STEP 4</span>
+    <h3>Keep only the note</h3>
+    <p class="file">_collect + strip_preamble</p>
+    <ul>
+      <li>drops text written <b>before</b> the last search — that is the model narrating its own tool use</li>
+      <li>drops a “Here is the note:” line and its rule</li>
+      <li>guarded: ≥80 chars must survive, else untouched</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1580px; top:640px; width:296px; height:170px;">
+    <span class="step">STEP 5</span>
+    <h3>Write it back</h3>
+    <p class="file">upsert_lead_profile — MCP</p>
+    <ul>
+      <li>property <code>lead_context</code></li>
+      <li>note + cited sources appended</li>
+      <li><b>status follows the write</b> — a note that could not land is a failure</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ 4 · RESULT ═══════════ -->
+  <div class="lane" style="left:44px; top:904px;">4 · WHAT COMES BACK</div>
+  <div class="laneline" style="left:44px; top:924px; width:1832px;"></div>
+
+  <div class="box red" style="left:330px; top:946px; width:520px; height:186px;">
+    <h3>Every failure names its step</h3>
+    <p class="file">nothing is dropped without a reason</p>
+    <table class="f">
+      <tr><td class="s">input</td><td>no <code>object_id</code> / no <code>summary_ref_id</code></td></tr>
+      <tr><td class="s">read_lead</td><td>the MCP returned no lead for that id</td></tr>
+      <tr><td class="s">read_blog</td><td>no blog summary at that record</td></tr>
+      <tr><td class="s">industry</td><td>post carries none and none supplied</td></tr>
+      <tr><td class="s">list_leads</td><td>could not ask HubSpot who is in it</td></tr>
+      <tr><td class="s">research</td><td>search or model failed — no write attempted</td></tr>
+    </table>
+  </div>
+
+  <div class="box green" style="left:870px; top:946px; width:490px; height:186px;">
+    <h3>CampaignResponse</h3>
+    <p class="file">counts first, then the per-lead breakdown</p>
+    <ul>
+      <li><code>leads_found</code> · <code>written</code> · <code>failed</code> · <code>skipped</code></li>
+      <li><code>results[]</code> — one row per lead: id, status, chars, error</li>
+      <li>status is <b>completed</b> / <b>partial</b> / <b>failed</b> —
+          “partial” exists so one bad lead never reads as a failed campaign</li>
+    </ul>
+  </div>
+
+  <div class="box src" style="left:1380px; top:946px; width:496px; height:186px;">
+    <h3>The write is the next trigger</h3>
+    <ul>
+      <li><code>lead_context</code> changes on the Contact</li>
+      <li>→ HubSpot <code>contact.propertyChange</code></li>
+      <li>→ Agent Gateway → <b>Email Agent</b></li>
+      <li>no scheduler, no polling, no queue between the two agents</li>
+    </ul>
+    <span class="chip">~3.5–4k chars land, sources included</span>
+  </div>
+
+  <div class="box dashed" style="left:60px; top:946px; width:250px; height:186px;">
+    <h3 style="font-size:13.5px;">One lead ≠ the campaign</h3>
+    <ul>
+      <li>each lead is worked on its own</li>
+      <li>a failure is recorded against <b>that</b> lead</li>
+      <li>the loop carries on</li>
+      <li>one bad record must never cost the others their context</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ 5 · LOGS ═══════════ -->
+  <div class="lane" style="left:44px; top:1156px;">5 · WHAT YOU SEE WHILE IT RUNS — readable console, JSON everywhere else</div>
+  <div class="laneline" style="left:44px; top:1176px; width:1832px;"></div>
+
+  <div class="term" style="left:60px; top:1198px; width:1180px; height:262px;"><span class="t">12:52:14</span> <span class="ev">·</span> <span class="ev">campaign_start          </span> <span class="k">object_id</span>=330008697562 <span class="k">limit</span>=100 <span class="k">dry_run</span>=False
+<span class="t">12:52:14</span> <span class="call">→ mcp       POST http://localhost:8080/mcp 200 1353ms</span>
+<span class="t">12:52:14</span> <span class="ev">·</span> <span class="ev">campaign_blog_read      </span> <span class="k">blog_industry</span>=FINANCIAL_SERVICES <span class="k">summary_chars</span>=1261
+<span class="t">12:52:14</span> <span class="ev">·</span> <span class="ev">secret_resolved         </span> <span class="k">secret</span>=&lt;redacted&gt; <span class="k">source</span>=secret_manager:ldqfingsrv-dev/lqabr-hubspot-access-token
+<span class="t">12:52:14</span> <span class="ok">✓</span> <span class="ok">campaign_leads_found    </span> <span class="k">industry</span>=FINANCIAL_SERVICES <span class="k">leads_found</span>=5 <span class="k">leads</span>=[533970643697, 534004984568, 533995992811 +2]
+<span class="t">12:52:14</span> <span class="ev">·</span> <span class="ev">campaign_lead_start     </span> <span class="k">object_id</span>=533970643697 <span class="k">position</span>=1 <span class="k">of</span>=5
+<span class="t">12:52:14</span> <span class="warn">!</span> <span class="warn">search_kwargs_dropped   </span> <span class="k">dropped</span>=[temperature] <span class="k">reason</span>=this anthropic SDK version does not accept them
+<span class="t">12:52:14</span> <span class="call">→ anthropic POST messages.create 200 24649ms</span>
+<span class="t">12:52:14</span> <span class="ok">✓</span> <span class="ok">context_write_ok        </span> <span class="k">object_id</span>=533970643697 <span class="k">chars</span>=3941
+<span class="t">12:52:14</span> <span class="bad">✗</span> <span class="bad">run_failed              </span> <span class="k">step</span>=read_lead <span class="k">object_id</span>=533990588137 <span class="k">reason</span>=crm-error: the MCP returned no lead for that id
+<span class="t">12:52:14</span> <span class="ok">✓</span> <span class="ok">campaign_complete       </span> <span class="k">status</span>=partial <span class="k">leads_found</span>=5 <span class="k">written</span>=4 <span class="k">failed</span>=1 <span class="k">skipped</span>=0</div>
+
+  <div class="box dashed" style="left:1268px; top:1198px; width:608px; height:262px;">
+    <h3 style="font-size:13.5px;">Three streams, one <code>run_id</code></h3>
+    <ul>
+      <li><b>process</b> — the steps: started / ok / failed / skipped / degraded</li>
+      <li><b>audit</b> — every outbound call: service, endpoint, status, attempt, ms.
+          The credential's <b>name</b>, never its value.</li>
+      <li><b>system</b> — startup and config</li>
+      <li>one <code>run_id</code> spans the whole campaign, so a post ties to
+          every lead it produced</li>
+      <li><code>LQABR_RESEARCH_LOG_FORMAT</code> = <code>auto</code> (default) ·
+          <code>text</code> · <code>json</code>. <b>auto</b> = readable on a terminal,
+          JSON on Cloud Run — so structured logging is never traded for looks.
+          <b>The log file is always JSON.</b></li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

@@ -2,9 +2,15 @@
 
     GET  /                 identity + route index
     GET  /health /healthz  what this instance is bound to
-    GET  /mcp/tools        what the MCP exposes right now
-    POST /research/run     the domain entry point (hand-driven, curl, tests)
-    POST /research/a2a     the gateway's A2A message/send envelope
+    GET  /mcp/tools               what the MCP exposes right now
+    POST /research/run            one contact       (hand-driven, curl, tests)
+    POST /research/campaign       one post -> its whole industry (synchronous)
+    POST /research/a2a            gateway hand-off, the id is a CONTACT
+    POST /research/campaign/a2a   gateway hand-off, the id is a POST
+
+The two a2a routes differ by WHAT the id is, not by how they answer: a blog
+post sent to the contact route fails at read_lead, because a Ticket is not a
+lead. Both acknowledge immediately and work in the background.
 
 Run locally:  uvicorn service_app:app --port 8086 --app-dir agents/research/src
 """
@@ -36,7 +42,7 @@ try:  # pragma: no cover - depends on the local environment
 except ImportError:
     pass
 
-from fastapi import BackgroundTasks, FastAPI, Request  # noqa: E402
+from fastapi import BackgroundTasks, FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
@@ -44,8 +50,9 @@ from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
 from research_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 
-from pipeline import run_research  # noqa: E402
-from schema import A2AEnvelope, ResearchRequest, ResearchResponse  # noqa: E402
+from pipeline import run_campaign, run_research  # noqa: E402
+from schema import (A2AEnvelope, CampaignRequest, CampaignResponse,  # noqa: E402
+                    ResearchRequest, ResearchResponse)
 
 SETTINGS = get_settings()
 
@@ -81,10 +88,10 @@ _MCP_STATE: Dict[str, Any] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging(SETTINGS.log_level, SETTINGS.log_file)
+    configure_logging(SETTINGS.log_level, SETTINGS.log_file, SETTINGS.log_format)
     obs = get_obs(new_run_id(), refresh=True)
     obs.process.emit("service_start", service="lqabr-research-agent", version="0.1.0",
-                     routes=SETTINGS.routes, config=SETTINGS.redacted())
+                     config=SETTINGS.redacted())
     _MCP_STATE.update(_startup_mcp_check())
     yield
     get_obs().process.emit("service_stop", service="lqabr-research-agent")
@@ -102,7 +109,6 @@ def _health_payload() -> Dict[str, Any]:
         "status": "UP",
         "service": "lqabr-research-agent",
         "version": "0.1.0",
-        "routes": SETTINGS.routes,
         "model": SETTINGS.model,
         "dry_run": SETTINGS.dry_run,
         "search": {"enabled": SETTINGS.search_enabled,
@@ -116,16 +122,20 @@ def _health_payload() -> Dict[str, Any]:
             "read_lead": SETTINGS.mcp_tool_read_lead,
             "read_blog": SETTINGS.mcp_tool_read_blog,
             "write": SETTINGS.mcp_tool_write,
+            "list_leads": SETTINGS.mcp_tool_list_leads,
         },
         "hubspot": {"context_property": SETTINGS.hubspot_context_property},
     }
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def index() -> Dict[str, Any]:
+    """Identity + route index. HEAD is accepted because tunnels and uptime
+    monitors probe with it — a 405 there reads as "service unhealthy"."""
     return {"service": "lqabr-research-agent", "version": "0.1.0",
             "routes": ["/health", "/healthz", "/mcp/tools",
-                       SETTINGS.route_run, SETTINGS.route_a2a]}
+                       SETTINGS.route_run, "/research/campaign",
+                       SETTINGS.route_a2a, SETTINGS.route_campaign_a2a]}
 
 
 @app.get("/health")
@@ -140,10 +150,15 @@ async def healthz() -> Dict[str, Any]:
 
 @app.get("/mcp/tools")
 async def mcp_tools() -> Dict[str, Any]:
-    """What the MCP exposes right now, and whether our three names are on it."""
+    """What the MCP exposes right now, and whether our names are on it.
+
+    `list_leads` is campaign-only: single-lead runs work without it, so it
+    shows up under `missing` rather than making this endpoint an error.
+    """
     configured = {"read_lead": SETTINGS.mcp_tool_read_lead,
                   "read_blog": SETTINGS.mcp_tool_read_blog,
-                  "write": SETTINGS.mcp_tool_write}
+                  "write": SETTINGS.mcp_tool_write,
+                  "list_leads": SETTINGS.mcp_tool_list_leads}
     try:
         tools = HubSpotMCP(settings=SETTINGS).client.list_tools()
     except MCPError as exc:
@@ -158,6 +173,17 @@ async def mcp_tools() -> Dict[str, Any]:
 async def research_run(request: ResearchRequest) -> ResearchResponse:
     """The domain entry point. Synchronous: the caller wants the outcome."""
     return run_research(request.resolved())
+
+
+@app.post("/research/campaign", response_model=CampaignResponse)
+async def research_campaign(request: CampaignRequest) -> CampaignResponse:
+    """One published post -> lead_context for every lead in its industry.
+
+    Synchronous on purpose: the caller asked how many leads matched and what
+    happened to each, so it waits for the counts. A campaign over many leads
+    is long — drive it from a job or a background caller, not a 5s webhook.
+    """
+    return run_campaign(request.resolved())
 
 
 @app.post(SETTINGS.route_a2a)
@@ -181,11 +207,46 @@ async def research_a2a(envelope: A2AEnvelope, background: BackgroundTasks) -> Di
 
     obs.audit.emit("http_in", route=SETTINGS.route_a2a, status=200,
                    object_id=target.object_id,
-                   blog_published_at=target.blog_published_at,
                    summary_ref_id=target.summary_ref_id, run_id=run_id)
 
     background.add_task(run_research, target, run_id=run_id)
     result = {"status": "accepted", "object_id": target.object_id, "run_id": run_id}
+    if envelope.jsonrpc == "2.0":
+        return {"jsonrpc": "2.0", "id": envelope.id, "result": result}
+    return result
+
+
+@app.post(SETTINGS.route_campaign_a2a)
+async def research_campaign_a2a(envelope: A2AEnvelope,
+                                background: BackgroundTasks) -> Dict[str, Any]:
+    """The gateway's blog-summary hand-off — one post, the whole industry.
+
+    The sibling of /research/a2a, and the distinction matters: there the
+    `object_id` is a CONTACT, here it is the published POST. Sending a post to
+    the contact route fails at read_lead, because a Ticket is not a lead.
+
+    Acknowledge first for the same reason as the sibling — the gateway answers
+    HubSpot inside ~5s, and a campaign over N leads runs for minutes. The
+    outcome lands on the log streams under this run id.
+    """
+    target = envelope.campaign_target()
+    run_id = envelope.run_id() or new_run_id()
+    obs = get_obs()
+
+    if not target.object_id:
+        obs.audit.emit("http_in", route=SETTINGS.route_campaign_a2a, status=400,
+                       error="payload carries no object_id")
+        return {"jsonrpc": "2.0", "id": envelope.id,
+                "result": {"status": "rejected",
+                           "reason": "payload carries no object_id"}}
+
+    obs.audit.emit("http_in", route=SETTINGS.route_campaign_a2a, status=200,
+                   object_id=target.object_id, industry=target.industry,
+                   limit=target.limit, run_id=run_id)
+
+    background.add_task(run_campaign, target, run_id=run_id)
+    result = {"status": "accepted", "object_id": target.object_id,
+              "run_id": run_id, "mode": "campaign"}
     if envelope.jsonrpc == "2.0":
         return {"jsonrpc": "2.0", "id": envelope.id, "result": result}
     return result

@@ -67,12 +67,11 @@ ALLOWED_METADATA_KEYS = frozenset({
     # Audience-resolved research hand-off (Rev 5): the blog Ticket id, so the
     # agent can read the summary. Still an id, never lead-profile data.
     "summary_ref_id",
-    # ADDED 2026-08-22: the blog post's publication timestamp. The central MCP
-    # reads a blog summary by blog_published_at (get_blog_summary), NOT by
-    # ticket id, so the research agent cannot fetch the summary from
-    # summary_ref_id alone. A timestamp is an identifier, not lead-profile
-    # data, so it is admissible under the same rule as summary_ref_id.
-    "blog_published_at",
+    # Blog-ticket hand-off (audience disabled): the ticket's own fields under
+    # HubSpot's ORIGINAL names, so the agent receives the ticket exactly as
+    # HubSpot sent it. The correlation id rides along as ``triggerId`` (camelCase)
+    # instead of the snake_case ``trigger_id`` the other agents get.
+    "objectId", "propertyName", "subscriptionType", "eventId", "triggerId",
 })
 
 

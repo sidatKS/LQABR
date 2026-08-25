@@ -68,12 +68,24 @@ def test_no_repo_imports():
                            + "; ".join(offenders))
 
 
-def test_no_direct_hubspot_calls():
-    """Every HubSpot read and write goes through the MCP. A HubSpot hostname in
-    executable code would mean a second, unaudited path to the CRM — a second
-    copy of the token and writes that skip schema validation."""
+#: The ONE file allowed to name HubSpot directly (2026-08-24, user decision):
+#: the MCP exposes no lead-listing tool, so "which leads are in this industry"
+#: is read straight from HubSpot. The exemption is deliberately a single
+#: filename, not a pattern — a second direct caller must fail this test and be
+#: argued for on its own merits. Delete the exemption when the MCP grows the
+#: tool; see research_core/hubspot_direct.py.
+DIRECT_HUBSPOT_EXEMPTION = "hubspot_direct.py"
+
+
+def test_no_direct_hubspot_calls_outside_the_one_exemption():
+    """Every HubSpot read and write goes through the MCP, with one scoped
+    exception. A HubSpot hostname anywhere else would mean a second, unaudited
+    path to the CRM — a second copy of the token and writes that skip schema
+    validation."""
     offenders = []
     for path in _sources():
+        if path.name == DIRECT_HUBSPOT_EXEMPTION:
+            continue
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
         docstrings = _docstring_nodes(tree)
@@ -82,7 +94,24 @@ def test_no_direct_hubspot_calls():
                     and id(node) not in docstrings and "api.hubapi.com" in node.value:
                 offenders.append(f"{path.relative_to(AGENT)}:{node.lineno}")
     assert not offenders, ("the research agent must reach HubSpot only through the "
-                           f"MCP; a HubSpot URL appears in code at: {offenders}")
+                           f"MCP (except {DIRECT_HUBSPOT_EXEMPTION}); a HubSpot URL "
+                           f"appears in code at: {offenders}")
+
+
+def test_the_direct_hubspot_exemption_is_read_only():
+    """The exemption buys a lookup, not a write path. Writes stay on the MCP,
+    where they are schema-validated and audited, so the direct module must
+    never POST or PATCH to an object endpoint."""
+    path = AGENT / "packages" / "research_core" / DIRECT_HUBSPOT_EXEMPTION
+    if not path.exists():          # exemption already removed — nothing to police
+        return
+    source = path.read_text(encoding="utf-8")
+    for forbidden in ("/crm/v3/objects/contacts/batch/update",
+                      '"PATCH"', "'PATCH'", '"PUT"', "'PUT'",
+                      '"DELETE"', "'DELETE'"):
+        assert forbidden not in source, (
+            f"{DIRECT_HUBSPOT_EXEMPTION} is read-only: found {forbidden!r}. "
+            "Writes belong on the MCP.")
 
 
 def test_the_rule_is_actually_documented():

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LQABR — end-to-end flow</title>
+<style>
+  body { margin:0; background:#fff; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#111827; }
+  .canvas { position:relative; width:2100px; height:1215px; margin:0 auto; }
+  h1 { position:absolute; left:44px; top:18px; font-size:29px; margin:0; font-weight:700; }
+  .sub { position:absolute; left:46px; top:58px; font-size:13.5px; color:#4b5563; }
+  .box { position:absolute; box-sizing:border-box; border-radius:10px; background:#fff; border:1.6px solid #2563eb; padding:11px 13px; }
+  .box h3 { margin:0 0 2px; font-size:14.5px; font-weight:700; }
+  .file { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:#2563eb; margin:0 0 5px; }
+  .box ul { margin:3px 0 0; padding-left:15px; }
+  .box li { font-size:12px; line-height:1.42; margin:1px 0; }
+  .chip { display:inline-block; font-family:ui-monospace,Consolas,monospace; font-size:11px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:5px; padding:1px 5px; margin-top:5px; }
+  .src { background:#dbeafe; border-color:#2563eb; }
+  .green { background:#dcfce7; border-color:#16a34a; }
+  .dark { background:#1d4ed8; border-color:#1d4ed8; color:#fff; }
+  .dark h3, .dark .file { color:#fff; }
+  .dark li { color:#dbeafe; }
+  .amber { background:#fffbeb; border-color:#d97706; }
+  .purple { background:#f5f3ff; border-color:#7c3aed; }
+  .dashed { border-style:dashed; border-color:#6b7280; background:#f9fafb; }
+  .lane { position:absolute; font-size:12px; font-weight:700; color:#6b7280; letter-spacing:.06em; }
+  .laneline { position:absolute; border-top:1px dashed #d1d5db; }
+  svg.arrows { position:absolute; left:0; top:0; width:2100px; height:1215px; pointer-events:none; }
+  .albl { position:absolute; font-size:11px; color:#6b7280; background:#fff; padding:0 4px; z-index:5; white-space:nowrap; transform:translateX(-50%); }
+  .hop { position:absolute; font-size:11.5px; color:#15803d; background:#fff; padding:0 6px; font-weight:600; }
+  .note { position:absolute; box-sizing:border-box; border-radius:9px; padding:9px 12px; font-size:11.5px; line-height:1.45; }
+  .warn { background:#fff7ed; border:1.5px solid #ea580c; }
+  .warn b { color:#ea580c; }
+  .ok { background:#f0fdf4; border:1.5px solid #16a34a; }
+  .ok b { color:#15803d; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <h1>LQABR — end to end: blog published → lead qualified → human rep</h1>
+  <div class="sub">Verified live 24 Aug 2026 · one MCP is the only door to HubSpot (one scoped exception, marked) · every stage writes back to HubSpot, the system of record</div>
+
+  <svg class="arrows">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#374151" stroke-width="1.6"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#16a34a" stroke-width="1.8"/></marker></defs>
+
+    <!-- stage 1 across -->
+    <line x1="332" y1="228" x2="368" y2="228" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="704" y1="228" x2="740" y2="228" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1076" y1="228" x2="1112" y2="228" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1448" y1="228" x2="1484" y2="228" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- stage 1 -> 2 -->
+    <path d="M1650 322 L1650 356 L190 356 L190 400" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#g)"/>
+
+    <!-- stage 2 across -->
+    <line x1="332" y1="500" x2="368" y2="500" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="704" y1="500" x2="740" y2="500" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1076" y1="500" x2="1112" y2="500" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- stage 2 -> 3 -->
+    <path d="M1280 594 L1280 628 L190 628 L190 672" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#g)"/>
+
+    <!-- stage 3 across -->
+    <line x1="332" y1="772" x2="368" y2="772" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="704" y1="772" x2="740" y2="772" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1076" y1="772" x2="1112" y2="772" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="1448" y1="772" x2="1484" y2="772" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+    <!-- stage 3 -> exit -->
+    <path d="M1650 866 L1650 900 L860 900 L860 936" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#g)"/>
+  </svg>
+
+  <div class="albl" style="left:350px; top:208px;">ticket</div>
+  <div class="albl" style="left:722px; top:208px;">industry</div>
+  <div class="albl" style="left:1094px; top:208px;">N leads</div>
+  <div class="albl" style="left:1466px; top:208px;">each</div>
+  <div class="hop" style="left:800px; top:344px;">lead_context written → HubSpot fires the next trigger</div>
+  <div class="hop" style="left:640px; top:616px;">email opened → probability ≥ 30 → voice threshold</div>
+  <div class="hop" style="left:1180px; top:888px;">probability ≥ 60</div>
+
+  <!-- ================= LANE 1 ================= -->
+  <div class="lane" style="left:44px; top:104px;">STAGE 1 · RESEARCH — one blog post becomes context for every lead in its industry</div>
+  <div class="laneline" style="left:44px; top:124px; width:2010px;"></div>
+
+  <div class="box src" style="left:60px; top:142px; width:272px; height:180px;">
+    <h3>Marketing publishes</h3>
+    <p class="file">HubSpot Ticket · blog_details</p>
+    <ul>
+      <li><code>blog_summary</code> written on a Ticket</li>
+      <li><code>blog_industry</code>: HEALTHCARE · LEGAL_SERVICES · FINANCIAL_SERVICES</li>
+      <li>one row per post — never per lead</li>
+    </ul>
+    <span class="chip">ticket.propertyChange</span>
+  </div>
+
+  <div class="box purple" style="left:368px; top:142px; width:336px; height:180px;">
+    <h3>Agent Gateway</h3>
+    <p class="file">agents/gateway · route R-blog-summary</p>
+    <ul>
+      <li>verifies the HubSpot signature</li>
+      <li>matches <code>blog_summary</code> non-empty</li>
+      <li>hands over ONLY the post's <code>object_id</code></li>
+      <li>answers HubSpot inside its ~5s budget</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:740px; top:142px; width:336px; height:180px;">
+    <h3>Read the post</h3>
+    <p class="file">research · run_campaign()</p>
+    <ul>
+      <li><code>get_blog_summary(object_id)</code> — MCP</li>
+      <li>take <code>blog_industry</code> from the post</li>
+      <li>read once, reused for every lead</li>
+      <li>no industry ⇒ stop with a named reason</li>
+    </ul>
+  </div>
+
+  <div class="box amber" style="left:1112px; top:142px; width:336px; height:180px;">
+    <h3>Who is in that industry</h3>
+    <p class="file">research_core/hubspot_direct.py</p>
+    <ul>
+      <li>companies where <code>industry == X</code></li>
+      <li>→ each company's associated contacts</li>
+      <li><b>the one direct HubSpot read</b> — the MCP has no listing tool</li>
+      <li>could-not-ask ≠ nobody-matched: refuses to run</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1484px; top:142px; width:336px; height:180px;">
+    <h3>Research + write, per lead</h3>
+    <p class="file">research · run_research()</p>
+    <ul>
+      <li><code>get_lead_profile</code> → company, title, industry</li>
+      <li>web search + model → a note about THIS company</li>
+      <li><code>upsert_lead_profile</code> → <code>lead_context</code></li>
+      <li>note stripped to the note alone — no model narration</li>
+      <li>one lead's failure never stops the rest</li>
+    </ul>
+  </div>
+
+  <!-- ================= LANE 2 ================= -->
+  <div class="lane" style="left:44px; top:376px;">STAGE 2 · EMAIL — context becomes a personalised email; engagement raises probability</div>
+  <div class="laneline" style="left:44px; top:396px; width:2010px;"></div>
+
+  <div class="box src" style="left:60px; top:414px; width:272px; height:180px;">
+    <h3>lead_context lands</h3>
+    <p class="file">HubSpot Contact</p>
+    <ul>
+      <li>the write itself is the next trigger</li>
+      <li>no scheduler, no polling</li>
+    </ul>
+    <span class="chip">contact.propertyChange</span>
+  </div>
+
+  <div class="box purple" style="left:368px; top:414px; width:336px; height:180px;">
+    <h3>Agent Gateway</h3>
+    <p class="file">route R-lead-context</p>
+    <ul>
+      <li>routes to the Email agent</li>
+      <li>hands over the contact's <code>object_id</code></li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:740px; top:414px; width:336px; height:180px;">
+    <h3>Compose + send</h3>
+    <p class="file">agents/email · outreach.py</p>
+    <ul>
+      <li>skips a lead already SENT / DELIVERED / OPENED</li>
+      <li>model writes from <code>lead_context</code> + the skill</li>
+      <li>Mailgun send, tagged with the lead id</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1112px; top:414px; width:336px; height:180px;">
+    <h3>Track engagement</h3>
+    <p class="file">signed Mailgun webhooks</p>
+    <ul>
+      <li>DELIVERED +2 · OPENED +5 · CLICKED +10</li>
+      <li>writes <code>lqabr_email_status</code> + probability</li>
+      <li>engagement is never fabricated — webhooks only</li>
+    </ul>
+  </div>
+
+  <!-- ================= LANE 3 ================= -->
+  <div class="lane" style="left:44px; top:648px;">STAGE 3 · VOICE — qualified leads get called; a real conversation crosses the hand-off line</div>
+  <div class="laneline" style="left:44px; top:668px; width:2010px;"></div>
+
+  <div class="box src" style="left:60px; top:686px; width:272px; height:180px;">
+    <h3>Lead qualifies</h3>
+    <p class="file">HubSpot Contact</p>
+    <ul>
+      <li><code>lqabr_email_status</code> → OPENED</li>
+      <li>probability ≥ 30 — the voice threshold</li>
+    </ul>
+  </div>
+
+  <div class="box purple" style="left:368px; top:686px; width:336px; height:180px;">
+    <h3>Agent Gateway</h3>
+    <p class="file">route → voice</p>
+    <ul>
+      <li>hands over the contact's <code>object_id</code></li>
+    </ul>
+    <span class="chip">POST /voice_agent/lead</span>
+  </div>
+
+  <div class="box" style="left:740px; top:686px; width:336px; height:180px;">
+    <h3>Gate, claim, dial</h3>
+    <p class="file">text_voice · text_voice.py + tools.py</p>
+    <ul>
+      <li>stops: opted out · no phone · already in flight</li>
+      <li><b>claims INITIATED before dialing</b> — unclaimable ⇒ not dialed</li>
+      <li>opens the call on that lead's <code>lead_context</code></li>
+    </ul>
+  </div>
+
+  <div class="box dark" style="left:1112px; top:686px; width:336px; height:180px;">
+    <h3>Vapi — the live call</h3>
+    <p class="file">external · no agent code runs</p>
+    <ul>
+      <li>3-question qualification script</li>
+      <li>voicemail detected by Vapi</li>
+      <li>posts the end-of-call report back</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1484px; top:686px; width:336px; height:180px;">
+    <h3>Classify + write back</h3>
+    <p class="file">text_voice · summarise_report / mcp_client</p>
+    <ul>
+      <li>model reads the transcript → 1 of 4 outcomes</li>
+      <li>silence ⇒ voicemail, never "answered"</li>
+      <li>answered + engaged = <b>30 → 45 → 60</b></li>
+    </ul>
+  </div>
+
+  <!-- ================= EXIT + PLATFORM ================= -->
+  <div class="box green" style="left:640px; top:936px; width:440px; height:112px;">
+    <h3>probability ≥ 60 → Scheduling Agent</h3>
+    <ul>
+      <li>lead is emailed real availability across time zones</li>
+      <li>a booking pins probability at 95</li>
+      <li><b>handed to a human rep</b> — the pipeline's exit</li>
+    </ul>
+  </div>
+
+  <div class="box dashed" style="left:1112px; top:936px; width:336px; height:112px;">
+    <h3 style="font-size:13px;">The MCP — the only door to HubSpot</h3>
+    <ul>
+      <li><code>get_lead_profile</code> · <code>upsert_lead_profile</code></li>
+      <li><code>get_blog_summary</code> · <code>upsert_blog_summary</code></li>
+      <li>every agent reads and writes through it</li>
+    </ul>
+  </div>
+
+  <div class="box dashed" style="left:1484px; top:936px; width:336px; height:112px;">
+    <h3 style="font-size:13px;">Secrets</h3>
+    <ul>
+      <li>Secret Manager per environment</li>
+      <li>injected as env vars at deploy — never in git, never in the image</li>
+      <li>logs carry the secret's NAME, never its value</li>
+    </ul>
+  </div>
+
+  <div class="note ok" style="left:60px; top:936px; width:552px; height:112px;">
+    <b>✓ Verified live 24 Aug 2026</b><br>
+    LEGAL_SERVICES → 2 leads written (Everlaw, Litera) · FINANCIAL_SERVICES post <code>330008697562</code> → 5 companies → 5 leads → 5 written
+    (Brex, Ramp, MoneyLion, Stash +1). Voice path: trigger → INITIATED → dialled → answered → COMPLETED → probability 30 → 60.
+  </div>
+
+  <div class="note warn" style="left:60px; top:1068px; width:996px; height:84px;">
+    <b>▲ Before production —</b> agent routes have no authentication (anyone with the URL triggers real calls, emails and CRM writes) ·
+    the email agent marks SENT <i>after</i> sending, so a crash mid-send can double-email · notes run ~2× the 160-word target and carry
+    ~26 appended source URLs, so <code>lead_context</code> lands at ~3.5–4k chars — that is what the Email agent reads.
+  </div>
+
+  <div class="note" style="left:1076px; top:1068px; width:978px; height:84px; border:1.2px solid #d1d5db; background:#f9fafb;">
+    <b>Observability —</b> three JSON streams to stdout: <b>system</b> (startup/config) · <b>process</b> (per-step: started / ok / stopped / degraded / skipped) · <b>audit</b> (every outbound call: endpoint, status, attempt, ms, credential <i>name</i>).
+    One <code>run_id</code> per campaign, one <code>correlation_id</code> per lead — a blog post ties to the call it produced.
+    <b>Never lose a lead:</b> bad records are flagged (<code>bad-data:</code> / <code>crm-error:</code>), never silently dropped.
+  </div>
+</div>
+</body>
+</html>

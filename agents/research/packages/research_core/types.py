@@ -121,23 +121,3 @@ class WriteResult:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-
-
-@dataclass
-class ResearchOutcome:
-    """One run, end to end. `status` follows the WRITE, not the research."""
-
-    run_id: str = ""
-    status: str = "completed"   # completed | failed
-    object_id: str = ""
-    lead: Optional[Dict[str, Any]] = None
-    blog: Optional[Dict[str, Any]] = None
-    findings: Optional[Dict[str, Any]] = None
-    note_chars: int = 0
-    sources: List[str] = field(default_factory=list)
-    hubspot: Optional[Dict[str, Any]] = None
-    model: str = ""
-    error: str = ""
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)

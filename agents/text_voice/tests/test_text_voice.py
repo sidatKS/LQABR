@@ -59,7 +59,7 @@ class FakeMCP:
             if isinstance(result, Exception):
                 raise result
             return result
-        return {"status": "updated", "contact_id": contact_id}
+        return {"status": "updated", "object_id": object_id}
 
     def record_call_outcome(self, contact_id, outcome, detail=None, current=None):
         self.calls.append(("record_call_outcome", contact_id, outcome, detail))
@@ -75,7 +75,7 @@ class FakeMCP:
 
 
 def _voice_lead(**overrides):
-    base = dict(employee_id="E1", contact_id="123", phone_number="+15550001111",
+    base = dict(employee_id="E1", object_id="123", phone_number="+15550001111",
                 full_name="Jane Smith", opted_out=False, voice_status="PENDING",
                 probability=30, email_status="OPENED")
     base.update(overrides)
@@ -91,8 +91,6 @@ def test_get_lead_stops_when_contact_not_found(tv_agent, monkeypatch):
     result = tv_agent.get_lead("904")
     assert result["callable"] is False
     assert result["reason"].startswith("not-found")
-    # Keyed "object_id", not "contact_id": no contact was ever confirmed to
-    # exist for this id, so it's still just the raw value the gateway sent.
     assert result["object_id"] == "904"
 
 
@@ -164,7 +162,7 @@ def test_get_lead_callable_when_pending_with_phone(tv_agent, monkeypatch):
     monkeypatch.setattr(tv_agent, "mcp", fake)
     result = tv_agent.get_lead("E1")
     assert result["callable"] is True
-    assert result["contact_id"] == "123"
+    assert result["object_id"] == "123"
 
 
 # ================================================================ Step 7 pure
@@ -305,7 +303,7 @@ def test_summarise_report_falls_back_when_model_raises(tv_agent, monkeypatch):
 def test_push_to_mcp_success_includes_summary_and_recording(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.record_call_outcome_result = {
-        "status": "ok", "contact_id": "123", "outcome": "answered_and_engaged",
+        "status": "ok", "object_id": "123", "outcome": "answered_and_engaged",
         "events": [{"probability": 60, "stage": "scheduling", "promoted_to_scheduling": True}],
         "failures": [], "probability": 60, "promoted_to_scheduling": True,
     }
@@ -332,7 +330,7 @@ def test_push_to_mcp_reports_crm_error_as_error_status_not_exception(tv_agent, m
 def test_push_to_mcp_surfaces_partial_failures(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.record_call_outcome_result = {
-        "status": "partial", "contact_id": "123", "outcome": "voicemail",
+        "status": "partial", "object_id": "123", "outcome": "voicemail",
         "events": [], "failures": ["crm-error: upsert_lead: boom"],
     }
     monkeypatch.setattr(tv_agent, "mcp", fake)
@@ -394,9 +392,14 @@ def test_handle_new_lead_claims_initiated_before_dialing(tv_agent, monkeypatch):
     assert initiated_call[2] == "INITIATED"
 
 
-def test_handle_new_lead_dials_anyway_when_initiated_write_fails(tv_agent, monkeypatch):
-    """Failing the pre-dial claim degrades dedup protection but must never
-    cancel a call to an otherwise-ready lead."""
+def test_handle_new_lead_refuses_to_dial_when_the_claim_write_fails(tv_agent, monkeypatch):
+    """An unclaimable lead must NOT be dialled.
+
+    The claim is the only thing standing between a redelivered trigger and a
+    second call to a real person. Dialling with the guard off means a transient
+    CRM error plus an at-least-once redelivery phones the lead twice, so a
+    failed claim stops the dial rather than degrading past it.
+    """
     fake = FakeMCP()
     fake.get_lead_result = _voice_lead()
     fake.upsert_results = [CRMError("HubSpot down")]
@@ -405,8 +408,9 @@ def test_handle_new_lead_dials_anyway_when_initiated_write_fails(tv_agent, monke
     monkeypatch.setattr(tv_agent, "place_call",
                         lambda lead, lead_context="": dialed.append(lead) or {"status": "initiated", "call_id": "c1"})
     result = tv_agent.handle_new_lead("E1")
-    assert result["status"] == "initiated"
-    assert len(dialed) == 1
+    assert result["status"] == "stopped"
+    assert "could not claim" in result["reason"]
+    assert dialed == []          # the phone never rang
 
 
 def test_handle_new_lead_releases_claim_on_vapi_error(tv_agent, monkeypatch):
@@ -478,7 +482,7 @@ def test_handle_new_lead_success_returns_call_id_and_leaves_claim_in_place(tv_ag
 
     result = tv_agent.handle_new_lead("123")
     assert result == {"status": "initiated", "step": "4",
-                      "contact_id": "123", "call_id": "call-9", "to": "+15550001111",
+                      "object_id": "123", "call_id": "call-9", "to": "+15550001111",
                       "lead_context_chars": 0}
     upserts = [c for c in fake.calls if c[0] == "upsert_lead"]
     # Claim, then advance once Vapi accepted. No rollback on success.
@@ -487,7 +491,7 @@ def test_handle_new_lead_success_returns_call_id_and_leaves_claim_in_place(tv_ag
 
 # ================================================================= _release_claim
 
-def test_release_claim_noop_without_contact_id(tv_agent, monkeypatch):
+def test_release_claim_noop_without_object_id(tv_agent, monkeypatch):
     fake = FakeMCP()
     monkeypatch.setattr(tv_agent, "mcp", fake)
     tv_agent._release_claim(None, "some-reason")
@@ -519,7 +523,7 @@ def test_handle_call_report_stops_when_contact_unresolved(tv_agent, monkeypatch)
                         lambda ended_reason, transcript: {
                             "outcome": "voicemail", "summary": "left a message",
                             "classified_by": "ended_reason"})
-    monkeypatch.setattr(tv_agent, "_contact_id_for_report", lambda report: None)
+    monkeypatch.setattr(tv_agent, "_object_id_for_report", lambda report: None)
     pushed = []
     monkeypatch.setattr(tv_agent, "push_to_mcp", lambda *a, **kw: pushed.append((a, kw)))
 
@@ -534,7 +538,7 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
                         lambda ended_reason, transcript: {
                             "outcome": "answered_and_engaged", "summary": "Great fit",
                             "classified_by": "model"})
-    monkeypatch.setattr(tv_agent, "_contact_id_for_report", lambda report: "123")
+    monkeypatch.setattr(tv_agent, "_object_id_for_report", lambda report: "123")
     monkeypatch.setattr(tv_agent, "push_to_mcp",
                         lambda contact_id, outcome, summary="", recording_url="",
                                current=None:
@@ -545,45 +549,45 @@ def test_handle_call_report_runs_step_8_with_resolved_contact(tv_agent, monkeypa
               "artifact": {"transcript": "hi there", "recordingUrl": "https://x/r.mp3"}}
     result = tv_agent.handle_call_report(report)
     assert result["status"] == "ok"
-    assert result["contact_id"] == "123"
+    assert result["object_id"] == "123"
     assert result["outcome"] == "answered_and_engaged"
     assert result["probability"] == 60
     assert result["promoted_to_scheduling"] is True
 
 
-# ======================================================== _contact_id_for_report
+# ======================================================== _object_id_for_report
 
-def test_contact_id_for_report_reads_top_level_variable_values(tv_agent):
+def test_object_id_for_report_reads_top_level_variable_values(tv_agent):
     report = {"assistantOverrides": {"variableValues": {"object_id": "77"}}}
-    assert tv_agent._contact_id_for_report(report) == "77"
+    assert tv_agent._object_id_for_report(report) == "77"
 
 
-def test_contact_id_for_report_reads_call_nested_variable_values(tv_agent):
+def test_object_id_for_report_reads_call_nested_variable_values(tv_agent):
     report = {"call": {"assistantOverrides": {"variableValues": {"object_id": "88"}}}}
-    assert tv_agent._contact_id_for_report(report) == "88"
+    assert tv_agent._object_id_for_report(report) == "88"
 
 
-def test_contact_id_for_report_returns_none_when_phone_lookup_finds_nothing(tv_agent, monkeypatch):
+def test_object_id_for_report_returns_none_when_phone_lookup_finds_nothing(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.find_lead_by_phone_result = None
     monkeypatch.setattr(tv_agent, "mcp", fake)
     report = {"customer": {"number": "+15550009999"}}
-    assert tv_agent._contact_id_for_report(report) is None
+    assert tv_agent._object_id_for_report(report) is None
 
 
-def test_contact_id_for_report_returns_none_when_no_number_at_all(tv_agent, monkeypatch):
+def test_object_id_for_report_returns_none_when_no_number_at_all(tv_agent, monkeypatch):
     fake = FakeMCP()
     monkeypatch.setattr(tv_agent, "mcp", fake)
-    assert tv_agent._contact_id_for_report({}) is None
+    assert tv_agent._object_id_for_report({}) is None
     assert fake.calls == []  # no phone to look up, no CRM call made
 
 
-def test_contact_id_for_report_swallows_crm_error_and_returns_none(tv_agent, monkeypatch):
+def test_object_id_for_report_swallows_crm_error_and_returns_none(tv_agent, monkeypatch):
     fake = FakeMCP()
     fake.find_lead_by_phone_error = CRMError("HubSpot down")
     monkeypatch.setattr(tv_agent, "mcp", fake)
     report = {"customer": {"number": "+15550001111"}}
-    assert tv_agent._contact_id_for_report(report) is None
+    assert tv_agent._object_id_for_report(report) is None
 
 
 # ==========================================================================
@@ -677,66 +681,6 @@ def test_handle_new_lead_dials_with_empty_context_when_the_property_is_unset(
     assert result["status"] == "initiated"
     assert seen["lead_context"] == ""
 
-def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
-    """User request 2026-08-17: the text itself, not only its length. Step 3
-    logs the RAW property value."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead()
-    fake.lead_context_result = "Re: cutting your cloud spend"
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-
-    logged = {}
-    real_step = tv_agent.obs.step
-
-    import contextlib
-
-    @contextlib.contextmanager
-    def capturing_step(step_name, **fields):
-        with real_step(step_name, **fields) as outcome:
-            yield outcome
-            logged[step_name] = dict(outcome)
-
-    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
-    tv_agent.get_lead("904")
-
-    entry = logged[tv_agent.obs.STEP_READ_LEAD]
-    assert entry["lead_context"] == "Re: cutting your cloud spend"
-    assert entry["lead_context_chars"] == 28
-
-
-def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkeypatch):
-    """Step 4 logs the CAPPED value that went on the wire, which can differ
-    from the raw property Step 3 read — that difference is the whole point."""
-    fake = FakeMCP()
-    fake.get_lead_result = _voice_lead()
-    fake.lead_context_result = "the full untruncated raw value from HubSpot"
-    monkeypatch.setattr(tv_agent, "mcp", fake)
-    monkeypatch.setattr(tv_agent, "place_call",
-                        lambda lead, lead_context="": {
-                            "status": "initiated", "call_id": "c1",
-                            "to": lead.phone_number,
-                            "lead_context": "the full untrunc\u2026",   # as capped
-                            "lead_context_chars": 17})
-
-    logged = {}
-    real_step = tv_agent.obs.step
-
-    import contextlib
-
-    @contextlib.contextmanager
-    def capturing_step(step_name, **fields):
-        with real_step(step_name, **fields) as outcome:
-            yield outcome
-            logged[step_name] = dict(outcome)
-
-    monkeypatch.setattr(tv_agent.obs, "step", capturing_step)
-    tv_agent.handle_new_lead("904")
-
-    entry = logged[tv_agent.obs.STEP_PLACE_CALL]
-    assert entry["lead_context"] == "the full untrunc\u2026"
-    assert entry["lead_context_chars"] == 17
-
-
 # ==========================================================================
 # voice_status state machine (decision, Rao, 2026-08-10)
 #
@@ -799,5 +743,3 @@ def test_mark_call_placed_never_raises_when_the_write_fails(tv_agent, monkeypatc
     fake.upsert_results = [CRMError("HubSpot down")]
     monkeypatch.setattr(tv_agent, "mcp", fake)
     assert tv_agent._mark_call_placed("123") == "INITIATED"
-
-

@@ -16,8 +16,10 @@ BLOG = {"found": True, "ticket_hs_id": "T1", "summary": {
     "blog_summary": "Governed AI needs citations and sign-off.",
     "blog_industry": "HEALTHCARE", "blog_published_at": "2026-08-27T09:30:00Z"}}
 
-TARGET = ResearchTarget(object_id="533963448020",
-                        blog_published_at="2026-08-27T09:30:00Z")
+# summary_ref_id is the BLOG POST's record id — the MCP reads the blog store
+# by it (changed 2026-08-24 from the publication timestamp). `object_id` here
+# is the CONTACT's, which is a different record entirely.
+TARGET = ResearchTarget(object_id="533963448020", summary_ref_id="329605630651")
 
 
 def _run(results, provider=None, **kw):
@@ -43,21 +45,21 @@ def test_happy_path_writes_and_completes():
 def test_missing_object_id_fails_at_input():
     settings = get_settings(refresh=True)
     hubspot = HubSpotMCP(client=FakeMCPClient({}), settings=settings)
-    response = run_research(ResearchTarget(object_id="", blog_published_at="x"),
+    response = run_research(ResearchTarget(object_id="", summary_ref_id="x"),
                             settings=settings, hubspot=hubspot,
                             composer=Composer(provider=FakeSearch(), settings=settings))
     assert response.status == "failed" and "bad-data" in response.error
 
 
-def test_missing_blog_published_at_fails_with_the_reason():
+def test_missing_blog_object_id_fails_with_the_reason():
     settings = get_settings(refresh=True)
     hubspot = HubSpotMCP(client=FakeMCPClient({"get_lead_profile": LEAD}),
                          settings=settings)
-    response = run_research(ResearchTarget(object_id="1", blog_published_at=""),
+    response = run_research(ResearchTarget(object_id="1", summary_ref_id=""),
                             settings=settings, hubspot=hubspot,
                             composer=Composer(provider=FakeSearch(), settings=settings))
     assert response.status == "failed"
-    assert "blog_published_at" in response.error
+    assert "summary_ref_id" in response.error
 
 
 def test_unknown_lead_is_a_crm_error():
