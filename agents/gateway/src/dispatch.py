@@ -155,6 +155,8 @@ class Dispatcher:
             metadata["route_id"] = decision.route_id
         if decision.summary_ref_id is not None:
             metadata["summary_ref_id"] = decision.summary_ref_id
+        if getattr(decision, "blog_published_at", None) is not None:
+            metadata["blog_published_at"] = decision.blog_published_at
         return metadata
 
     def dispatch(self, decision: RoutingDecision, run_id: str) -> DispatchResult:
