@@ -141,6 +141,7 @@ class A2AEnvelope(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+<<<<<<< HEAD
     #: Defaults to "2.0", so EVERY caller is answered in the JSON-RPC shape,
     #: including a bare HubSpot webhook that never sent the field. That is
     #: deliberate and tested (`test_a_contact_event_is_refused_at_the_door`
@@ -148,6 +149,8 @@ class A2AEnvelope(BaseModel):
     #: `jsonrpc == "2.0"` branches in `_accept`/`_rejected` are unreachable
     #: today — they are kept symmetric so the two paths cannot drift, but
     #: turning them on is a change to the ACK shape, not a tidy-up.
+=======
+>>>>>>> 671c25c3e831444a9db86f7daf2b3a5279923f09
     jsonrpc: str = "2.0"
     id: Optional[Any] = None
     method: str = ""

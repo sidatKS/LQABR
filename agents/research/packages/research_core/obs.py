@@ -231,6 +231,25 @@ class Step:
         self.status, self.fields = "skipped", {"reason": reason, **fields}
 
 
+class Step:
+    """What a step produced. Set it before returning; the frame reports it."""
+
+    __slots__ = ("status", "fields")
+
+    def __init__(self) -> None:
+        self.status = "ok"
+        self.fields: Dict[str, Any] = {}
+
+    def ok(self, **fields: Any) -> None:
+        self.status, self.fields = "ok", fields
+
+    def failed(self, reason: str, **fields: Any) -> None:
+        self.status, self.fields = "failed", {"reason": reason, **fields}
+
+    def skipped(self, reason: str, **fields: Any) -> None:
+        self.status, self.fields = "skipped", {"reason": reason, **fields}
+
+
 @dataclass
 class Observability:
     """One run's logging handle. Build one per run; pass it down."""

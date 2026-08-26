@@ -29,14 +29,18 @@ profile-data guard.
 
 from __future__ import annotations
 
+import json
+import os
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult
 
-from soloai.audit_hooks import AuditHooks, Stream, new_run_id
+from soloai.audit_hooks import AuditHooks, ProfileFieldLeak, Stream, new_run_id
 
 
 @dataclass
@@ -138,6 +142,91 @@ class GatewayAudit:
         self._hooks.system("configuration_error", error=message, detail=detail)
 
     # --------------------------------------------------------------- ingress
+    def _payloads_on(self) -> bool:
+        """Echo full request/response bodies to the log?
+
+        Off unless explicitly asked for: LQABR_LOG_PAYLOADS=1. Deliberately
+        NOT tied to audit.level: verbose -- echoing a whole request body is a
+        different decision from wanting per-event discard detail, and verbose
+        is used by deployments that must not start dumping bodies.
+        """
+        return os.environ.get("LQABR_LOG_PAYLOADS", "").strip().lower() in (
+            "1", "true", "yes", "on")
+
+    def record_ingress_payload(self, run_id: str, payload: Any) -> None:
+        """The HubSpot array exactly as it arrived, before anything is read.
+
+        A debug echo must never break the ingress. The body is whatever the
+        caller sent, so it can carry a key the profile guard refuses to write
+        (a portal that decorates its events, or a hostile POST). Catch that and
+        log the refusal instead: the request still routes and returns 200.
+        """
+        if not self._payloads_on():
+            return
+        try:
+            self._hooks.audit("hubspot_ingress_payload", run_id=run_id,
+                              direction="inbound", source="hubspot",
+                              payload=payload)
+        except ProfileFieldLeak as exc:
+            self._hooks.audit("hubspot_ingress_payload_suppressed", run_id=run_id,
+                              direction="inbound", source="hubspot",
+                              reason=str(exc)[:300])
+
+    def record_dispatch_payload(self, run_id: str, decision: RoutingDecision,
+                                body: Dict[str, Any]) -> None:
+        """``body`` is the literal A2A envelope that was just POSTed to the
+        agent (see ``A2AClient.send_trigger``'s ``on_send`` hook) -- not a
+        reconstruction, so this can never show something other than what was
+        actually sent."""
+        if not self._payloads_on():
+            return
+        metadata = (body.get("params") or {}).get("metadata") or {}
+        self._hooks.audit("agent_dispatch_payload", run_id=run_id,
+                          direction="outbound", agent=decision.agent,
+                          endpoint=decision.endpoint, metadata=metadata)
+        self._print_agent_dispatch(run_id, decision, body, metadata)
+
+    #: What each agent's own handler actually reads out of the A2A body --
+    #: verified against each agent's source, not assumed. Voice and research
+    #: both read params.metadata. Email's gateway-side dispatch was switched
+    #: 25-Aug-2026 to build the same HubSpot-shaped params.metadata block --
+    #: BUT this was a gateway-only change (explicit instruction: do not touch
+    #: agents/email). agents/email's own CampaignRequest still binds against
+    #: the TOP LEVEL of the body only and has NOT been updated to read
+    #: params.metadata -- so live email triggers will 400 until that repo's
+    #: own parsing is separately updated. True here reflects what the
+    #: gateway now SENDS as "the input" for the console/log; it does not mean
+    #: the agent can currently read it. Kept here, next to the printer, so a
+    #: change to any agent's parsing is a one-line update in the same place
+    #: the mismatch would be noticed.
+    _AGENT_READS_METADATA = {"voice": True, "research": True, "email": True}
+
+    @classmethod
+    def _print_agent_dispatch(cls, run_id: str, decision: RoutingDecision,
+                              body: Dict[str, Any], metadata: Dict[str, Any]) -> None:
+        """The part of the A2A body the target agent's own handler actually
+        reads -- printed verbatim, nothing relabeled or reworded. The rest of
+        the envelope (jsonrpc/id/method/params.message, and for email the
+        unread params.metadata) is left out of the console; the full body is
+        still in the ``agent_dispatch_payload`` audit line above if it is ever
+        needed. Printed straight to stdout, not through a hook, so it exists
+        regardless of audit.sink and can never fail a request the way writing
+        to the audit stream can."""
+        reads_metadata = cls._AGENT_READS_METADATA.get(decision.agent, True)
+        if reads_metadata:
+            shown, source = metadata, "params.metadata"
+        else:
+            # Top-level only: whatever the shim mirrored there, minus the
+            # JSON-RPC/A2A scaffolding (jsonrpc/id/method/params).
+            shown = {k: v for k, v in body.items()
+                    if k not in ("jsonrpc", "id", "method", "params")}
+            source = "the top level of the body (params.metadata is not read)"
+        rule = "-" * 70
+        print(f"\n{rule}\n{decision.agent.upper()} AGENT INPUT  |  run {run_id}  |  "
+             f"POST {decision.endpoint}\n(read from {source})\n{rule}", file=sys.stdout)
+        print(json.dumps(shown, indent=2), file=sys.stdout)
+        print(f"{rule}\n", file=sys.stdout, flush=True)
+
     def record_ingress(self, run_id: str, *, source_ip: Optional[str], endpoint: str,
                        method: str, event_count: int, payload_bytes: int,
                        signature_verified: bool, received_at: Optional[float] = None,
