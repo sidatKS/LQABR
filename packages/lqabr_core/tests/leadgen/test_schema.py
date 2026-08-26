@@ -80,9 +80,28 @@ def test_contact_properties_use_the_contract_names():
     assert props["employee_id"] == "E1"
     assert props["jobtitle"] == "Head of Ops"
     assert props["phone"] == "555-0001"
-    # CUSTOM property, deliberately not standard "email"
-    assert props["email_id"] == "lead@example.com"
-    assert "email" not in props
+    # standard property (decided 2026-08-25; previously custom email_id)
+    assert props["email"] == "lead@example.com"
+    assert "email_id" not in props
+
+
+def test_the_four_standard_company_properties_map_by_internal_name():
+    props = make(
+        company_name="Oscorp Industries",
+        industry_group="Industrials",
+        about_us="Diversified manufacturer.",
+        website_url="https://oscorp.example.com",
+    ).to_company_properties()
+    assert props["name"] == "Oscorp Industries"
+    assert props["hs_industry_group"] == "Industrials"
+    assert props["about_us"] == "Diversified manufacturer."
+    assert props["website"] == "https://oscorp.example.com"
+
+
+def test_the_four_standard_company_properties_are_never_blanked():
+    props = make().to_company_properties()
+    for prop in ("name", "hs_industry_group", "about_us", "website"):
+        assert prop not in props
 
 
 def test_decision_maker_is_a_bool():

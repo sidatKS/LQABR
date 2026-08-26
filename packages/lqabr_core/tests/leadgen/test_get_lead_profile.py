@@ -50,12 +50,15 @@ def test_wrapper_shape_is_the_nine_fields_plus_ids(fake_hubspot):
         "company_resolved",
         "warnings",
     }
-    assert len(payload["profile"]) == 9   # the 9-field contract is unchanged
+    # FOURTEEN fields: the 9-field contract plus contact_name and the four
+    # standard company fields (company_name, industry_group, about_us,
+    # website_url — added 2026-08-25).
+    assert len(payload["profile"]) == 14
     assert payload["company_resolved"] is True
     assert payload["warnings"] == []
 
 
-def test_email_lookup_searches_the_custom_email_id_property(fake_hubspot):
+def test_email_lookup_searches_the_standard_email_property(fake_hubspot):
     seed(fake_hubspot)
     fake_hubspot.calls.clear()
     record = get_lead_profile(email="lead@example.com")
