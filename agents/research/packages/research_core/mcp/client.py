@@ -134,7 +134,8 @@ class MCPClient:
         return headers
 
     def _post(self, payload: Dict[str, Any], *, label: str,
-              params: Optional[Dict[str, Any]] = None) -> requests.Response:
+              params: Optional[Dict[str, Any]] = None,
+              attempt: int = 1) -> requests.Response:
         url = self._settings.mcp_base_url
         # The MCP is one URL for every operation, so the URL alone says nothing
         # about what was asked. `params` is what makes the audit line useful.
@@ -146,11 +147,15 @@ class MCPClient:
                 timeout=self._settings.mcp_timeout_seconds,
             )
         except (requests.RequestException, OSError) as exc:
+            # `attempt` rides the hop, not just the process retry line. Without
+            # it the audit stream showed three identical calls with no way to
+            # tell one operation retried three times from three operations.
             self._obs.hop(service="mcp", endpoint=url, error=str(exc), params=sent,
+                          attempt=attempt,
                           duration_ms=round((time.monotonic() - started) * 1000, 1))
             raise MCPError(f"MCP {label} failed: {exc}") from exc
         self._obs.hop(service="mcp", endpoint=url, status=response.status_code,
-                      params=sent,
+                      params=sent, attempt=attempt,
                       duration_ms=round((time.monotonic() - started) * 1000, 1))
         session_id = (response.headers.get("Mcp-Session-Id")
                       or response.headers.get("mcp-session-id"))
@@ -179,7 +184,7 @@ class MCPClient:
                         "capabilities": {},
                         "clientInfo": {"name": SERVICE_NAME, "version": __version__},
                     },
-                }, label="initialize")
+                }, label="initialize", attempt=attempt)
             except MCPError as exc:
                 # A container that is asleep, or still starting, refuses the
                 # connection — which is the exact case this retry exists for.
@@ -265,7 +270,8 @@ class MCPClient:
                 response = self._post({
                     "jsonrpc": "2.0", "id": self._rpc_id, "method": "tools/call",
                     "params": {"name": name, "arguments": arguments},
-                }, label=f"tools/call {name}", params={"tool": name, **sent})
+                }, label=f"tools/call {name}", params={"tool": name, **sent},
+                    attempt=attempt)
             except MCPError as exc:
                 last_error = str(exc)
                 if attempt >= attempts:

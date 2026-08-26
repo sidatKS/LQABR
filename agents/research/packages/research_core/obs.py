@@ -1,5 +1,16 @@
 """Observability — structured, correlated, and free of secrets.
 
+**agents/summary/packages/summary_core/obs.py is a deliberate copy of this file.**
+
+Do not extract the two into `packages/lqabr_core`. `tests/test_standalone.py` in
+both agents exists precisely to assert that neither imports from the shared
+package, and that standalone-ness is a decision this project has already made
+and paid for. The duplication costs applying a future obs fix twice; it buys
+neither agent being able to break the other. If you are here to "clean this up",
+that is the reason not to. Keep the two in step by PORTING, not by importing.
+
+---
+
 Three streams, one run_id correlating them (matching the Summary Agent):
 
     process   what the agent did and why (steps, decisions, counts)
@@ -20,8 +31,8 @@ a credential nested inside a call's arguments is blanked too.
 and every outbound call carries the parameters it was made with, so "where is
 the model called and what did we send it" is answerable from the log alone.
 Text payloads (a prompt, a note) appear as a length-marked `*_preview`, never
-in full on the console — `preview()` decides how much, `LQABR_RESEARCH_LOG_DETAIL=0`
-turns previews and parameter bags off entirely.
+in full on the console — `preview()` decides how much, and
+`LQABR_RESEARCH_LOG_MODE` (terse | normal | debug) decides how much it decides.
 """
 
 from __future__ import annotations
@@ -29,6 +40,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 import textwrap
@@ -48,7 +60,10 @@ _SECRET_VALUE_HINTS = ("token", "secret", "password", "api_key", "apikey",
 #: to say WHICH credential came from where — and `secrets_source` in the boot
 #: config, which is the first thing you want when a key does not resolve.
 _IDENTIFIER_NAMES = ("secret", "credential", "secrets_source")
-_IDENTIFIER_SUFFIXES = ("_secret", "_secret_name", "_source", "_ref")
+#: `_name` is here because a field called `secret_name` holds exactly that — a
+#: name — and blanking it is the inverse of the rule. Summary's `agent_build`
+#: emits two such fields on every boot and they printed as `<redacted>`.
+_IDENTIFIER_SUFFIXES = ("_secret", "_secret_name", "_name", "_source", "_ref")
 
 #: A token COUNT is a number the log exists to show, not a token.
 _SAFE_NAMES = ("tokens", "max_tokens", "input_tokens", "output_tokens",
@@ -69,16 +84,37 @@ _MAX_VALUE_CHARS = 500
 #: How much of a text payload a `*_preview` field carries.
 _PREVIEW_CHARS = 240
 
-#: Detail = the previews and the parameter bags. On by default: a run should be
-#: legible without remembering a flag. `LQABR_RESEARCH_LOG_DETAIL=0` (wired
-#: through settings) returns the terser shape.
-_DETAIL = True
+#: One ordered axis, replacing the old detail boolean.
+#:
+#:   terse    no previews, no parameter bags — counts and names only
+#:   normal   240-char previews, summarised bags — today's shape (default)
+#:   debug    the values themselves, whole and unmangled
+#:
+#: Debug is not "more logging". Every truncation below happens BEFORE
+#: json.dumps, so a structured file has been storing damaged strings in
+#: well-formed fields; debug stops the values arriving pre-mangled.
+MODES = ("terse", "normal", "debug")
+_MODE = "normal"
+
+
+def set_mode(mode: str) -> None:
+    """Set the detail axis process-wide. An unknown value falls back to normal
+    rather than raising — a logging setting must not stop a run."""
+    global _MODE
+    _MODE = mode if mode in MODES else "normal"
+
+
+def current_mode() -> str:
+    return _MODE
+
+
+def debugging() -> bool:
+    return _MODE == "debug"
 
 
 def set_detail(enabled: bool) -> None:
-    """Turn payload previews and parameter bags on or off, process-wide."""
-    global _DETAIL
-    _DETAIL = bool(enabled)
+    """Deprecated alias for the old boolean: 0 -> terse, 1 -> normal."""
+    set_mode("normal" if enabled else "terse")
 
 
 def new_run_id() -> str:
@@ -86,15 +122,20 @@ def new_run_id() -> str:
 
 
 def preview(text: Any, limit: int = _PREVIEW_CHARS) -> str:
-    """A length-marked, single-line sample of a payload.
+    """A sample of a payload — or, in debug, the payload.
 
-    Empty when detail is off, so the field simply does not print — the console
-    skips empty values and the JSON stays small. ASCII marker on purpose: this
-    string reaches a cp1252 Windows console.
+    terse   ""   the field does not print at all
+    normal  a single line, whitespace collapsed, trimmed with an ASCII marker
+            (ASCII on purpose: this string reaches a cp1252 Windows console)
+    debug   the value verbatim — no trim, no marker, and crucially no
+            whitespace collapse, which was silently rewriting the payload
     """
-    if not _DETAIL:
+    if _MODE == "terse":
         return ""
-    body = " ".join(str(text or "").split())
+    body = str(text or "")
+    if _MODE == "debug":
+        return body
+    body = " ".join(body.split())
     if not body:
         return ""
     if len(body) <= limit:
@@ -110,8 +151,10 @@ def summarize_args(arguments: Any, head: int = 60) -> Dict[str, Any]:
     """
     if not isinstance(arguments, dict):
         return {}
-    if not _DETAIL:
+    if _MODE == "terse":
         return {"keys": sorted(str(k) for k in arguments)}
+    if _MODE == "debug":
+        return dict(arguments)          # the values themselves
     out: Dict[str, Any] = {}
     for key, value in arguments.items():
         if isinstance(value, str) and len(value) > head:
@@ -140,7 +183,8 @@ def redact(fields: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
         elif isinstance(value, (list, tuple)) and _depth < 4:
             clean[key] = [redact(item, _depth + 1) if isinstance(item, dict) else item
                           for item in value]
-        elif isinstance(value, str) and len(value) > _MAX_VALUE_CHARS:
+        elif (isinstance(value, str) and _MODE != "debug"
+                and len(value) > _MAX_VALUE_CHARS):
             clean[key] = value[:_MAX_VALUE_CHARS] + f"... (+{len(value) - _MAX_VALUE_CHARS} chars)"
         else:
             clean[key] = value
@@ -153,7 +197,7 @@ class _Stream:
         self._run_id = run_id
         self._logger = logger
 
-    def emit(self, event: str, **fields: Any) -> Dict[str, Any]:
+    def emit(self, event: str, **fields: Any) -> None:
         record = {
             "stream": self._name,
             "run_id": self._run_id,
@@ -166,7 +210,25 @@ class _Stream:
         # it without parsing its own output back.
         self._logger.info(json.dumps(record, default=repr, ensure_ascii=False),
                           extra={"lqabr_record": record})
-        return record
+
+
+class Step:
+    """What a step produced. Set it before returning; the frame reports it."""
+
+    __slots__ = ("status", "fields")
+
+    def __init__(self) -> None:
+        self.status = "ok"
+        self.fields: Dict[str, Any] = {}
+
+    def ok(self, **fields: Any) -> None:
+        self.status, self.fields = "ok", fields
+
+    def failed(self, reason: str, **fields: Any) -> None:
+        self.status, self.fields = "failed", {"reason": reason, **fields}
+
+    def skipped(self, reason: str, **fields: Any) -> None:
+        self.status, self.fields = "skipped", {"reason": reason, **fields}
 
 
 class Step:
@@ -193,14 +255,16 @@ class Observability:
     """One run's logging handle. Build one per run; pass it down."""
 
     run_id: str = field(default_factory=new_run_id)
-    logger: logging.Logger = field(default=None)  # type: ignore[assignment]
+    logger: logging.Logger = field(
+        default_factory=lambda: logging.getLogger("lqabr.research"))
 
     def __post_init__(self) -> None:
-        if self.logger is None:
-            self.logger = logging.getLogger("lqabr.research")
-        self.process = _Stream("process", self.run_id, self.logger)
-        self.audit = _Stream("audit", self.run_id, self.logger)
-        self.system = _Stream("system", self.run_id, self.logger)
+        # One child logger per stream, so each can carry its OWN file handler
+        # while the console keeps a single interleaved narrative: children
+        # propagate up to whatever is attached to the parent.
+        self.process = _Stream("process", self.run_id, self.logger.getChild("process"))
+        self.audit = _Stream("audit", self.run_id, self.logger.getChild("audit"))
+        self.system = _Stream("system", self.run_id, self.logger.getChild("system"))
 
     # ---------------------------------------------------------------- steps
     @contextmanager
@@ -236,18 +300,30 @@ class Observability:
     def hop(self, *, service: str, endpoint: str, method: str = "POST",
             status: Optional[int] = None, duration_ms: Optional[float] = None,
             attempt: int = 1, error: str = "",
-            params: Optional[Dict[str, Any]] = None) -> None:
+            params: Optional[Dict[str, Any]] = None,
+            usage: Optional[Dict[str, Any]] = None) -> None:
         """One outbound call, on the audit stream.
 
         `params` is what we SENT — the tool name and its arguments, the model
         and its knobs — summarised, redacted, never the raw payload and never a
         credential. Without it the log says a call happened but not what it
         asked for, which is the question a person actually has.
+
+        `usage` is what the call COST, for a call to a metered service: token
+        counts and billable server-tool requests, as top-level fields. The
+        dividing line that keeps this from becoming a dumping ground is one
+        sentence: **audit records what the call cost; process records what the
+        call produced.** So counts belong here and `stop_reason`, `searches`
+        and `chars` do not. A call that RAISED produced no usage, and its hop
+        carries none — that is correct, not a gap.
         """
+        counted = {name: value for name, value in (usage or {}).items()
+                   if value is not None}
         self.audit.emit("outbound_call", service=service, endpoint=endpoint,
                         method=method, status=status, duration_ms=duration_ms,
                         attempt=attempt, error=error,
-                        params=(params or {}) if _DETAIL else {})
+                        params=(params or {}) if _MODE != "terse" else {},
+                        **counted)
 
 
 #: Per-context, NOT per-process. Two campaigns in flight — a webhook and a
@@ -306,16 +382,30 @@ def _glyphs_for(stream: Any) -> Dict[str, str]:
     return _GLYPHS_UNICODE
 
 
-#: Fields that carry the diagnosis. Capping these at the ordinary field width
-#: is exactly backwards — they matter most when they are longest. They render
-#: LAST and take whatever room is left on the line.
+#: Fields that carry the diagnosis, or the payload a person came to read.
+#: Capping these at the ordinary field width is exactly backwards — they matter
+#: most when they are longest. They render LAST and take whatever room is left,
+#: continuing on indented lines rather than being cut.
 _DIAGNOSTIC = ("reason", "error", "detail")
+_SPILL_SUFFIXES = ("_preview",)
 
 _FIELD_CHARS = 90
 
 
-def _value(value: Any, cap: int = _FIELD_CHARS) -> str:
-    """One field, short enough to sit on a terminal line."""
+def _spills(key: str) -> bool:
+    """True for a field that must never be truncated away."""
+    return key in _DIAGNOSTIC or str(key).endswith(_SPILL_SUFFIXES)
+
+
+def _value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
+    """One field, short enough to sit on a terminal line.
+
+    In debug nothing is cut here: every field is routed to the continuation
+    lines instead, so the value survives whole and the width invariant still
+    holds. See `_fields`.
+    """
+    if _MODE == "debug":
+        return str(value)
     if isinstance(value, dict):
         inner = ", ".join(f"{k}={_value(v, 48, cut)}" for k, v in list(value.items())[:6])
         extra = len(value) - 6
@@ -325,7 +415,7 @@ def _value(value: Any, cap: int = _FIELD_CHARS) -> str:
         extra = len(value) - 3
         return f"[{head}{f' +{extra}' if extra > 0 else ''}]"
     text = str(value).replace("\n", " ")
-    return text if len(text) <= cap else text[:cap - 1] + "…"
+    return text if len(text) <= cap else text[:max(1, cap - len(cut))] + cut
 
 
 class ConsoleFormatter(logging.Formatter):
@@ -358,6 +448,23 @@ class ConsoleFormatter(logging.Formatter):
         """
         pairs = [(k, v) for k, v in data.items()
                  if k not in skip and v not in ("", None, [], {})]
+
+        if _MODE == "debug":
+            # Nothing is trimmed and nothing is dropped: every field joins the
+            # class that already continues on indented lines, and a nested dict
+            # or list becomes one key per line rather than `{a=1, b=2, +3}`.
+            spilled: List[Tuple[str, str]] = []
+            for key, value in pairs:
+                if isinstance(value, dict):
+                    for inner, held in value.items():
+                        spilled.append((f"{key}.{inner}", str(held)))
+                elif isinstance(value, (list, tuple)):
+                    for index, held in enumerate(value):
+                        spilled.append((f"{key}[{index}]", str(held)))
+                else:
+                    spilled.append((key, str(value)))
+            return [], spilled
+
         budget = max(20, self._width - len(plain_head))
         # A diagnosis or a payload preview reads LAST and keeps whatever room is
         # left, so it is never cut in favour of a short bookkeeping field.
@@ -399,8 +506,15 @@ class ConsoleFormatter(logging.Formatter):
     def _continue(self, line: str, spill: List[Tuple[str, str]], colour: str) -> str:
         for key, text in spill:
             indent = " " * 11
+            # `break_on_hyphens=False`: the default splits `UNIQUE-TAIL-MARKER`
+            # across two lines, so a value copied back out of the console comes
+            # back mangled — which is the exact thing debug mode exists to stop.
+            # `break_long_words` stays TRUE: a single token wider than the
+            # terminal must still be broken, because the width invariant is a
+            # hard rule and hyphen-prettiness is not.
             for chunk in textwrap.wrap(f"{key}: {text}", width=self._width - 11,
-                                       subsequent_indent="  ") or [f"{key}:"]:
+                                       subsequent_indent="  ",
+                                       break_on_hyphens=False) or [f"{key}:"]:
                 line += "\n" + indent + self._paint(chunk, colour)
         return line
 
@@ -425,13 +539,45 @@ class ConsoleFormatter(logging.Formatter):
             attempt = data.get("attempt", 1)
             if isinstance(attempt, int) and attempt > 1:
                 line += f" (attempt {attempt})"
+            # What the call COST. The counts were already riding this record in
+            # JSON; without this they were invisible on the console, which is
+            # where the question "what did that call cost" actually gets asked.
+            # ASCII on purpose — this line reaches a cp1252 Windows console.
+            meter = "/".join(str(data[k]) for k in ("input_tokens", "output_tokens")
+                             if isinstance(data.get(k), int))
+            if meter:
+                line += f" {meter} tok"
+            if isinstance(data.get("web_search_requests"), int):
+                line += f" {data['web_search_requests']}srch"
             head = f"{self._g['call']} {data.get('service', '?'):<9} {line}"
             body = self._paint(head, _DIM)
             # Measured as we go: an error appended blind is how this line used
             # to run off the edge and redraw over its neighbour.
             plain_len = len(clock) + 1 + len(head)
-            # WHAT we sent — the tool and its arguments, the model and its knobs.
             sent = data.get("params")
+
+            if _MODE == "debug":
+                # Same treatment the process branch already gets: nothing is
+                # trimmed, but nothing runs off the edge either. Without this a
+                # write hop printed the whole 1,600-character note as ONE
+                # console line — complete, and unreadable.
+                spill: List[Tuple[str, str]] = []
+                if isinstance(sent, dict):
+                    for key, value in sent.items():
+                        if isinstance(value, dict):
+                            for inner, held in value.items():
+                                spill.append((f"{key}.{inner}", str(held)))
+                        elif isinstance(value, (list, tuple)):
+                            for index, held in enumerate(value):
+                                spill.append((f"{key}[{index}]", str(held)))
+                        else:
+                            spill.append((key, str(value)))
+                if data.get("error"):
+                    spill.append(("error", str(data["error"])))
+                return self._continue(f"{self._paint(clock, _DIM)} {body}",
+                                      spill, _BLUE)
+
+            # WHAT we sent — the tool and its arguments, the model and its knobs.
             if isinstance(sent, dict) and sent:
                 text = " ".join(f"{k}={_value(v, 48, self._cut)}" for k, v in sent.items())
                 room = self._width - plain_len - 1
@@ -510,87 +656,164 @@ class ConsoleFormatter(logging.Formatter):
             mark, colour = self._g["ok"], _GREEN
 
         plain = f"{clock} {mark} {event:<24} "
-        budget = self._width - len(plain)
-        # A diagnosis reads LAST and keeps whatever room is left, so a long
-        # reason is never cut in favour of a short bookkeeping field.
-        pairs.sort(key=lambda kv: kv[0] in _DIAGNOSTIC)
-        rendered, used, spill = [], 0, []
-        for key, value in pairs:
-            if key in _DIAGNOSTIC:
-                # Never lose a diagnosis to the line width. If it does not fit,
-                # it continues on indented lines below — a deliberate wrap,
-                # not the accidental kind that redraws over its neighbour.
-                text = str(value).replace("\n", " ").strip()
-                room = budget - used - len(key) - 2
-                if len(text) <= room:
-                    rendered.append(f"{self._paint(key, _DIM)}={text}")
-                    used += len(key) + 1 + len(text) + 1
-                else:
-                    spill.append((key, text))
-                continue
-            piece = f"{key}={_value(value)}"
-            if used + len(piece) + 1 > budget:
-                rendered.append("…")
-                break
-            rendered.append(f"{self._paint(key, _DIM)}={_value(value)}")
-            used += len(piece) + 1
-
+        rendered, spill = self._fields(data, plain, _SKIP)
         line = (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
                 f"{self._paint(f'{event:<24}', colour)} "
                 f"{' '.join(rendered)}".rstrip())
-        for key, text in spill:
-            indent = " " * 11
-            for chunk in textwrap.wrap(f"{key}: {text}", width=self._width - 11,
-                                       subsequent_indent="  ") or [f"{key}:"]:
-                line += "\n" + indent + self._paint(chunk, colour)
-        return line
+        return self._continue(line, spill, colour)
 
 
-def _console_handler(log_format: str) -> logging.Handler:
+def _console_handler(log_format: str, stream: Any = None) -> logging.Handler:
     """`auto` means: text when a person is watching, JSON when a machine is.
 
     stdout is what Cloud Logging ingests, so an unattached stdout keeps its
     structured fields — readability never costs production observability.
     """
-    handler = logging.StreamHandler(sys.stdout)
-    tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    stream = stream or sys.stdout
+    handler = logging.StreamHandler(stream)
+    tty = bool(getattr(stream, "isatty", lambda: False)())
     wants_text = log_format == "text" or (log_format == "auto" and tty)
     handler.setFormatter(
-        ConsoleFormatter(colour=tty, glyphs=_glyphs_for(sys.stdout),
+        ConsoleFormatter(colour=tty, glyphs=_glyphs_for(stream),
                          width=_terminal_width()) if wants_text
         else logging.Formatter("%(message)s"))
     return handler
 
 
-def configure_logging(level: str = "INFO", log_file: str = "",
-                      log_format: str = "auto", detail: bool = True) -> None:
-    """Readable console, JSON file. The agent writes its own log, no shell
-    redirect. Idempotent across calls.
+#: The three streams, and the file each one lands in. These six names are OURS
+#: — a code constant, not a knob. The DIRECTORY is the knob.
+STREAMS = ("process", "audit", "system")
 
-    `detail` carries LQABR_RESEARCH_LOG_DETAIL: payload previews and the
-    parameter bag on every outbound call.
+#: Set when a sink could not be opened, so `/health` can say so.
+_SINK_STATE: Dict[str, Any] = {"dir": "", "files": {}, "degraded": []}
+
+
+def sink_state() -> Dict[str, Any]:
+    """What the file sinks actually are right now — for `/health`."""
+    return {"dir": _SINK_STATE["dir"],
+            "files": dict(_SINK_STATE["files"]),
+            "degraded": list(_SINK_STATE["degraded"])}
+
+
+class _GuardedRotatingFileHandler(RotatingFileHandler):
+    """A rollover that cannot take the process with it.
+
+    These files live on a Windows filesystem and the service and the CLI can
+    both be live at once; `doRollover()` then raises `PermissionError`
+    [WinError 32] on the rename, uncaught, and every subsequent emit spams
+    stderr. Observability must never kill a run — so a failed rollover is
+    reported ONCE and the handler keeps appending to the file it has.
     """
-    set_detail(detail)
-    root = logging.getLogger("lqabr.research")
-    fmt = logging.Formatter("%(message)s")
-    if not root.handlers:
-        root.addHandler(_console_handler(log_format))
-        root.propagate = False
-    if log_file and not any(isinstance(h, logging.FileHandler)
-                            and getattr(h, "_lqabr_path", "") == log_file
-                            for h in root.handlers):
+
+    def __init__(self, *args: Any, stream_name: str = "", **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._lqabr_stream = stream_name
+        self._rollover_failed = False
+
+    def doRollover(self) -> None:  # noqa: N802 - logging's own spelling
+        if self._rollover_failed:
+            return                      # already reported; keep appending
         try:
-            parent = os.path.dirname(log_file)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            handler = logging.FileHandler(log_file, encoding="utf-8")
-            handler.setFormatter(fmt)
-            handler._lqabr_path = log_file  # type: ignore[attr-defined]
-            root.addHandler(handler)
-        except OSError:
-            root.warning(json.dumps({"stream": "system", "event": "log_file_unavailable",
-                                     "path": log_file}))
+            super().doRollover()
+        except OSError as exc:
+            self._rollover_failed = True
+            _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:rotate")
+            logging.getLogger("lqabr.research").warning(json.dumps(
+                {"stream": "system", "event": "log_rotate_failed",
+                 "sink": self._lqabr_stream, "path": self.baseFilename,
+                 "reason": f"{type(exc).__name__}: {exc}",
+                 "detail": "the file is still being appended to; rollover is "
+                           "not retried for this handler"}))
+
+
+def _file_handler(path: str, stream_name: str, max_bytes: int,
+                  backups: int) -> Optional[logging.Handler]:
+    """One stream's file, or None with a named reason on the system stream."""
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        handler = _GuardedRotatingFileHandler(
+            path, maxBytes=max(0, int(max_bytes)), backupCount=max(0, int(backups)),
+            encoding="utf-8", stream_name=stream_name)
+    except OSError as exc:
+        _SINK_STATE["degraded"].append(f"{stream_name}:open")
+        logging.getLogger("lqabr.research").warning(json.dumps(
+            {"stream": "system", "event": "log_sink_unavailable",
+             "sink": stream_name, "path": path,
+             "reason": f"{type(exc).__name__}: {exc}",
+             "detail": "the run continues; this stream is console-only"}))
+        return None
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler._lqabr_path = path  # type: ignore[attr-defined]
+    return handler
+
+
+def configure_logging(level: str = "INFO", log_dir: str = "",
+                      log_format: str = "auto", detail: bool = True,
+                      max_bytes: int = 52_428_800, backups: int = 5,
+                      log_file: str = "", mode: str = "",
+                      console: Any = None) -> None:
+    """Readable console on the parent, one JSON file per stream on the children.
+
+        lqabr.research                 <- ConsoleFormatter, propagate=False
+        ├── lqabr.research.process     -> research_process.log
+        ├── lqabr.research.audit       -> research_audit.log
+        └── lqabr.research.system      -> research_system.log
+
+    Three files on disk, one story on screen. Idempotent across calls.
+
+    `log_file` is the deprecated single-file sink: when set, every stream goes
+    to that one file and the boot says so, rather than the setting being
+    silently ignored.
+    """
+    if mode:
+        set_mode(mode)
+    else:
+        set_detail(detail)
+    root = logging.getLogger("lqabr.research")
+    if not root.handlers:
+        # `console` is stderr for the CLI, whose stdout IS the result document.
+        # It must be chosen HERE: the sink's own warnings (log_sink_legacy,
+        # log_sink_unavailable) are emitted inside this function, before any
+        # caller could redirect a handler — which is exactly how a
+        # `log_sink_legacy` line ended up in front of the CLI's JSON.
+        root.addHandler(_console_handler(log_format, console))
+        root.propagate = False
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    _SINK_STATE["dir"] = log_dir
+    _SINK_STATE["files"] = {}
+    _SINK_STATE["degraded"] = []
+
+    for stream in STREAMS:
+        child = root.getChild(stream)
+        child.setLevel(logging.NOTSET)          # severity is the parent's call
+        for existing in list(child.handlers):
+            child.removeHandler(existing)
+
+    if log_file:
+        # Deprecated, and announced rather than ignored.
+        handler = _file_handler(log_file, "legacy", max_bytes, backups)
+        if handler is not None:
+            for stream in STREAMS:
+                root.getChild(stream).addHandler(handler)
+                _SINK_STATE["files"][stream] = log_file
+        root.warning(json.dumps(
+            {"stream": "system", "event": "log_sink_legacy", "path": log_file,
+             "detail": "LQABR_RESEARCH_LOG_FILE is deprecated: all three "
+                       "streams share one file. Use LQABR_RESEARCH_LOG_DIR."}))
+        return
+
+    if not log_dir:
+        return                                   # console only, deliberately
+
+    for stream in STREAMS:
+        path = os.path.join(log_dir, f"research_{stream}.log")
+        handler = _file_handler(path, stream, max_bytes, backups)
+        if handler is not None:
+            root.getChild(stream).addHandler(handler)
+            _SINK_STATE["files"][stream] = path
 
 
 def get_obs(run_id: str | None = None, *, refresh: bool = False) -> Observability:

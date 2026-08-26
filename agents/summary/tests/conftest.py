@@ -27,6 +27,10 @@ def _no_ambient_config(monkeypatch):
         }:
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("LQABR_SUMMARY_SECRETS_SOURCE", "env")
+    # No test run leaks INTO the real log directory. Empty means console
+    # only; a sink test that wants files passes its own tmp dir.
+    monkeypatch.setenv("LQABR_SUMMARY_LOG_DIR", "")
+    monkeypatch.setenv("LQABR_SUMMARY_LOG_FILE", "")
 
 
 @pytest.fixture

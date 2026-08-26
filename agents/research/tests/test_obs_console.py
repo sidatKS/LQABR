@@ -120,12 +120,13 @@ def test_a_console_that_cannot_encode_the_glyphs_gets_ascii():
 
 def test_the_log_file_stays_json_while_the_console_is_text(tmp_path):
     """The readable form is a console concern only — the file is still parsed."""
-    path = tmp_path / "agent.log"
     logging.getLogger("lqabr.research").handlers.clear()
-    configure_logging("INFO", str(path), "text")
+    configure_logging("INFO", str(tmp_path), "text")      # a DIRECTORY now
     Observability(run_id="res-test").process.emit("context_write_ok", chars=3941)
     logging.getLogger("lqabr.research").handlers.clear()
 
+    # the assertion is unchanged; only the sink it reads moved
+    path = tmp_path / "research_process.log"
     record = json.loads(path.read_text(encoding="utf-8").strip().splitlines()[-1])
     assert record["event"] == "context_write_ok"
     assert record["stream"] == "process"
@@ -193,13 +194,13 @@ def test_terminal_width_is_never_absurdly_narrow():
 # --- a diagnosis is the one thing the console must never truncate away -----
 
 LONG = ("MCP tool get_blog_summary reported an error: 2 validation errors for "
-        "call[get_blog_summary] blog_published_at Field required, object_id "
+        "call[get_blog_summary] blog_published_at Field required, objectId "
         "Extra inputs are not permitted")
 
 
 def test_a_long_reason_continues_below_instead_of_being_cut():
     """Truncating the reason hides the answer exactly when it is needed."""
-    out = _lines([("blog_read_failed", {"object_id": "1", "reason": LONG})],
+    out = _lines([("blog_read_failed", {"objectId": "1", "reason": LONG})],
                  width=110)[0]
     assert LONG.split()[-4:] == out.split()[-4:], "the tail of the reason was lost"
     assert "\n" in out, "it should continue on its own line, not run off the edge"
@@ -221,6 +222,6 @@ def test_a_short_reason_stays_on_one_line():
 def test_the_reason_reads_last():
     """Bookkeeping fields first; the diagnosis is what the eye should land on."""
     out = _lines([("run_failed", {"reason": "because", "step": "research",
-                                  "object_id": "1"})])[0]
+                                  "objectId": "1"})])[0]
     assert out.index("step=") < out.index("reason")
-    assert out.index("object_id=") < out.index("reason")
+    assert out.index("objectId=") < out.index("reason")

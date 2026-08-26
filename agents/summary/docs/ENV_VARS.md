@@ -64,3 +64,14 @@ version of this table.
 | `LQABR_SUMMARY_SECRETS_SOURCE` | `env` | `env` \| `secret_manager` \| `auto` |
 | `LQABR_SUMMARY_GCP_PROJECT` | — | required by the Secret Manager backend |
 | `LQABR_SUMMARY_LOG_LEVEL` | `INFO` | |
+| `LQABR_SUMMARY_LOG_DIR` | `logs/summary` | where the three per-stream files go (relative → repo root; **empty disables file logging**) |
+| `LQABR_SUMMARY_LOG_MODE` | `normal` | `terse` \| `normal` \| `debug` — how much of a value reaches the log. Credentials stay redacted in every mode; do not run `debug` on a shared box |
+| `LQABR_SUMMARY_LOG_FORMAT` | `auto` | `auto` \| `text` \| `json` — console shape only; the FILES are always JSON |
+| `LQABR_SUMMARY_LOG_MAX_BYTES` | `52428800` | 50 MB before a stream's file rolls over; `0` = never |
+| `LQABR_SUMMARY_LOG_BACKUPS` | `5` | `summary_process.log.1` … `.5`; the live file keeps its exact name |
+| `LQABR_SUMMARY_LOG_FILE` | *(unset)* | **deprecated** — set it and all three streams share one file; the boot emits `log_sink_legacy` |
+
+The three files, under `LQABR_SUMMARY_LOG_DIR`: `summary_process.log` (the
+steps), `summary_audit.log` (every hop that left the process, with what it
+cost), `summary_system.log` (boot, config, shutdown). `run_id` is on every
+record — see RUNBOOK.md for the grep that reassembles one run.
