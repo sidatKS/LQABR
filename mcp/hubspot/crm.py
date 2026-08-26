@@ -347,8 +347,8 @@ class HubSpotCRM:
             # firstname/lastname are standard HubSpot contact properties; the
             # email greets the lead by first name. employee_id stays the
             # internal identifier and is never written into the prose.
-            "properties": ["firstname", "lastname", "email_id", "jobtitle",
-                           "phone", "employee_id", "lqabr_email_status",
+            "properties": ["firstname", "lastname", "email", "jobtitle",
+                           "phone", "employee_id", "email_status",
                            "probability", prop],
             "limit": min(limit, _SEARCH_PAGE_MAX),
         }
@@ -414,7 +414,7 @@ class HubSpotCRM:
                      object_type: str = "contact") -> Dict[str, Any]:
         """Validate against the same schema used for the read, then PATCH.
 
-        This is the single write path: `lqabr_email_status`, `probability`
+        This is the single write path: `email_status`, `probability`
         and the campaign-complete column all land through here.
 
         HTTP 200 from HubSpot is NOT proof the property actually persisted,
@@ -494,7 +494,7 @@ class HubSpotCRM:
 
         Also stamps ``last_modified_email`` so the portal column reflects the
         exact moment the email left Mailgun."""
-        props: Dict[str, Any] = {"lqabr_email_status": "SENT"}
+        props: Dict[str, Any] = {"email_status": "SENT"}
         lm_prop = last_modified_email_property()
         if lm_prop:
             props[lm_prop] = int(time.time() * 1000)
@@ -527,11 +527,11 @@ def _row_to_profile(contact: Dict[str, Any]) -> LeadProfile:
         full_name=full_name,
         job_title=props.get("jobtitle"),
         company=props.get("company"),
-        email=props.get("email_id"),
+        email=props.get("email"),
         phone=props.get("phone"),
         external_employee_id=props.get("employee_id"),
         probability=int(float(props["probability"])) if props.get("probability") else 0,
-        extra={"email_status": props.get("lqabr_email_status") or "PENDING"},
+        extra={"email_status": props.get("email_status") or "PENDING"},
     )
     # object_id is the shared LeadProfile field (renamed from hubspot_contact_id
     # -> contact_id -> object_id, 2026-08-14), so

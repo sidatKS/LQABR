@@ -21,11 +21,9 @@ class CRMError(RuntimeError):
 
 
 class CRMClient(ABC):
-    @abstractmethod
-    def upsert_lead(self, profile: LeadProfile) -> LeadProfile:
-        """Create or update the contact for this profile; returns profile with
-        the CRM contact id populated."""
-
+    # NOTE 2026-08-26: `upsert_lead` was removed from this interface. Lead
+    # creation is the Lead Profile Agent's job (lqabr_core.leadgen upsert
+    # path); outreach agents only read leads and record engagement.
     @abstractmethod
     def get_lead(self, object_id: str) -> LeadProfile:
         """Fetch one lead by CRM object id."""

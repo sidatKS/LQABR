@@ -39,42 +39,19 @@ def contact_body(contact_id="123", **props):
     return {"id": contact_id, "properties": props}
 
 
-def test_upsert_creates_when_email_not_found():
+def test_find_lead_by_email_searches_only_the_standard_property():
+    # The address lives ONLY in the standard HubSpot `email` property
+    # (decided 2026-08-26; the custom `email_id` is retired) — exactly one
+    # filter group, on `email`.
     client, session = make_client([
-        FakeResponse(200, {"results": []}),                 # search
-        FakeResponse(200, {"id": "999"}),                   # create
-    ])
-    lead = client.upsert_lead(LeadProfile(full_name="Jane Smith", email="j@x.com"))
-    assert lead.contact_id == "999"
-    method, url, kwargs = session.calls[1]
-    assert method == "POST" and url.endswith("/crm/v3/objects/contacts")
-    assert kwargs["json"]["properties"]["firstname"] == "Jane"
-    assert kwargs["json"]["properties"]["lastname"] == "Smith"
-
-
-def test_upsert_patches_when_contact_exists():
-    client, session = make_client([
-        FakeResponse(200, {"results": [contact_body("55", email="j@x.com")]}),  # search
-        FakeResponse(200, {}),                                                   # patch
-    ])
-    lead = client.upsert_lead(LeadProfile(email="j@x.com"))
-    assert lead.contact_id == "55"
-    assert session.calls[1][0] == "PATCH"
-    assert session.calls[1][1].endswith("/contacts/55")
-
-
-def test_find_lead_by_email_matches_via_email_id_fallback():
-    # some contacts hold the address in the custom `email_id` property
-    # instead of the standard `email` one — search must catch both.
-    client, session = make_client([
-        FakeResponse(200, {"results": [contact_body("88", email_id="j@x.com")]}),
+        FakeResponse(200, {"results": [contact_body("88", email="j@x.com")]}),
     ])
     lead = client.find_lead_by_email("j@x.com")
     assert lead is not None and lead.contact_id == "88"
     assert lead.email == "j@x.com"
     filter_groups = session.calls[0][2]["json"]["filterGroups"]
-    assert {"propertyName": "email", "operator": "EQ", "value": "j@x.com"} in filter_groups[0]["filters"]
-    assert {"propertyName": "email_id", "operator": "EQ", "value": "j@x.com"} in filter_groups[1]["filters"]
+    assert filter_groups == [
+        {"filters": [{"propertyName": "email", "operator": "EQ", "value": "j@x.com"}]}]
 
 
 def test_find_lead_by_phone_returns_match():
@@ -115,7 +92,7 @@ def test_record_event_writes_voice_status_for_call_answered():
     client.record_event(EngagementEvent(EventType.CALL_ANSWERED, "77"))
     props = session.calls[1][2]["json"]["properties"]
     assert props["probability"] == "45"
-    assert props["lqabr_voice_status"] == "COMPLETED"
+    assert props["voice_status"] == "COMPLETED"
     # call-related events also stamp the Text/Voice Agent's own last-touched marker
     assert props["last_modfied_voice"].isdigit()
 
@@ -128,7 +105,7 @@ def test_record_event_writes_voice_status_for_voicemail_left():
     client.record_event(EngagementEvent(EventType.VOICEMAIL_LEFT, "77"))
     props = session.calls[1][2]["json"]["properties"]
     assert props["probability"] == "40"  # 30 + 10 (raised from +2, 2026-08-06)
-    assert props["lqabr_voice_status"] == "VOICEMAIL_LEFT"
+    assert props["voice_status"] == "VOICEMAIL_LEFT"
     assert props["last_modfied_voice"].isdigit()
 
 
@@ -141,7 +118,7 @@ def test_record_event_writes_voice_status_for_call_not_answered_and_leaves_proba
     props = session.calls[1][2]["json"]["properties"]
     # 0 increment: a call that never connected must never move probability.
     assert props["probability"] == "30"
-    assert props["lqabr_voice_status"] == "FAILED"
+    assert props["voice_status"] == "FAILED"
     assert props["last_modfied_voice"].isdigit()
 
 
@@ -158,7 +135,7 @@ def test_get_lead_parses_opted_out_and_real_fields():
     client, session = make_client([
         FakeResponse(200, contact_body("42", email="j@x.com", opted_out="true",
                                        probability="45", employee_id="E1",
-                                       decision_maker="yes", lqabr_voice_status="COMPLETED")),
+                                       decision_maker="yes", voice_status="COMPLETED")),
     ])
     lead = client.get_lead("42")
     assert lead.opted_out is True
@@ -166,7 +143,7 @@ def test_get_lead_parses_opted_out_and_real_fields():
     assert lead.external_employee_id == "E1"
     assert lead.stage is LeadStage.TEXT_VOICE_OUTREACH  # derived from 45
     # decision_maker (not decision_maker_flag — that name doesn't exist in
-    # this portal) and lqabr_voice_status (labeled "voice_status" in the UI).
+    # this portal) and voice_status (labeled "voice_status" in the UI).
     assert lead.extra["decision_maker"] == "yes"
     assert lead.extra["voice_status"] == "COMPLETED"
 

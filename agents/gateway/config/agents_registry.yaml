@@ -26,7 +26,7 @@ subscriptions:
     property: lead_context
   - object: contact
     event: contact.propertyChange
-    property: lqabr_email_status
+    property: email_status
   - object: ticket
     event: ticket.propertyChange
     property: blog_summary
@@ -45,14 +45,14 @@ agents:
     endpoint_env: LQABR_EMAIL_AGENT_URL
     enabled: true
     writes:
-      - lqabr_email_status
+      - email_status
 
   voice:
     description: Text/Voice Agent — SMS + programmable voice (Twilio / Vapi)
     endpoint_env: LQABR_TEXT_VOICE_AGENT_URL
     enabled: true
     writes:
-      - lqabr_voice_status
+      - voice_status
 
   research:
     description: Research Agent - fuses blog summary + lead profile into lead_context
@@ -104,10 +104,10 @@ routes:
 
   - id: R3-email-opened
     description: >
-      Fires on every value of lqabr_email_status; the gateway acts only on
+      Fires on every value of email_status; the gateway acts only on
       OPENED.
     subscription_type: contact.propertyChange
-    property: lqabr_email_status
+    property: email_status
     values: ["OPENED"]
     match: exact_ci
     agent: voice

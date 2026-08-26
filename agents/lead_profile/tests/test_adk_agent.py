@@ -408,8 +408,9 @@ async def test_mcp_server_write_path_is_the_same_implementation(fake_hubspot):
     assert result["status"] == "pushed"
     assert result["lead_ref_id"] == "lead-mcp"
     contact = fake_hubspot.contacts[result["contact_hs_id"]]
-    assert contact["email_id"] == "lead@example.com"   # CUSTOM property
-    assert "email" not in contact
+    # Standard property (decided 2026-08-25; previously custom email_id).
+    assert contact["email"] == "lead@example.com"
+    assert "email_id" not in contact
     company = fake_hubspot.companies[result["company_hs_id"]]
     assert company["industry"] == "MANUFACTURING"
     assert (result["contact_hs_id"], result["company_hs_id"]) in fake_hubspot.associations

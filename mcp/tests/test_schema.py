@@ -42,7 +42,7 @@ def test_the_named_construction_fields_are_carried_through():
     assert validated.last_name == "Smith"
     assert validated.company_id == "C-1"
     assert validated.industry == "Software"
-    assert validated.email_id
+    assert validated.email
 
 
 def test_a_lead_with_no_email_is_rejected_with_a_reason_not_dropped():
@@ -91,7 +91,7 @@ def test_the_internal_identifiers_are_never_offered_to_construction():
     company NAME off the associated company and there was no longer any reason
     to hand the model a stand-in for it."""
     context = validate_profile(lead()).as_context()
-    assert set(context) == {"email_id", "first_name", "last_name", "company",
+    assert set(context) == {"email", "first_name", "last_name", "company",
                             "job_title", "industry", "industry_group",
                             "company_about", "company_website", "annual_revenue",
                             "lead_context"}
@@ -102,18 +102,18 @@ def test_the_internal_identifiers_are_never_offered_to_construction():
 
 # --------------------------------------------------------------- write side
 def test_a_valid_writeback_normalises_to_strings():
-    written = validate_writeback({"lqabr_email_status": "delivered", "probability": 12})
-    assert written == {"lqabr_email_status": "DELIVERED", "probability": "12"}
+    written = validate_writeback({"email_status": "delivered", "probability": 12})
+    assert written == {"email_status": "DELIVERED", "probability": "12"}
 
 
 def test_every_allowed_status_value_passes():
     for value in EMAIL_STATUS_VALUES:
-        assert validate_writeback({"lqabr_email_status": value})
+        assert validate_writeback({"email_status": value})
 
 
 def test_an_out_of_vocabulary_status_is_caught_before_the_hop():
     with pytest.raises(SchemaValidationError) as exc:
-        validate_writeback({"lqabr_email_status": "CLICKED"})
+        validate_writeback({"email_status": "CLICKED"})
     assert "schema-error" in str(exc.value)
 
 
@@ -247,7 +247,7 @@ def test_the_email_address_reaches_construction_as_a_fact():
     """Offered so the model knows WHO it is writing to — a personal address and
     a corporate one are different readers. DRAFTING_RULES forbids writing it
     into the body; that it is available is what this asserts."""
-    assert validate_profile(lead()).as_context()["email_id"] == "jane@acme.example"
+    assert validate_profile(lead()).as_context()["email"] == "jane@acme.example"
 
 
 def test_annual_revenue_is_passed_through_verbatim_and_unitless():

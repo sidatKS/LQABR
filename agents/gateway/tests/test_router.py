@@ -20,7 +20,7 @@ class TestHubSpotEvent:
     def test_parses_the_documented_payload(self):
         event = gw_router.HubSpotEvent.from_payload(make_event())
         assert event.object_id == "701"
-        assert event.property_name == "lqabr_email_status"
+        assert event.property_name == "email_status"
         assert event.property_value == "OPENED"
         assert event.portal_id == 246777241
         assert event.attempt_number == 0
@@ -43,7 +43,7 @@ class TestHubSpotEvent:
 
     def test_audit_fields_carry_the_basis_and_nothing_else(self):
         fields = gw_router.HubSpotEvent.from_payload(make_event()).audit_fields()
-        assert fields["property_name"] == "lqabr_email_status"
+        assert fields["property_name"] == "email_status"
         assert fields["property_value"] == "OPENED"
         assert "email" not in fields and "phone" not in fields
 
@@ -65,7 +65,7 @@ class TestAgentRegistry:
         test_contact_creation_no_longer_routes_to_email below."""
         cases = [
             (make_event("lead_context", "ctx"), "email", "R2-lead-context"),
-            (make_event("lqabr_email_status", "OPENED"), "voice", "R3-email-opened"),
+            (make_event("email_status", "OPENED"), "voice", "R3-email-opened"),
         ]
         for payload, expected_agent, expected_route in cases:
             route = registry.match(gw_router.HubSpotEvent.from_payload(payload))
@@ -85,7 +85,7 @@ class TestAgentRegistry:
     def test_values_match_case_insensitively(self, registry):
         for value in ("opened", "OPENED", "Opened"):
             route = registry.match(gw_router.HubSpotEvent.from_payload(
-                make_event("lqabr_email_status", value)))
+                make_event("email_status", value)))
             assert route is not None and route.agent == "voice"
 
     def test_unknown_agent_in_a_route_is_rejected_at_load(self, agent_env):
@@ -178,13 +178,13 @@ class TestValueFiltering:
     """D-01: the free tier cannot filter by value, so the gateway must."""
 
     def test_routes_only_the_routing_condition(self, router):
-        result = router.route_batch([make_event("lqabr_email_status", "OPENED")])
+        result = router.route_batch([make_event("email_status", "OPENED")])
         assert len(result.decisions) == 1
         assert result.decisions[0].agent == "voice"
 
     @pytest.mark.parametrize("value", ["SENT", "DELIVERED", "BOUNCED", "CLICKED", ""])
     def test_discards_every_other_value_of_a_watched_property(self, router, value):
-        result = router.route_batch([make_event("lqabr_email_status", value,
+        result = router.route_batch([make_event("email_status", value,
                                                 event_id=f"evt-{value}")])
         assert result.decisions == []
         assert result.discarded[0].reason is DiscardReason.NOT_ROUTING_CONDITION
@@ -251,9 +251,9 @@ class TestDeduplication:
         value, so discards are the high-volume path and would evict real
         dispatch records from the bounded LRU. Re-evaluating a discard costs a
         dict lookup; losing a dispatch record costs a second call to a lead."""
-        router.route_batch([make_event("lqabr_email_status", "SENT", event_id="evt-s")])
+        router.route_batch([make_event("email_status", "SENT", event_id="evt-s")])
         assert not router.dedupe.seen("evt-s")
-        again = router.route_batch([make_event("lqabr_email_status", "SENT",
+        again = router.route_batch([make_event("email_status", "SENT",
                                                event_id="evt-s", attempt_number=1)])
         assert again.discarded[0].reason is DiscardReason.NOT_ROUTING_CONDITION
 
@@ -266,7 +266,7 @@ class TestDeduplication:
         store.remember(dispatched.event_id)          # what server.py does on success
 
         for i in range(500):
-            router.route_batch([make_event("lqabr_email_status", "CLICKED",
+            router.route_batch([make_event("email_status", "CLICKED",
                                            event_id=f"noise-{i}")])
 
         assert store.seen("evt-REAL"), "a real dispatch was evicted by discard noise"
@@ -312,25 +312,25 @@ class TestDeduplication:
 class TestLoopGuard:
     def test_an_agent_is_not_woken_by_its_own_write_back(self, registry_document, agent_env):
         """"so the system does not trigger itself" — the voice agent writes
-        lqabr_voice_status, so it must never be triggered by it."""
+        voice_status, so it must never be triggered by it."""
         # Point the winning route at the agent that writes the property, which
         # is the misconfiguration the guard exists to catch.
         registry_document["routes"] = [{
             "id": "R-loop", "subscription_type": "contact.propertyChange",
-            "property": "lqabr_voice_status", "values": ["COMPLETED"], "agent": "voice",
+            "property": "voice_status", "values": ["COMPLETED"], "agent": "voice",
         }]
         registry = gw_router.AgentRegistry.from_document(registry_document, environ=agent_env)
         router = gw_router.Router(registry=registry, loop_guard_mode="self_trigger")
-        result = router.route_batch([make_event("lqabr_voice_status", "COMPLETED")])
+        result = router.route_batch([make_event("voice_status", "COMPLETED")])
         assert result.decisions == []
         assert result.discarded[0].reason is DiscardReason.SELF_TRIGGER_LOOP
 
     def test_default_mode_keeps_agent_written_triggers_alive(self, router):
-        """D-03. lqabr_email_status is written by the Email agent via the API,
+        """D-03. email_status is written by the Email agent via the API,
         and routes to the Voice agent. A blanket changeSource=API drop would
         kill this path — the very path Rev 3 requires."""
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", change_source="API")])
+            make_event("email_status", "OPENED", change_source="API")])
         assert len(result.decisions) == 1
         assert result.decisions[0].agent == "voice"
 
@@ -339,7 +339,7 @@ class TestLoopGuard:
         router = gw_router.Router(registry=registry, loop_guard_mode="all_api",
                                   ignored_change_sources=["API"])
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", change_source="API")])
+            make_event("email_status", "OPENED", change_source="API")])
         assert result.decisions == []
         assert result.discarded[0].reason is DiscardReason.AGENT_WRITEBACK
 
@@ -364,7 +364,7 @@ class TestRoutingErrors:
         error = result.errors[0]
         assert error.trigger_id and error.trigger_id.startswith("trg-")  # traceable
         assert error.agent == "voice"
-        assert error.property_name == "lqabr_email_status"   # basis is carried
+        assert error.property_name == "email_status"   # basis is carried
         assert error.event_id == "evt-1"
 
     def test_one_broken_agent_does_not_take_the_batch_down(
@@ -374,7 +374,7 @@ class TestRoutingErrors:
         registry = gw_router.AgentRegistry.from_document(registry_document, environ=partial)
         router = gw_router.Router(registry=registry)
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", event_id="evt-voice"),
+            make_event("email_status", "OPENED", event_id="evt-voice"),
             make_event("lead_context", "ctx", event_id="evt-email"),
             make_event(None, None, subscription_type="contact.creation",
                        event_id="evt-created"),
@@ -387,7 +387,7 @@ class TestRoutingErrors:
 class TestBatches:
     def test_a_full_hundred_event_batch(self, router):
         """Rev 3: up to 100 events per request."""
-        events = [make_event("lqabr_email_status", "OPENED", event_id=f"evt-{i}",
+        events = [make_event("email_status", "OPENED", event_id=f"evt-{i}",
                              object_id=str(700 + i)) for i in range(100)]
         result = router.route_batch(events)
         assert len(result.decisions) == 100
@@ -395,8 +395,8 @@ class TestBatches:
 
     def test_mixed_batch_is_sorted_into_outcomes(self, router):
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("lqabr_email_status", "BOUNCED", event_id="e2"),
+            make_event("email_status", "OPENED", event_id="e1"),
+            make_event("email_status", "BOUNCED", event_id="e2"),
             make_event("lead_context", "ctx", event_id="e3"),
             make_event("lifecyclestage", "lead", event_id="e4"),
             # contact.creation: no longer routes anywhere -- R1-contact-created

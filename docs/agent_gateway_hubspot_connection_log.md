@@ -35,8 +35,8 @@ From `agents/gateway/config/agents_registry.yaml`, evaluated top to bottom, firs
 |---|---|---|---|
 | `R1-contact-created` | `contact.creation` | any | email |
 | `R2-decision-maker` | `contact.propertyChange` on `decision_maker` | `"true"` | email |
-| `R3-email-opened` | `contact.propertyChange` on `lqabr_email_status` | `"OPENED"` | voice |
-| `R4-voice-completed` | `contact.propertyChange` on `lqabr_voice_status` | `"COMPLETED"` | scheduling |
+| `R3-email-opened` | `contact.propertyChange` on `email_status` | `"OPENED"` | voice |
+| `R4-voice-completed` | `contact.propertyChange` on `voice_status` | `"COMPLETED"` | scheduling |
 
 ---
 

@@ -120,8 +120,8 @@ class TestSignature:
                            headers=headers).status_code == 401
 
     def test_a_tampered_body_is_rejected(self, client):
-        body, headers = signed([make_event("lqabr_email_status", "SENT")])
-        tampered = json.dumps([make_event("lqabr_email_status", "OPENED")])
+        body, headers = signed([make_event("email_status", "SENT")])
+        tampered = json.dumps([make_event("email_status", "OPENED")])
         assert client.post("/hubspot/events", content=tampered,
                            headers=headers).status_code == 401
 
@@ -186,7 +186,7 @@ class TestRoutingEndToEnd:
         cases = [
             (make_event("lead_context", "ctx", event_id="e1"),
              "https://email-agent.example.test/a2a"),
-            (make_event("lqabr_email_status", "OPENED", event_id="e2"),
+            (make_event("email_status", "OPENED", event_id="e2"),
              "https://voice-agent.example.test/a2a"),
         ]
         for payload, expected_url in cases:
@@ -198,7 +198,7 @@ class TestRoutingEndToEnd:
     def test_only_the_trigger_id_crosses_the_gateway(self, client, app_bundle):
         """The whole design in one assertion: a payload full of profile data
         goes in, a trigger id goes out."""
-        payload = make_event("lqabr_email_status", "OPENED")
+        payload = make_event("email_status", "OPENED")
         payload.update({"email": "lead@example.test", "phone": "+15550100",
                         "company": "Example Corp", "annual_revenue": 9_000_000})
         body, headers = signed([payload])
@@ -213,7 +213,7 @@ class TestRoutingEndToEnd:
     def test_discarded_values_return_200_and_dispatch_nothing(self, client, app_bundle):
         """Not the routing condition is a normal outcome, not an error — HubSpot
         must not retry it."""
-        body, headers = signed([make_event("lqabr_email_status", "BOUNCED")])
+        body, headers = signed([make_event("email_status", "BOUNCED")])
         response = client.post("/hubspot/events", content=body, headers=headers)
         assert response.status_code == 200
         assert response.json()["discarded"] == 1
@@ -221,8 +221,8 @@ class TestRoutingEndToEnd:
 
     def test_a_mixed_batch_is_summarised_in_the_response(self, client):
         body, headers = signed([
-            make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("lqabr_email_status", "SENT", event_id="e2"),
+            make_event("email_status", "OPENED", event_id="e1"),
+            make_event("email_status", "SENT", event_id="e2"),
             make_event("lifecyclestage", "customer", event_id="e3"),
         ])
         summary = client.post("/hubspot/events", content=body, headers=headers).json()
@@ -561,7 +561,7 @@ class TestGroupedMode:
         app, _ = self._app(config_dir, registry, session, monkeypatch)
         events = ([make_event("lead_context", "ctx", event_id=f"g{i}")
                    for i in range(14)]
-                  + [make_event("lqabr_email_status", "OPENED", event_id=f"h{i}")
+                  + [make_event("email_status", "OPENED", event_id=f"h{i}")
                      for i in range(6)])
         body, headers = signed(events)
         with TestClient(app) as client:
