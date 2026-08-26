@@ -45,8 +45,6 @@ coverage/
 htmlcov/
 
 # Logs
-*.log
-logs/
 
 # Turborepo / build cache
 .turbo/
