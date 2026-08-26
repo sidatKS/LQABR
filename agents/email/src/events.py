@@ -8,7 +8,7 @@ event that message ever produces, so the event names its own lead.
 
 NO RUN STATE. There is no per-run file, no correlation-token lookup and no
 message-id table. HubSpot is the system of record: the lead's current
-``lqabr_email_status`` is read back and the incoming event is ranked against
+``email_status`` is read back and the incoming event is ranked against
 it, so a weaker or duplicate event never overwrites a stronger one. The label
 travels with the message, not in a local database — which is what makes this
 correct on a container that scales to zero between the send and the event.
@@ -16,7 +16,7 @@ correct on a container that scales to zero between the send and the event.
 Write-back lands three things on the HubSpot record, validated against the
 same schema used for the read at step 5:
 
-  * ``lqabr_email_status``  — the winning status.
+  * ``email_status``  — the winning status.
   * ``probability``         — moved only on real engagement, only by the
                               increments ``lqabr_core.probability`` defines.
   * the campaign-complete column — set once the status reaches OPENED; this
@@ -90,7 +90,7 @@ SCORED_AS: Dict[MailgunEvent, EventType] = {
     MailgunEvent.CLICKED: EventType.EMAIL_CLICKED,
 }
 
-#: ``lqabr_email_status`` is a confirmed HubSpot enumeration accepting exactly
+#: ``email_status`` is a confirmed HubSpot enumeration accepting exactly
 #: PENDING / SENT / DELIVERED / OPENED / FAILED / BOUNCED. No CLICKED option, so
 #: a click records as OPENED; every unworkable-address terminal records as the
 #: single "not workable" FAILED (``outreach.FAILED_STATUS`` writes the same).
@@ -250,7 +250,7 @@ def write_back(ctx: Optional[RunContext], object_id: str, event: MailgunEvent,
                 "current_status": profile.email_status, "object_id": object_id}
 
     email_status = HUBSPOT_EMAIL_STATUS[winner]
-    properties: Dict[str, Any] = {"lqabr_email_status": email_status}
+    properties: Dict[str, Any] = {"email_status": email_status}
     lm_prop = last_modified_email_property()
     if lm_prop:
         properties[lm_prop] = int(time.time() * 1000)
@@ -301,7 +301,7 @@ def _mark_campaign_complete(ctx: Optional[RunContext], mcp_session: MCPSession,
                     detail=(f"'{prop}' could not be written — confirm the real property "
                             "name against the HubSpot schema and set "
                             "LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY (or clear it to "
-                            "disable this column). lqabr_email_status and probability "
+                            "disable this column). email_status and probability "
                             "were still written successfully."))
         return False
     log_process(ctx, step=10, event="handoff_condition_met", object_id=object_id,

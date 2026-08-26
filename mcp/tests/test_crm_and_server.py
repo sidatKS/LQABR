@@ -184,7 +184,7 @@ def test_leads_for_trigger_searches_on_the_trigger_property():
     session = FakeSession([FakeResponse(200, {"results": [
         {"id": "42", "properties": {"employee_id": "E00002",
                                     "firstname": "Jane", "lastname": "Smith",
-                                    "email_id": "jane@acme.example", "probability": "10"}}]})])
+                                    "email": "jane@acme.example", "probability": "10"}}]})])
     client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
                         client_factory=StubHubSpotClient, backoff_seconds=0)
 
@@ -228,8 +228,8 @@ def test_the_queue_fallback_is_available_but_only_on_explicit_opt_in(monkeypatch
 def test_patch_validates_before_the_hop_and_audits_it():
     obs = RecordingObs()
     client = crm([FakeResponse(200, {"id": "42", "properties": {
-        "lqabr_email_status": "OPENED", "probability": "17"}})], obs=obs)
-    client.patch_object("42", {"lqabr_email_status": "opened", "probability": 17},
+        "email_status": "OPENED", "probability": "17"}})], obs=obs)
+    client.patch_object("42", {"email_status": "opened", "probability": 17},
                         verify_after_seconds=0)
 
     audit = [a for a in obs.audits if a["step"] == 9][0]
@@ -243,7 +243,7 @@ def test_an_invalid_property_never_reaches_hubspot():
     client = HubSpotCRM(tokens=StubTokens(), obs=RecordingObs(), session=session,
                         client_factory=StubHubSpotClient, backoff_seconds=0)
     with pytest.raises(SchemaValidationError):
-        client.patch_object("42", {"lqabr_email_status": "CLICKED"})
+        client.patch_object("42", {"email_status": "CLICKED"})
     assert session.calls == []
 
 
@@ -263,15 +263,15 @@ def test_writeback_verification_catches_a_property_the_patch_response_never_echo
     second hop."""
     obs = RecordingObs()
     session = FakeSession([FakeResponse(200, {"id": "42", "properties": {
-        "probability": "17"}})])   # lqabr_email_status silently absent
+        "probability": "17"}})])   # email_status silently absent
     client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
                         client_factory=StubHubSpotClient, backoff_seconds=0)
 
-    client.patch_object("42", {"lqabr_email_status": "OPENED", "probability": 17},
+    client.patch_object("42", {"email_status": "OPENED", "probability": 17},
                         verify_after_seconds=0)
 
     failure = [p for p in obs.processes if p["event"] == "writeback_verification_failed"][0]
-    assert "lqabr_email_status" in failure["mismatched"]
+    assert "email_status" in failure["mismatched"]
     assert len(session.calls) == 1   # caught from the PATCH response alone — no reread needed
 
 
@@ -285,16 +285,16 @@ def test_a_workflow_reverting_the_property_after_success_is_caught_on_reread(mon
 
     obs = RecordingObs()
     session = FakeSession([
-        FakeResponse(200, {"id": "42", "properties": {"lqabr_email_status": "OPENED"}}),
-        FakeResponse(200, {"id": "42", "properties": {"lqabr_email_status": "SENT"}}),
+        FakeResponse(200, {"id": "42", "properties": {"email_status": "OPENED"}}),
+        FakeResponse(200, {"id": "42", "properties": {"email_status": "SENT"}}),
     ])
     client = HubSpotCRM(tokens=StubTokens(), obs=obs, session=session,
                         client_factory=StubHubSpotClient, backoff_seconds=0)
 
-    client.patch_object("42", {"lqabr_email_status": "OPENED"}, verify_after_seconds=2.0)
+    client.patch_object("42", {"email_status": "OPENED"}, verify_after_seconds=2.0)
 
     reverted = [p for p in obs.processes if p["event"] == "writeback_reverted_after_success"][0]
-    assert reverted["reverted"]["lqabr_email_status"] == {
+    assert reverted["reverted"]["email_status"] == {
         "we_set": "OPENED", "hubspot_now_holds": "SENT"}
     assert session.calls[1]["method"] == "GET"
 
@@ -344,7 +344,7 @@ def test_the_tool_surface_is_the_three_named_tools():
 def test_get_lead_profile_details_returns_a_tool_shaped_dict():
     session = MCPSession(crm=crm())
     result = session.get_lead_profile_details("42")
-    assert result["object_id"] == "42" and result["email_id"] == "jane@acme.example"
+    assert result["object_id"] == "42" and result["email"] == "jane@acme.example"
 
 
 def test_an_unworkable_lead_comes_back_as_an_error_not_an_exception():
@@ -358,7 +358,7 @@ def test_an_unworkable_lead_comes_back_as_an_error_not_an_exception():
 
 
 def test_post_patch_crm_reports_a_validation_failure_rather_than_a_false_success():
-    result = MCPSession(crm=crm()).post_patch_crm("42", {"lqabr_email_status": "NOPE"})
+    result = MCPSession(crm=crm()).post_patch_crm("42", {"email_status": "NOPE"})
     assert "error" in result and "status" not in result
 
 

@@ -55,7 +55,7 @@ MAX_PROBABILITY = 100
 # NO counter properties at all -- no email_sent/email_opened/
 # call_started/call_completed, no per-event counts of any kind. Email
 # engagement is tracked purely via the single current-value
-# `lqabr_email_status` field (see hubspot.py), and there is nothing
+# `email_status` field (see hubspot.py), and there is nothing
 # equivalent yet for SMS/voicemail/calls/meetings. EVENT_COUNTERS is left
 # empty until/unless a real counter property is added to the account --
 # currently unused (nothing reads it), kept for when one is added.

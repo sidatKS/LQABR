@@ -15,7 +15,7 @@ from lqabr_core.types import EventType, LeadStage
 def test_no_counter_properties_exist_in_real_schema():
     # SCHEMA NOTE: the real HubSpot account has no counter properties at
     # all (confirmed live 2026-07-23) — engagement is tracked purely via
-    # the single-value lqabr_email_status field (see hubspot.py).
+    # the single-value email_status field (see hubspot.py).
     # EVENT_COUNTERS stays empty until/unless a real counter property is
     # added to the account.
     assert EVENT_COUNTERS == {}

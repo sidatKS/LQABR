@@ -66,7 +66,7 @@ Eleven fields, and no others. Confirmed against the HubSpot record
 
 | Field | What it is for |
 |---|---|
-| `email_id` | who you are writing to. **Never written into the email** |
+| `email` | who you are writing to. **Never written into the email** |
 | `first_name`, `last_name` | the greeting, per the shared rules |
 | `company` | the real company name — use it once, early |
 | `job_title` | the concern you speak to |

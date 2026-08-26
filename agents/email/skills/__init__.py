@@ -87,7 +87,7 @@ frontmatter in that one file — no new folder, no code change. `select_skill()`
 deliberately RAISES if it ever finds more than one skill folder, so a restored
 per-industry folder fails loudly instead of silently winning on sort order.
 
-Lead facts available to the instructions: email_id, first_name, last_name,
+Lead facts available to the instructions: email, first_name, last_name,
 company, job_title, industry, industry_group, company_about, company_website,
 annual_revenue, lead_context. The email greets the lead by their full name
 (`first_name` + `last_name`), falling back to whichever part is present, and

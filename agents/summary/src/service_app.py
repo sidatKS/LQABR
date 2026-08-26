@@ -245,7 +245,7 @@ class A2AEnvelope(BaseModel):
 
     def target_object_id(self) -> str:
         metadata = (self.params or {}).get("metadata") or {}
-        for candidate in (metadata.get("object_id"), metadata.get("summary_ref_id"),
+        for candidate in (metadata.get("objectId"), metadata.get("object_id"), metadata.get("summary_ref_id"),
                           self.object_id, self.objectId):
             if candidate:
                 return str(candidate)

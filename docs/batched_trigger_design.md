@@ -143,7 +143,7 @@ The leads are already sitting in a stage. Ask for five.
    │  EMAIL AGENT                                                 │
    │                                                              │
    │  ⑥ works all 5 together                                      │
-   │  ⑦ writes lqabr_email_status + moves each lead's stage on    │
+   │  ⑦ writes email_status + moves each lead's stage on    │
    └───────────────────────────┬──────────────────────────────────┘
                                │
                                ▼

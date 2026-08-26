@@ -179,7 +179,7 @@ def preview_email(object_id: str, cta_url: str = "") -> Dict[str, Any]:
     except outreach.skills.SkillError as exc:
         return {"error": f"construction: {exc}", "object_id": profile.object_id,
                 "skill": outreach.skills.select_skill(profile.industry)[0].name}
-    return {"object_id": profile.object_id, "to": profile.email_id, "skill": skill,
+    return {"object_id": profile.object_id, "to": profile.email, "skill": skill,
             "subject": subject, "html_body": html_body}
 
 
@@ -243,7 +243,7 @@ def get_lead_status(object_id: str) -> Dict[str, Any]:
         return {"error": f"crm-error: {exc}"}
     return {
         "object_id": profile.object_id,
-        "email": profile.email_id,
+        "email": profile.email,
         "email_status": profile.email_status,
         "probability": profile.probability,
         "company": profile.company,

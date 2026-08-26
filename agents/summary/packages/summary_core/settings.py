@@ -121,7 +121,7 @@ class Settings:
     mcp_tool_read: str = "get_lead_profile_details"
     mcp_tool_write: str = "post_patch_crm"
     mcp_tool_list_leads: str = "list_trigger_leads"
-    #: "patch" -> post_patch_crm{object_id, properties} (generic contact/ticket patch).
+    #: "patch" -> post_patch_crm{objectId, properties} (generic contact/ticket patch).
     #: "blog_summary" -> upsert_blog_summary{subject, blog_summary, blog_published_at,
     #: blog_industry}, the FastMCP central server's blog writer (keyed on blog_published_at).
     mcp_write_style: str = "patch"
@@ -133,7 +133,7 @@ class Settings:
     #: The ARGUMENT names the write tool expects. Overridable for the
     #: same reason the tool names are: a server-side rename must never
     #: require a code edit here.
-    mcp_arg_object_id: str = "object_id"
+    mcp_arg_object_id: str = "objectId"
     mcp_arg_properties: str = "properties"
 
     # ── HubSpot target ───────────────────────────────────────
@@ -187,7 +187,7 @@ class Settings:
             mcp_write_style=_str("LQABR_SUMMARY_MCP_WRITE_STYLE", "patch").lower(),
             mcp_assert_tools=_bool("LQABR_SUMMARY_MCP_ASSERT_TOOLS", True),
             mcp_startup_check=_str("LQABR_SUMMARY_MCP_STARTUP_CHECK", "warn").lower(),
-            mcp_arg_object_id=_str("LQABR_SUMMARY_MCP_ARG_OBJECT_ID", "object_id"),
+            mcp_arg_object_id=_str("LQABR_SUMMARY_MCP_ARG_OBJECT_ID", "objectId"),
             mcp_arg_properties=_str("LQABR_SUMMARY_MCP_ARG_PROPERTIES", "properties"),
             hubspot_object_type=_str("LQABR_SUMMARY_HUBSPOT_OBJECT_TYPE", "ticket"),
             hubspot_summary_property=_str("LQABR_SUMMARY_HUBSPOT_SUMMARY_PROPERTY", "blog_summary"),

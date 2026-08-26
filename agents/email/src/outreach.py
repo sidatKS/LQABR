@@ -68,7 +68,7 @@ CONSTRUCTION_TEMPERATURE = float(os.environ.get("LQABR_EMAIL_TEMPERATURE", "1.0"
 #: A lead already at one of these has been outreached — a redelivered trigger
 #: (retry, duplicate webhook, re-fired workflow) must not email it twice.
 ALREADY_SENT_STATUSES = frozenset({"SENT", "DELIVERED", "OPENED"})
-#: The HubSpot ``lqabr_email_status`` value for "not workable" — what this path
+#: The HubSpot ``email_status`` value for "not workable" — what this path
 #: writes when a send is refused or a lead cannot be read/constructed. The full
 #: Mailgun-event -> status translation is ``events.HUBSPOT_EMAIL_STATUS``; every
 #: terminal there collapses to this same value.
@@ -229,9 +229,9 @@ def start_run(object_id: str, run_id: Optional[str] = None,
 # ------------------------------------------------------------------- step 5
 def _set_email_status(ctx: RunContext, mcp_session: MCPSession, object_id: str,
                       status: str, *, step: int, reason: str = "") -> bool:
-    """Write ``lqabr_email_status`` (+ last-modified stamp) for one lead.
+    """Write ``email_status`` (+ last-modified stamp) for one lead.
     Best-effort: a failed write is logged and reported False, never raised."""
-    props: Dict[str, Any] = {"lqabr_email_status": status}
+    props: Dict[str, Any] = {"email_status": status}
     lm_prop = last_modified_email_property()
     if lm_prop:
         props[lm_prop] = int(time.time() * 1000)
@@ -442,14 +442,14 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
     written back as a terminal status and reported."""
     if dry_run:
         log_process(ctx, step=7, event="send_skipped_dry_run",
-                    object_id=profile.object_id, to=profile.email_id, skill=skill_name)
-        return {"status": "dry-run", "object_id": profile.object_id, "to": profile.email_id,
+                    object_id=profile.object_id, to=profile.email, skill=skill_name)
+        return {"status": "dry-run", "object_id": profile.object_id, "to": profile.email,
                 "subject": subject, "skill": skill_name}
 
     client = mailgun or MailgunClient()
     try:
         sent = client.send_email(
-            to=profile.email_id, subject=subject, html=html_body,
+            to=profile.email, subject=subject, html=html_body,
             tags=["lqabr", "email-outreach", f"trigger-{ctx.object_id}"],
             # lqabr_object_id IS the lead: Mailgun echoes it on every event so
             # the inbound path names the HubSpot record with no lookup. run_id
@@ -470,7 +470,7 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
               method="POST", status_code=200, message_id=message_id)
 
     result: Dict[str, Any] = {"status": "sent", "message_id": message_id,
-                              "object_id": profile.object_id, "to": profile.email_id,
+                              "object_id": profile.object_id, "to": profile.email,
                               "skill": skill_name}
     # Mark SENT so a redelivered trigger does not email the lead twice.
     try:
