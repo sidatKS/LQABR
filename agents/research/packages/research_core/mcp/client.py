@@ -28,12 +28,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..obs import Observability, get_obs
+from .. import SERVICE_NAME, __version__
+from ..obs import Observability, get_obs, preview, summarize_args
 from ..settings import Settings, get_settings
-
-#: Fallback only — the live list comes from settings.mcp_retryable_statuses.
-_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
-
 
 class MCPError(RuntimeError):
     """The MCP could not be reached, or refused. Always names what failed."""
@@ -94,6 +91,20 @@ def unwrap_result(result: Any) -> Any:
         return joined
 
 
+def result_shape(value: Any) -> Dict[str, Any]:
+    """What came back, in a form that fits on a log line.
+
+    Not the payload: its SHAPE. "which fields did the tool actually return" is
+    the question behind most read failures, and it is answerable from this
+    without dumping a record into the log.
+    """
+    if isinstance(value, dict):
+        return {"kind": "object", "keys": sorted(str(k) for k in value)[:12]}
+    if isinstance(value, list):
+        return {"kind": "list", "items": len(value)}
+    return {"kind": type(value).__name__, "chars": len(str(value))}
+
+
 class MCPClient:
     """One connection to the HubSpot MCP container. Build one per process."""
 
@@ -107,11 +118,6 @@ class MCPClient:
         self._initialized = False
         self._tools: List[str] = []
         self._rpc_id = 0
-
-    @property
-    def tools(self) -> List[str]:
-        """What the server said it has. Empty until tools/list has run."""
-        return list(self._tools)
 
     # ------------------------------------------------------------ wire
     def _headers(self) -> Dict[str, str]:
@@ -127,8 +133,13 @@ class MCPClient:
             headers["Authorization"] = f"Bearer {self._settings.mcp_auth_token}"
         return headers
 
-    def _post(self, payload: Dict[str, Any], *, label: str) -> requests.Response:
+    def _post(self, payload: Dict[str, Any], *, label: str,
+              params: Optional[Dict[str, Any]] = None,
+              attempt: int = 1) -> requests.Response:
         url = self._settings.mcp_base_url
+        # The MCP is one URL for every operation, so the URL alone says nothing
+        # about what was asked. `params` is what makes the audit line useful.
+        sent = params if params is not None else {"method": payload.get("method", label)}
         started = time.monotonic()
         try:
             response = self._session.request(
@@ -136,10 +147,15 @@ class MCPClient:
                 timeout=self._settings.mcp_timeout_seconds,
             )
         except (requests.RequestException, OSError) as exc:
-            self._obs.hop(service="mcp", endpoint=url, error=str(exc),
+            # `attempt` rides the hop, not just the process retry line. Without
+            # it the audit stream showed three identical calls with no way to
+            # tell one operation retried three times from three operations.
+            self._obs.hop(service="mcp", endpoint=url, error=str(exc), params=sent,
+                          attempt=attempt,
                           duration_ms=round((time.monotonic() - started) * 1000, 1))
             raise MCPError(f"MCP {label} failed: {exc}") from exc
         self._obs.hop(service="mcp", endpoint=url, status=response.status_code,
+                      params=sent, attempt=attempt,
                       duration_ms=round((time.monotonic() - started) * 1000, 1))
         session_id = (response.headers.get("Mcp-Session-Id")
                       or response.headers.get("mcp-session-id"))
@@ -160,14 +176,26 @@ class MCPClient:
         response = None
         for attempt in range(1, attempts + 1):
             self._rpc_id += 1
-            response = self._post({
-                "jsonrpc": "2.0", "id": self._rpc_id, "method": "initialize",
-                "params": {
-                    "protocolVersion": self._settings.mcp_protocol_version,
-                    "capabilities": {},
-                    "clientInfo": {"name": "lqabr-research-agent", "version": "0.1"},
-                },
-            }, label="initialize")
+            try:
+                response = self._post({
+                    "jsonrpc": "2.0", "id": self._rpc_id, "method": "initialize",
+                    "params": {
+                        "protocolVersion": self._settings.mcp_protocol_version,
+                        "capabilities": {},
+                        "clientInfo": {"name": SERVICE_NAME, "version": __version__},
+                    },
+                }, label="initialize", attempt=attempt)
+            except MCPError as exc:
+                # A container that is asleep, or still starting, refuses the
+                # connection — which is the exact case this retry exists for.
+                # `_post` turns that into MCPError, and nothing used to catch
+                # it, so a cold MCP failed on the first attempt of three.
+                if attempt >= attempts:
+                    raise
+                self._obs.process.emit("mcp_initialize_retry", attempt=attempt,
+                                       reason=str(exc))
+                self._sleep(attempt)
+                continue
             if (response.status_code in tuple(self._settings.mcp_retryable_statuses)
                     and attempt < attempts):
                 self._obs.process.emit("mcp_initialize_retry", attempt=attempt,
@@ -175,8 +203,7 @@ class MCPClient:
                 self._sleep(attempt)
                 continue
             break
-        assert response is not None
-        if response.status_code >= 400:
+        if response is None or response.status_code >= 400:
             raise MCPError(f"MCP initialize failed: HTTP {response.status_code} from "
                            f"{self._settings.mcp_base_url}")
         body = _parse_body(response)
@@ -233,15 +260,30 @@ class MCPClient:
         attempts = max(1, self._settings.max_retries)
         last_error = ""
 
+        sent = summarize_args(arguments)
+        self._obs.process.emit("mcp_tool_call", tool=name, url=self._settings.mcp_base_url,
+                               arguments=sent, timeout_s=self._settings.mcp_timeout_seconds)
+
         for attempt in range(1, attempts + 1):
             self._rpc_id += 1
-            response = self._post({
-                "jsonrpc": "2.0", "id": self._rpc_id, "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
-            }, label=f"tools/call {name}")
+            try:
+                response = self._post({
+                    "jsonrpc": "2.0", "id": self._rpc_id, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                }, label=f"tools/call {name}", params={"tool": name, **sent},
+                    attempt=attempt)
+            except MCPError as exc:
+                last_error = str(exc)
+                if attempt >= attempts:
+                    break
+                self._obs.process.emit("mcp_call_retry", tool=name,
+                                       attempt=attempt, reason=last_error)
+                self._sleep(attempt)
+                continue
 
             if response.status_code == 404 and attempt < attempts:
                 # The server forgot our session (scaled to zero between calls).
+                last_error = "HTTP 404 (session lost)"
                 self._obs.process.emit("mcp_session_lost", tool=name, attempt=attempt)
                 self.initialize(force=True)
                 continue
@@ -261,6 +303,11 @@ class MCPClient:
             result = body.get("result")
             if isinstance(result, dict) and result.get("isError"):
                 raise MCPError(f"MCP tool {name} reported an error: {unwrap_result(result)}")
-            return unwrap_result(result)
+            value = unwrap_result(result)
+            self._obs.process.emit("mcp_tool_result", tool=name, attempt=attempt,
+                                   **result_shape(value),
+                                   result_preview=preview(value))
+            return value
 
-        raise MCPError(f"MCP tools/call {name} failed after {attempts} attempts: {last_error}")
+        raise MCPError(f"MCP tools/call {name} failed after {attempts} "
+                       f"attempts: {last_error or 'no reason recorded'}")

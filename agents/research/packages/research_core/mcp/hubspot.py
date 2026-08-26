@@ -7,9 +7,9 @@ than an edit here.
 
 Three operations, all through the MCP, none direct to HubSpot:
 
-    read_lead(object_id)              the contact: industry, company, and the
+    read_lead(objectId)              the contact: industry, company, and the
                                       three ids the write tool demands back
-    read_blog(object_id)              the published post, by its record id
+    read_blog(objectId)              the published post, by its record id
     write_context(lead, note)         the lead_context write-back
 
 The write is the point of the agent: a lead_context landing on the contact is
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..obs import Observability, get_obs
+from ..obs import Observability, get_obs, preview
 from ..settings import Settings, get_settings
 from ..types import BlogFacts, LeadFacts, ResearchNote, WriteResult
 from .client import MCPClient, MCPError
@@ -51,6 +51,32 @@ def _flatten(payload: Any) -> Dict[str, Any]:
     return flat
 
 
+#: A reply that says the tool did not run, as opposed to running and finding
+#: nothing. The MCP reports both as a body, so they are told apart by shape.
+_REFUSAL_STATUSES = ("halted", "failed", "error")
+
+
+def refusal(flat: Dict[str, Any]) -> str:
+    """The reason a read did not happen, or "" if it simply found nothing.
+
+    `{"found": false}` is a real answer: that record does not exist. But
+    `{"found": false, "status": "halted", "failure_kind": "systemic",
+      "reasons": ["AuthConfigError: could not read .../lqabr-hubspot-access-token"]}`
+    is the MCP saying it could never ask — usually because IT could not read its
+    own HubSpot token. Reporting that as "no blog summary found" sends whoever
+    is on the other end looking for a missing record that is sitting right
+    there. Same rule as the industry lookup: "could not ask" is not "nobody
+    matched".
+    """
+    status = str(flat.get("status", "")).lower()
+    if not (flat.get("failure_kind") or flat.get("error")
+            or status in _REFUSAL_STATUSES):
+        return ""
+    return (str(flat.get("error") or "")
+            or "; ".join(str(r) for r in (flat.get("reasons") or []))
+            or status or "the MCP refused the read")
+
+
 class HubSpotMCP:
     """The HubSpot MCP, as this agent uses it."""
 
@@ -60,45 +86,60 @@ class HubSpotMCP:
         self._settings = settings or get_settings()
         self._obs = obs or get_obs()
         self._client = client or MCPClient(self._settings, obs=self._obs)
+        self._last_error = ""
 
     @property
     def client(self) -> MCPClient:
         return self._client
 
-    def ensure_ready(self, include_campaign: bool = False) -> List[str]:
-        """Startup check — the tools we are configured to use must exist.
+    @property
+    def last_error(self) -> str:
+        """Why the most recent read returned None. Empty when it simply found
+        nothing. The reads keep their `Optional[...]` contract; the pipeline
+        reads this so the failure it reports names the real cause."""
+        return self._last_error
 
-        The campaign tool is asserted only when asked for: single-lead runs
-        must keep working on an MCP that has no lead-listing tool yet, while
-        /research/campaign refuses to pretend.
+    def ensure_ready(self) -> List[str]:
+        """Startup check — the three tools we actually call must exist.
+
+        The lead-listing tool is deliberately NOT asserted: it does not exist
+        on the MCP yet, and the campaign reaches HubSpot directly for that one
+        lookup (see hubspot_direct.py). Asserting it would refuse to start over
+        a tool nothing calls.
         """
-        required = [self._settings.mcp_tool_read_lead,
-                    self._settings.mcp_tool_read_blog,
-                    self._settings.mcp_tool_write]
-        if include_campaign:
-            required.append(self._settings.mcp_tool_list_leads)
-        return self._client.ensure_ready(required)
+        return self._client.ensure_ready([self._settings.mcp_tool_read_lead,
+                                          self._settings.mcp_tool_read_blog,
+                                          self._settings.mcp_tool_write])
 
     # -------------------------------------------------------------- reads
-    def read_lead(self, object_id: str) -> Optional[LeadFacts]:
+    def read_lead(self, objectId: str) -> Optional[LeadFacts]:
         """The contact behind this hand-off. None when the MCP has nothing —
         the caller reports `bad-data`, it never invents a lead."""
         settings = self._settings
+        self._last_error = ""
         try:
-            result = self._client.call_tool(settings.mcp_tool_read_lead,
-                                            {"object_id": str(object_id)})
+            result = self._client.call_tool(
+                settings.mcp_tool_read_lead,
+                {settings.mcp_object_id_arg: str(objectId)})
         except MCPError as exc:
-            self._obs.process.emit("lead_read_failed", object_id=object_id, reason=str(exc))
+            self._last_error = str(exc)
+            self._obs.process.emit("lead_read_failed", objectId=objectId, reason=str(exc))
             return None
 
         flat = _flatten(result)
-        if not flat or flat.get("found") is False or flat.get("error"):
-            self._obs.process.emit("lead_read_empty", object_id=object_id,
-                                   reason=str(flat.get("error") or "not found"))
+        refused = refusal(flat)
+        if refused:
+            self._last_error = refused
+            self._obs.process.emit("lead_read_rejected", objectId=objectId,
+                                   tool=settings.mcp_tool_read_lead, reason=refused)
+            return None
+        if not flat or flat.get("found") is False:
+            self._obs.process.emit("lead_read_empty", objectId=objectId,
+                                   reason="not found")
             return None
 
         lead = LeadFacts(
-            object_id=str(object_id),
+            objectId=str(objectId),
             first_name=_first(flat, "first_name", "firstname"),
             last_name=_first(flat, "last_name", "lastname"),
             job_title=_first(flat, "job_title", "jobtitle"),
@@ -109,23 +150,25 @@ class HubSpotMCP:
             # unknown company is better handled explicitly by the prompt.
             company=_first(flat, "company", "company_name"),
             company_about=_first(flat, "company_about", "about_us"),
-            company_website=_first(flat, "company_website", "website", "domain"),
+            # `website_url` is what the MCP actually sends (verified against the
+            # live container 2026-08-25). Reading three other spellings and not
+            # that one meant the company URL never reached the prompt, so every
+            # note was researched from the company NAME alone.
+            company_website=_first(flat, "company_website", "website_url",
+                                   "website", "domain"),
             employee_id=_first(flat, "employee_id"),
             company_id=_first(flat, "company_id"),
             decision_maker_flag=_first(flat, "decision_maker_flag", "decision_maker"),
             existing_lead_context=_first(flat, settings.hubspot_context_property,
                                          "lead_context"),
         )
-        self._obs.process.emit("lead_read_ok", object_id=object_id,
-                               industry=lead.industry, company=lead.company,
-                               has_existing_context=bool(lead.existing_lead_context))
         return lead
 
     def list_leads_by_industry(self, industry: str,
                                limit: int = 100) -> Optional[List[str]]:
         """Every lead in one industry — the campaign fan-out.
 
-        Returns contact object_ids, or None when the lookup could not be made
+        Returns contact objectIds, or None when the lookup could not be made
         (tool absent, MCP down, bad reply). None and [] mean different things:
         None is "we could not ask", [] is "asked, nobody matched" — the caller
         reports them differently and never treats a failure as an empty
@@ -143,9 +186,9 @@ class HubSpotMCP:
         # flip — see research_core/hubspot_direct.py.
         if settings.use_direct_lead_lookup:
             try:
-                from ..hubspot_direct import HubSpotDirect, HubSpotDirectError
+                from ..hubspot_direct import HubSpotDirect
             except ImportError:  # pragma: no cover
-                from hubspot_direct import HubSpotDirect, HubSpotDirectError  # type: ignore
+                from hubspot_direct import HubSpotDirect  # type: ignore
             try:
                 ids = HubSpotDirect(settings=settings,
                                     obs=self._obs).list_leads_by_industry(
@@ -154,8 +197,6 @@ class HubSpotMCP:
                 self._obs.process.emit("leads_list_failed", industry=industry,
                                        source="hubspot_direct", reason=str(exc))
                 return None
-            self._obs.process.emit("leads_list_ok", industry=industry,
-                                   source="hubspot_direct", count=len(ids))
             return ids
 
         try:
@@ -185,48 +226,56 @@ class HubSpotMCP:
                 ids.append(row.strip())
                 continue
             if isinstance(row, dict):
-                found = _first(row, "object_id", "contact_hs_id", "contact_id", "id")
+                found = _first(row, "objectId", "object_id", "contact_hs_id",
+                               "contact_id", "id")
                 if found:
                     ids.append(str(found).strip())
         ids = [i for i in ids if i]
-        self._obs.process.emit("leads_list_ok", industry=industry, count=len(ids))
         return ids
 
-    def read_blog(self, object_id: str) -> Optional[BlogFacts]:
+    def read_blog(self, objectId: str) -> Optional[BlogFacts]:
         """The post that triggered the run, read by its Ticket record id.
 
-        The MCP keys the blog store on the ticket's object_id (changed
+        The MCP keys the blog store on the ticket's objectId (changed
         2026-08-24 from the publication timestamp), which is exactly what the
         gateway's blog-summary route hands over — so the ticket id fetches the
         post with no timestamp round-trip.
         """
         settings = self._settings
+        self._last_error = ""
         try:
-            result = self._client.call_tool(settings.mcp_tool_read_blog,
-                                            {"object_id": str(object_id)})
+            result = self._client.call_tool(
+                settings.mcp_tool_read_blog,
+                {settings.mcp_object_id_arg: str(objectId)})
         except MCPError as exc:
+            self._last_error = str(exc)
             self._obs.process.emit("blog_read_failed",
-                                   object_id=object_id, reason=str(exc))
+                                   objectId=objectId, reason=str(exc))
             return None
 
         flat = _flatten(result)
+        # The MCP could not ask. Not the same as asking and finding nothing.
+        refused = refusal(flat)
+        if refused:
+            self._last_error = refused
+            self._obs.process.emit("blog_read_rejected", objectId=objectId,
+                                   tool=settings.mcp_tool_read_blog, reason=refused)
+            return None
         # Not-found is a VALID result on this tool, never an error.
         if not flat or flat.get("found") is False:
-            self._obs.process.emit("blog_read_empty", object_id=object_id)
+            self._obs.process.emit("blog_read_empty", objectId=objectId)
             return None
 
         blog = BlogFacts(
             blog_published_at=_first(flat, "blog_published_at"),
             blog_summary=_first(flat, "blog_summary"),
             blog_industry=_first(flat, "blog_industry"),
-            ticket_id=_first(flat, "ticket_hs_id", "ticket_id") or str(object_id),
+            ticket_id=_first(flat, "ticket_hs_id", "ticket_id") or str(objectId),
         )
         warnings = flat.get("warnings")
         if warnings:
             self._obs.process.emit("blog_read_warnings",
-                                   object_id=object_id, warnings=warnings)
-        self._obs.process.emit("blog_read_ok", blog_published_at=blog.blog_published_at,
-                               ticket_id=blog.ticket_id, chars=len(blog.blog_summary))
+                                   objectId=objectId, warnings=warnings)
         return blog
 
     # -------------------------------------------------------------- write
@@ -242,9 +291,9 @@ class HubSpotMCP:
         text = note.as_hubspot_text(settings.note_max_chars)
 
         if not text.strip():
-            self._obs.process.emit("context_write_skipped", object_id=lead.object_id,
+            self._obs.process.emit("context_write_not_writable", objectId=lead.objectId,
                                    reason="bad-data: the composed note was empty")
-            return WriteResult(status="skipped", object_id=lead.object_id,
+            return WriteResult(status="not_writable", objectId=lead.objectId,
                                property_name=prop, tool=settings.mcp_tool_write,
                                error="bad-data: the composed note was empty")
 
@@ -252,16 +301,20 @@ class HubSpotMCP:
         if missing:
             reason = (f"bad-data: lead is missing {missing}, which "
                       f"{settings.mcp_tool_write} requires to write")
-            self._obs.process.emit("context_write_skipped", object_id=lead.object_id,
+            self._obs.process.emit("context_write_not_writable", objectId=lead.objectId,
                                    reason=reason)
-            return WriteResult(status="skipped", object_id=lead.object_id,
+            return WriteResult(status="not_writable", objectId=lead.objectId,
                                property_name=prop, tool=settings.mcp_tool_write,
                                error=reason)
 
         if settings.dry_run:
-            self._obs.process.emit("context_write_dry_run", object_id=lead.object_id,
-                                   property_name=prop, chars=len(text))
-            return WriteResult(status="dry_run", object_id=lead.object_id,
+            self._obs.process.emit("context_write_dry_run", objectId=lead.objectId,
+                                   tool=settings.mcp_tool_write,
+                                   property_name=prop, chars=len(text),
+                                   reason="LQABR_RESEARCH_DRY_RUN=1 — composed and "
+                                          "logged, deliberately not sent",
+                                   text_preview=preview(text))
+            return WriteResult(status="dry_run", objectId=lead.objectId,
                                property_name=prop, chars=len(text),
                                tool=settings.mcp_tool_write)
 
@@ -274,9 +327,9 @@ class HubSpotMCP:
         try:
             result = self._client.call_tool(settings.mcp_tool_write, arguments)
         except MCPError as exc:
-            self._obs.process.emit("context_write_failed", object_id=lead.object_id,
+            self._obs.process.emit("context_write_failed", objectId=lead.objectId,
                                    tool=settings.mcp_tool_write, reason=str(exc))
-            return WriteResult(status="error", object_id=lead.object_id,
+            return WriteResult(status="error", objectId=lead.objectId,
                                property_name=prop, chars=len(text),
                                tool=settings.mcp_tool_write, error=str(exc))
 
@@ -292,17 +345,15 @@ class HubSpotMCP:
                 reason = (str(result.get("error") or "")
                           or "; ".join(str(r) for r in (result.get("reasons") or []))
                           or status_value or "write rejected")
-                self._obs.process.emit("context_write_rejected", object_id=lead.object_id,
+                self._obs.process.emit("context_write_rejected", objectId=lead.objectId,
                                        tool=settings.mcp_tool_write, reason=reason)
-                return WriteResult(status="error", object_id=lead.object_id,
+                return WriteResult(status="error", objectId=lead.objectId,
                                    property_name=prop, chars=len(text),
                                    tool=settings.mcp_tool_write, error=reason)
 
-        self._obs.process.emit(
-            "context_write_ok", object_id=lead.object_id, property_name=prop,
-            chars=len(text),
-            note="this write raises HubSpot trigger 2 (contact.propertyChange "
-                 "lead_context) which the gateway routes to the Email agent")
-        return WriteResult(status="written", object_id=lead.object_id,
+        # (This write raises HubSpot trigger 2 — contact.propertyChange on
+        # lead_context — which the gateway routes to the Email agent. The
+        # outcome is reported by `step_out write_context`.)
+        return WriteResult(status="written", objectId=lead.objectId,
                            property_name=prop, chars=len(text),
                            tool=settings.mcp_tool_write)

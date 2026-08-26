@@ -15,7 +15,7 @@ contact in that post's industry**.
 
 ```
 Marketing publishes a post   (HubSpot Ticket: blog_summary + blog_industry)
-   -> Agent Gateway routes it (hands over ONLY the post's object_id)
+   -> Agent Gateway routes it (hands over ONLY the post's objectId)
    -> read the post           (MCP: get_blog_summary)
    -> take its industry       (blog_industry)
    -> list the leads          (direct HubSpot read — the one exception)
@@ -66,8 +66,14 @@ install. A test (`test_standalone.py`) enforces it.
 Two axes, not one: **scope** (one lead vs a whole industry) and **delivery**
 (wait for the answer vs acknowledge inside the gateway's ~5s budget).
 
+**What the gateway actually sends** — JSON-RPC on the outside, HubSpot's own
+event verbatim in `params.metadata`, so the metadata is **camelCase**
+(`objectId`, `subscriptionType`, `attemptNumber`). Both spellings are read
+everywhere. The exact payloads are in `docs/GATEWAY_PAYLOADS.md`; keep that
+file current when the shape changes.
+
 **The two a2a routes differ by what the id IS.** On `/research/a2a` the
-`object_id` is a CONTACT; on `/research/campaign/a2a` it is a blog POST. Sending
+`objectId` is a CONTACT; on `/research/campaign/a2a` it is a blog POST. Sending
 a post to the contact route fails at `read_lead` every time, because a Ticket is
 not a lead. They are separate routes rather than one handler guessing.
 
@@ -118,36 +124,110 @@ true to make a campaign resumable.
 | Everything "succeeds", HubSpot unchanged | `LQABR_RESEARCH_DRY_RUN=1` | check `dry_run` in `/health` |
 | Note contained `"I'll search for current information about…"` | `_collect()` concatenated **every** text block; with server-side search the model narrates between calls | keep only text after the LAST search block |
 | Note began `"Here is the lead_context note:"` after a recap paragraph | model writes a recap, *then* announces the note | `strip_preamble()` takes what follows the LAST announcement line |
-| `POST /research/run` silently ignored `summary_ref_id` | `resolved()` read it only from the nested target | mirrored like `object_id` |
-| The CLI could never succeed | required `--blog-published-at`, which stopped being the blog key | `--summary-ref-id` |
+| `POST /research/run` silently ignored `summary_objectId` | `resolved()` read it only from the nested target | mirrored like `objectId` |
+| The CLI could never succeed | required `--blog-published-at`, which stopped being the blog key | `--summary-object-id` |
 | CLI output unparseable | logs and the result JSON on the same stream | logs to stderr; stdout is the result document |
 | `2 validation errors for call[get_blog_summary]` | the MCP container is an **older image** keyed on `blog_published_at` | `docker pull` and recreate the container |
 | Log lines corrupting mid-run | a line longer than the terminal wrapped and redrew over its neighbour | measure against real terminal width; diagnostics continue on indented lines |
+| Campaign reported `no blog summary found` for a post that exists | the MCP answered `found:false` **with** `status:halted` / `failure_kind:systemic` — it could not read its own HubSpot token — and the read treated that as a plain not-found | `refusal()` tells a refusal from an absent record; the reason rides `HubSpotMCP.last_error` into the reported error. "Could not ask" is not "nobody matched" — now on the reads too |
+| Gateway hand-off `rejected: payload carries no objectId` — on a payload that has one | `params.metadata` is HubSpot's own event, spelled `objectId`; only `objectId` was read | `A2AEnvelope._from_meta` reads either spelling, metadata first, then the top level |
+| A post sent to the contact route died at `read_lead` as `crm-error: no lead` | the id resolves on both routes, so nothing noticed the record kind | `subscriptionType` -> `record_kind()`; the wrong route now refuses at the door and names the right one |
+| One campaign froze the whole process, `/health` included | `research_run` / `research_campaign` / `mcp_tools` were `async def` doing blocking I/O, so they ran ON the event loop | plain `def` — Starlette offloads those to a threadpool (`/health` 2.05s → 0.06s under load) |
+| `secret_resolved` printed `secret=<redacted>` — the one field it exists for | the redactor matched substrings, so it blanked the credential's NAME as well as its value | redact value-holders only; `_secret` / `_source` / `secret` / `credential` are identifiers and print |
+| A lead the write tool could not accept reported `status: completed, error: ""` | `WriteResult.ok` treated a bad-data skip the same as "nothing needed doing" | new `not_writable` status; `skipped` now means only `skip_if_context_present` |
+| `limit: "all"` from the gateway was a 500 | `int()` on webhook metadata inside the route handler | `A2AEnvelope._int`, bounded 1..1000 |
+| A background run that raised left no record at all | `background.add_task(runner, ...)` — the gateway already had `accepted` | `_guarded()` emits `run_crashed` with the reason, then re-raises |
+| `LQABR_RESEARCH_SEARCH_ENABLED=0` still ran (and billed) 5 searches per lead | the web-search tool was attached unconditionally | the tool is attached only when the flag is on |
+| A deploy without `prompts/research.md` wrote notes from two sentences and reported `completed` | `load_system_prompt` caught `OSError` and substituted a 141-char fallback for the 1,496-char contract | it raises now — the prompt file IS the contract, and a broken deployment fails on the first lead |
+| Every response reported `searches: 0` | the count was computed, carried and logged, then dropped at the Composer boundary — `ResearchNote` had no field for it | `ResearchNote.searches`, threaded to the response |
+| The MCP handshake announced version `0.1` while six literals said `0.1.0` | `VERSION` existed, was empty of readers, and every place spelled its own | `research_core.__version__` / `SERVICE_NAME`, read from `VERSION`; a test fails the build on a new literal |
+| `2 validation errors for call[get_blog_summary]: objectId Missing required argument / object_id Unexpected keyword argument` | the MCP container renamed its own argument mid-day — `object_id` worked at 05:42, was rejected by 08:42 | the name is `settings.mcp_object_id_arg` (`LQABR_RESEARCH_MCP_OBJECT_ID_ARG`, default `objectId`), never a literal. The next rename is a config flip |
 | `bash\r: No such file` | CRLF line endings on a `.sh` | `.gitattributes` pins `*.sh` to LF; never write these files from Windows text mode |
 
 ## 6. Observability
 
 Three JSON streams to stdout, one `run_id` per campaign:
 
-- **process** — the steps: `started` / `ok` / `failed` / `skipped` / `degraded`
-- **audit** — every outbound call: service, endpoint, status, attempt, ms, and
-  the credential's **name**, never its value
+- **process** — the steps: `step_in` / `step_out` around every stage, plus the
+  decisions between them (`ok` / `failed` / `skipped` / `degraded`)
+- **audit** — every outbound call: service, endpoint, status, attempt, ms, the
+  **parameters it was made with**, and the credential's name — never its value
 - **system** — startup and config
+
+**Every step is framed** by `with obs.step(...)`: `step_in` names what it was
+handed, `step_out` names what it produced and how long it took. The frame closes
+itself — on an early return, and on an exception, which is recorded as the
+failure it is before it propagates — so a step that opens can never be left
+open. Between them sit the details:
+`model_request` (model, `max_tokens`, the web-search tool and its `max_uses`,
+prompt/system sizes and previews), `model_response` (stop reason, token counts,
+searches, sources, a preview of the text) and `context_write_start` (the tool,
+the property, and every argument, with the note as `[N chars] head…`).
+
+Text payloads appear as length-marked `*_preview` fields — enough to see what
+was asked and what came back, never a 4,000-character block in the middle of a
+run. `LQABR_RESEARCH_LOG_DETAIL=0` drops previews and parameter bags.
 
 `LQABR_RESEARCH_LOG_FORMAT` = `auto` (default) / `text` / `json`. **auto** means
 readable text when stdout is a terminal, JSON when it is not — so Cloud Run
 keeps its structured fields and a human gets something legible. **The log file
-is always JSON.**
+is always JSON, with every field, previews included.**
 
 ```
-13:10:23 ✓ campaign_leads_found     industry=FINANCIAL_SERVICES leads_found=5
-13:10:23 · lead 1/5    533970643697  working…
-13:10:47 → anthropic POST messages.create 200 20738ms
-13:10:50 ✓ lead 1/5    533970643697 completed chars=3557  (4 left)
+04:34:03 * campaign_start           objectId=329473274558 model=claude-sonnet-4-6 lead_lookup=hubspot_direct dry_run=False
+04:34:03 > IN  read_blog            objectId=329473274558 via=mcp tool=get_blog_summary url=http://localhost:8080/mcp
+04:34:03 * mcp_tool_call            tool=get_blog_summary arguments={objectId=329473274558} timeout_s=60
+04:34:04 -> mcp       POST http://localhost:8080/mcp 200 1488ms tool=get_blog_summary objectId=329473274558
+04:34:05 * mcp_tool_result          tool=get_blog_summary attempt=1 kind=object keys=[found, summary, ticket_hs_id +1]
+           result_preview: {'found': True, 'summary': {'blog_summary': 'Grounding an AI system in clinical documents...
+04:34:05 < OUT read_blog            ok 1501ms blog_industry=HEALTHCARE summary_chars=278 ticket_id=329473274558
+           summary_preview: Grounding an AI system in clinical documents needs more than good retrieval: permission-aware...
+04:34:05 > IN  list_leads           industry=HEALTHCARE limit=100 via=hubspot_direct
+04:34:07 -> hubspot   POST https://api.hubapi.com/crm/v3/objects/companies/search 200 671ms filter=industry EQ HEALTHCARE limit=100
+04:34:07 + industry_companies_found industry=HEALTHCARE count=5 companies=[339297322741, 339297323706 +3]
+04:34:11 < OUT list_leads           ok 6144ms leads_found=5 leads=[533990588137, 533994194677 +3]
+
+04:34:11 * lead 1/5    533990588137  working...
+04:34:11 > IN  read_lead            objectId=533990588137 via=mcp tool=get_lead_profile
+04:34:12 -> mcp       POST http://localhost:8080/mcp 200 1682ms tool=get_lead_profile objectId=533990588137
+04:34:12 < OUT read_lead            ok 1688ms name=Govardhan Terli company=Health Catalyst writable_missing=none
+04:34:12 > IN  research             objectId=533990588137 company=Health Catalyst model=claude-sonnet-4-6 target_words=160
+04:34:14 * model_request            model=claude-sonnet-4-6 max_tokens=2000 search_tool=web_search_20250305 search_max_uses=5
+           system_preview: # Research prompt - lead_context You are the Research Agent for a B2B lead-qualification...
+           prompt_preview: Research this lead and write the lead_context note. ## The lead - Name: Govardhan Terli...
+04:34:34 -> anthropic POST messages.create 200 20840ms model=claude-sonnet-4-6 max_tokens=2000 prompt_chars=699
+04:34:34 * model_response           stop_reason=end_turn input_tokens=32807 output_tokens=657 searches=3 sources=25 chars=1899
+           text_preview: Here is the `lead_context` note for Govardhan Terli at Health Catalyst: --- Health Catalyst is...
+04:34:34 * compose_preamble_stripped raw_chars=1899 kept_chars=1821 dropped_chars=78
+04:34:34 < OUT research             ok 22258ms chars=1821 words=262 sources=25
+04:34:34 > IN  write_context        objectId=533990588137 tool=upsert_lead_profile property_name=lead_context chars=4035
+04:34:34 * mcp_tool_call            tool=upsert_lead_profile arguments={employee_id=E00010, company_id=C0010,
+                                    decision_maker_flag=Yes, lead_context=[4035 chars] Health Catalyst is a healthcare da...}
+04:34:38 -> mcp       POST http://localhost:8080/mcp 200 3116ms tool=upsert_lead_profile employee_id=E00010 ...
+04:34:38 < OUT write_context        ok 3118ms write_status=written chars=4035
+04:34:38 + run_complete             status=completed write_status=written chars=4035 sources=25
+04:34:38 + lead 1/5    533990588137 completed chars=4035  (4 left)
+
+
+04:34:38 * lead 2/5    533994194677  working...
 ```
 
-Rules the tests enforce: secrets stay redacted in the readable form too; no line
-exceeds the terminal width; a failure `reason` is never truncated away.
+`>` IN / `<` OUT frame a step - its inputs, then its outputs and duration.
+`*` a step detail - `+` succeeded - `!` degraded but continuing - `x` failed -
+`->` an outbound call, with the parameters it was made with. Two blank lines
+close each lead. (A UTF-8 console shows arrows and check marks; a cp1252 one
+gets the ASCII above.)
+
+**One line per fact, and only one.** A step's IN/OUT pair is the narrative;
+`mcp_tool_call` / `mcp_tool_result` and the audit hop are the mechanics beneath
+it. Nothing else re-states them - the layer-level `*_start` / `*_ok` echoes were
+removed once the frame carried the same fields, taking ~9 lines per lead with
+them.
+
+Rules the tests enforce: secrets stay redacted in the readable form too (a token
+*count* is not a token, so `max_tokens` survives); no line exceeds the terminal
+width; a failure `reason` and a payload preview are never truncated away — they
+continue on indented lines.
 
 ## 7. Running it
 
@@ -180,8 +260,10 @@ scanned for narration markers: clean. Earlier: LEGAL_SERVICES → 2 written
 - **No authentication on any route.** Anyone with the URL triggers live CRM
   writes across a whole industry. It is currently reachable over an ngrok
   tunnel.
-- Notes run **~2× the 160-word target** and carry ~25 appended source URLs, so
-  `lead_context` lands at 3.5–4k chars. That is what the Email agent reads.
+- Notes run **~1.4× the 160-word target**. The cited URLs are no longer
+  appended — they were 48% of everything written and the Email agent, the
+  field's only reader, cannot use them; they stay on the `model_response` log
+  line. `lead_context` now lands at ~1.5-2.3k chars of prose.
 - `industry` / `limit` on the campaign route are **unreachable from the
   gateway** — absent from `ALLOWED_METADATA_KEYS`, and the gateway *raises* on
   an extra key. Hand-driven use only.

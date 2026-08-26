@@ -13,7 +13,7 @@ blog_summary written on a Ticket
 
 ## What it does
 
-1. **Reads the lead** — `get_lead_profile(object_id)` → industry, company name,
+1. **Reads the lead** — `get_lead_profile(objectId)` → industry, company name,
    job title, and the three ids the write tool requires back.
 2. **Reads the post** — `get_blog_summary(blog_published_at)` → the summary the
    Summary Agent wrote, plus its industry.
@@ -74,7 +74,7 @@ Headless, one lead:
 
 ```bash
 python3 agents/research/src/agent.py \
-  --object-id 533963448020 --summary-ref-id 330008697562 --dry-run
+  --object-id 533963448020 --summary-object-id 330008697562 --dry-run
 ```
 
 Tests (offline, no credentials) — run from the agent directory, not the repo
@@ -91,8 +91,9 @@ PYTHONPATH=src:packages python -m pytest -q
 `config/config.yaml` is the config map; every value is overridable by a
 `LQABR_RESEARCH_*` environment variable. Full table in `docs/ENV_VARS.md`.
 
-Logs: `logs/agents/research/agent.log` — written by the agent itself, path from
-the config map.
+Logs: `logs/research/` — three files written by the agent itself
+(`research_process.log`, `research_audit.log`, `research_system.log`), joined
+on `run_id`; directory from the config map.
 
 ## Docs
 

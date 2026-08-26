@@ -86,7 +86,14 @@ LQABR_RESEARCH_SKIP_IF_CONTEXT_PRESENT=0
 # auto = readable on a terminal, JSON when piped or on Cloud Run.
 LQABR_RESEARCH_LOG_FORMAT=auto
 LQABR_RESEARCH_LOG_LEVEL=INFO
-LQABR_RESEARCH_LOG_FILE=logs/agents/research/agent.log
+# One directory, three files: research_process.log, research_audit.log,
+# research_system.log. Relative paths resolve from the repo root.
+LQABR_RESEARCH_LOG_DIR=logs/research
+# terse | normal | debug. debug trims nothing — full prompt, full note, full
+# params — so do not leave it on, and never set it on a shared box.
+LQABR_RESEARCH_LOG_MODE=normal
+# LQABR_RESEARCH_LOG_FILE is DEPRECATED: it forces all three streams back into
+# one file and overrides LOG_DIR. Left unset on purpose.
 EOF
 
 chmod 600 "$ENV_FILE" 2>/dev/null || true

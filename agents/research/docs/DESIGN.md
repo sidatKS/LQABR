@@ -36,9 +36,9 @@ A dispatch carries:
 
 | Metadata | Is | Used for |
 | --- | --- | --- |
-| `object_id` | the **Contact** record id | `get_lead_profile` → industry, company |
+| `objectId` | the **Contact** record id | `get_lead_profile` → industry, company |
 | `blog_published_at` | the post's publication timestamp | `get_blog_summary` → the summary |
-| `summary_ref_id` | the blog **Ticket** id | correlation in the audit trail |
+| `summary_objectId` | the blog **Ticket** id | correlation in the audit trail |
 
 `blog_published_at` was **added to the gateway on 2026-08-22** for this agent.
 The reason is a contract mismatch worth remembering: the gateway knows the
@@ -49,7 +49,7 @@ it could not resolve — so the gateway now reads both properties in the one
 ticket GET it was already making, and puts the timestamp on the wire.
 
 A timestamp is an identifier, not lead-profile data, so it passes the gateway's
-payload guard on the same grounds as `summary_ref_id`. The guard still refuses
+payload guard on the same grounds as `summary_objectId`. The guard still refuses
 anything that looks like profile data — that is verified by test.
 
 ## HubSpot access: the MCP is the only door
@@ -95,7 +95,7 @@ which hop broke:
 
 | Step | Failure | Reason prefix |
 | --- | --- | --- |
-| `input` | no `object_id` / no `blog_published_at` | `bad-data:` |
+| `input` | no `objectId` / no `blog_published_at` | `bad-data:` |
 | `read_lead` | the MCP has no such lead | `crm-error:` |
 | `read_blog` | no summary at that timestamp | `crm-error:` |
 | `research` | search or model failed | the provider's message |

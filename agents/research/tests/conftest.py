@@ -19,6 +19,9 @@ def _clean_env(monkeypatch):
         if key.startswith("LQABR_RESEARCH_") or key == "ANTHROPIC_API_KEY":
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("LQABR_RESEARCH_LOG_FILE", "")
+    # ...and no test run leaks INTO the real log directory. Empty means
+    # console only; a sink test that wants files passes its own tmp dir.
+    monkeypatch.setenv("LQABR_RESEARCH_LOG_DIR", "")
     yield
 
 
@@ -30,7 +33,7 @@ def settings() -> Settings:
 @pytest.fixture
 def lead() -> LeadFacts:
     return LeadFacts(
-        object_id="533963448020", first_name="Mahesh", last_name="Puliganti",
+        objectId="533963448020", first_name="Mahesh", last_name="Puliganti",
         job_title="President", industry="HEALTHCARE", company="Axiom Law",
         company_about="Alternative legal services provider.",
         company_website="https://www.axiomlaw.com",

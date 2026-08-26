@@ -133,10 +133,10 @@ One post becomes `lead_context` for every lead in its industry:
 ```bash
 curl -s -X POST localhost:8086/research/campaign \
   -H 'Content-Type: application/json' \
-  -d '{"object_id":"330008697562"}' | python3 -m json.tool
+  -d '{"objectId":"330008697562"}' | python3 -m json.tool
 ```
 
-`object_id` is the **blog post's** record id. Expect `leads_found`, `written`,
+`objectId` is the **blog post's** record id. Expect `leads_found`, `written`,
 `failed`, `skipped`, and a row per lead. Watch the console: it prints
 `lead 3/5 ... (2 left)` as it goes. Roughly 30s per lead.
 
@@ -145,10 +145,10 @@ One lead only:
 ```bash
 curl -s -X POST localhost:8086/research/run \
   -H 'Content-Type: application/json' \
-  -d '{"object_id":"533970643697","summary_ref_id":"330008697562"}'
+  -d '{"objectId":"533970643697","summary_objectId":"330008697562"}'
 ```
 
-Here `object_id` is the **contact** and `summary_ref_id` is the post. They are
+Here `objectId` is the **contact** and `summary_objectId` is the post. They are
 different records — swapping them reads the wrong row.
 
 ## Tests — no credentials, no network
@@ -176,20 +176,69 @@ PYTHONPATH=src:packages python3 -m pytest -q
 
 ## Reading the logs
 
-One readable line per event; the log file stays JSON.
+One readable line per event, and every step framed by an IN/OUT pair: what it
+was handed, what it produced, how long it took. The log file stays JSON.
 
 ```
-13:10:23 ✓ campaign_leads_found     industry=FINANCIAL_SERVICES leads_found=5
-13:10:23 · lead 1/5    533970643697  working…
-13:10:47 → anthropic POST messages.create 200 20738ms
-13:10:50 ✓ lead 1/5    533970643697 completed chars=3557  (4 left)
+04:34:03 * campaign_start           objectId=329473274558 model=claude-sonnet-4-6 lead_lookup=hubspot_direct dry_run=False
+04:34:03 > IN  read_blog            objectId=329473274558 via=mcp tool=get_blog_summary url=http://localhost:8080/mcp
+04:34:03 * mcp_tool_call            tool=get_blog_summary arguments={objectId=329473274558} timeout_s=60
+04:34:04 -> mcp       POST http://localhost:8080/mcp 200 1488ms tool=get_blog_summary objectId=329473274558
+04:34:05 * mcp_tool_result          tool=get_blog_summary attempt=1 kind=object keys=[found, summary, ticket_hs_id +1]
+           result_preview: {'found': True, 'summary': {'blog_summary': 'Grounding an AI system in clinical documents...
+04:34:05 < OUT read_blog            ok 1501ms blog_industry=HEALTHCARE summary_chars=278 ticket_id=329473274558
+           summary_preview: Grounding an AI system in clinical documents needs more than good retrieval: permission-aware...
+04:34:05 > IN  list_leads           industry=HEALTHCARE limit=100 via=hubspot_direct
+04:34:07 -> hubspot   POST https://api.hubapi.com/crm/v3/objects/companies/search 200 671ms filter=industry EQ HEALTHCARE limit=100
+04:34:07 + industry_companies_found industry=HEALTHCARE count=5 companies=[339297322741, 339297323706 +3]
+04:34:11 < OUT list_leads           ok 6144ms leads_found=5 leads=[533990588137, 533994194677 +3]
+
+04:34:11 * lead 1/5    533990588137  working...
+04:34:11 > IN  read_lead            objectId=533990588137 via=mcp tool=get_lead_profile
+04:34:12 -> mcp       POST http://localhost:8080/mcp 200 1682ms tool=get_lead_profile objectId=533990588137
+04:34:12 < OUT read_lead            ok 1688ms name=Govardhan Terli company=Health Catalyst writable_missing=none
+04:34:12 > IN  research             objectId=533990588137 company=Health Catalyst model=claude-sonnet-4-6 target_words=160
+04:34:14 * model_request            model=claude-sonnet-4-6 max_tokens=2000 search_tool=web_search_20250305 search_max_uses=5
+           system_preview: # Research prompt - lead_context You are the Research Agent for a B2B lead-qualification...
+           prompt_preview: Research this lead and write the lead_context note. ## The lead - Name: Govardhan Terli...
+04:34:34 -> anthropic POST messages.create 200 20840ms model=claude-sonnet-4-6 max_tokens=2000 prompt_chars=699
+04:34:34 * model_response           stop_reason=end_turn input_tokens=32807 output_tokens=657 searches=3 sources=25 chars=1899
+           text_preview: Here is the `lead_context` note for Govardhan Terli at Health Catalyst: --- Health Catalyst is...
+04:34:34 * compose_preamble_stripped raw_chars=1899 kept_chars=1821 dropped_chars=78
+04:34:34 < OUT research             ok 22258ms chars=1821 words=262 sources=25
+04:34:34 > IN  write_context        objectId=533990588137 tool=upsert_lead_profile property_name=lead_context chars=4035
+04:34:34 * mcp_tool_call            tool=upsert_lead_profile arguments={employee_id=E00010, company_id=C0010,
+                                    decision_maker_flag=Yes, lead_context=[4035 chars] Health Catalyst is a healthcare da...}
+04:34:38 -> mcp       POST http://localhost:8080/mcp 200 3116ms tool=upsert_lead_profile employee_id=E00010 ...
+04:34:38 < OUT write_context        ok 3118ms write_status=written chars=4035
+04:34:38 + run_complete             status=completed write_status=written chars=4035 sources=25
+04:34:38 + lead 1/5    533990588137 completed chars=4035  (4 left)
+
+
+04:34:38 * lead 2/5    533994194677  working...
 ```
 
-`·` step · `✓` succeeded · `!` degraded but continuing · `✗` failed ·
-`→` an outbound call.
+`>` IN / `<` OUT frame a step - its inputs, then its outputs and duration.
+`*` a step detail - `+` succeeded - `!` degraded but continuing - `x` failed -
+`->` an outbound call, with the parameters it was made with. Two blank lines
+close each lead. (A UTF-8 console shows arrows and check marks; a cp1252 one
+gets the ASCII above.)
 
-Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The file at
-`logs/agents/research/agent.log` is always JSON, whatever the console shows.
+**One line per fact, and only one.** A step's IN/OUT pair is the narrative;
+`mcp_tool_call` / `mcp_tool_result` and the audit hop are the mechanics beneath
+it. Nothing else re-states them - the layer-level `*_start` / `*_ok` echoes were
+removed once the frame carried the same fields, taking ~9 lines per lead with
+them.
+
+`LQABR_RESEARCH_LOG_MODE` is the detail axis — `terse` | `normal` | `debug`.
+`terse` drops the previews and the parameter bags; `debug` trims nothing at
+all, so do not leave it on and never set it on a shared box. (The old
+`LQABR_RESEARCH_LOG_DETAIL=0` still works and means `terse`.)
+
+Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The files
+under `LQABR_RESEARCH_LOG_DIR` (default `logs/research/`) are always JSON,
+whatever the console shows — `research_process.log`, `research_audit.log` and
+`research_system.log`, joined on `run_id`.
 
 ---
 

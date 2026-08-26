@@ -90,7 +90,11 @@ def build_root_agent():
     from google.adk.models.lite_llm import LiteLlm
 
     settings = get_settings()
-    configure_logging(settings.log_level, settings.log_file)
+    configure_logging(settings.log_level, settings.log_dir,
+                      settings.log_format,
+                      max_bytes=settings.log_max_bytes,
+                      backups=settings.log_backups,
+                      log_file=settings.log_file, mode=settings.log_mode)
     tools.configure(settings)
 
     resolved = ensure_provider_credentials(settings.model, settings=settings)
@@ -131,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--text", help="text to summarise directly")
     parser.add_argument("--select", default=None, help="path into a JSON payload, e.g. $.data.body")
     parser.add_argument("--method", default="GET", help="HTTP method for --endpoint")
+    parser.add_argument("--debug", action="store_true",
+                        help="log every value whole — full payload, full "
+                             "summary. Credentials stay redacted. Do not use "
+                             "on a shared box.")
     parser.add_argument("--object-id", default="", help="HubSpot record to write the summary to")
     parser.add_argument("--industry", default="", help="industry to write alongside the summary")
     parser.add_argument("--dry-run", action="store_true", help="compute the write, do not send it")
@@ -140,7 +148,13 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["LQABR_SUMMARY_DRY_RUN"] = "1"
 
     settings = get_settings(refresh=True)
-    configure_logging(settings.log_level, settings.log_file)
+    configure_logging(settings.log_level, settings.log_dir,
+                      settings.log_format,
+                      max_bytes=settings.log_max_bytes,
+                      backups=settings.log_backups,
+                      log_file=settings.log_file,
+                      mode="debug" if getattr(args, "debug", False)
+                           else settings.log_mode)
     obs = get_obs(new_run_id(), refresh=True)
 
     if args.url:
