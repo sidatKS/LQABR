@@ -8,9 +8,9 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `LQABR_RESEARCH_MODEL` | `claude-sonnet-4-6` | an `anthropic/`-prefixed value is accepted; the prefix is stripped |
-| `LQABR_RESEARCH_TEMPERATURE` | `1.0` | |
 | `LQABR_RESEARCH_MAX_TOKENS` | `2000` | |
-| `ANTHROPIC_API_KEY` | — | powers **both** the model call and the web search |
+| `ANTHROPIC_API_KEY` | — | Optional override. Normally unset: the key is read from Secret Manager as `LQABR_RESEARCH_MODEL_TOKEN_SECRET`. When set, it wins and the use is logged. |
+| `LQABR_RESEARCH_MODEL_TOKEN_SECRET` | `lqabr-anthropic-api-key` | The model credential's NAME in Secret Manager — never its value. |
 
 ## MCP — the only door to HubSpot
 
@@ -24,6 +24,7 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | `LQABR_RESEARCH_MCP_BACKOFF_BASE_SECONDS` | `1.0` | delay = base · 2^(n−1) |
 | `LQABR_RESEARCH_MCP_BACKOFF_CAP_SECONDS` | `8.0` | |
 | `LQABR_RESEARCH_MCP_RETRYABLE_STATUSES` | `429,500,502,503,504` | 404 is always a session re-init |
+| `LQABR_RESEARCH_MCP_OBJECT_ID_ARG` | `objectId` | what the MCP calls the record id in its tool arguments |
 | `LQABR_RESEARCH_MCP_TOOL_READ_LEAD` | `get_lead_profile` | |
 | `LQABR_RESEARCH_MCP_TOOL_READ_BLOG` | `get_blog_summary` | keyed on `blog_published_at` |
 | `LQABR_RESEARCH_MCP_TOOL_WRITE` | `upsert_lead_profile` | |
@@ -55,14 +56,12 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | --- | --- |
 | `LQABR_RESEARCH_NOTE_TARGET_WORDS` | `160` |
 | `LQABR_RESEARCH_NOTE_MAX_CHARS` | `60000` (HubSpot caps at 65 536) |
-| `LQABR_RESEARCH_INCLUDE_SOURCES` | `1` |
 
 ## Service
 
 | Variable | Default |
 | --- | --- |
 | `PORT` | `8086` |
-| `LQABR_RESEARCH_ROUTES` | `all` (`all` \| `api`) |
 | `LQABR_RESEARCH_ROUTE_A2A` | `/research/a2a` |
 | `LQABR_RESEARCH_ROUTE_RUN` | `/research/run` |
 | `LQABR_RESEARCH_CORS_ORIGINS` | `http://localhost:5173` |
@@ -75,4 +74,6 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | `LQABR_RESEARCH_GCP_PROJECT` | *(empty)* |
 | `LQABR_RESEARCH_LOG_LEVEL` | `INFO` |
 | `LQABR_RESEARCH_LOG_FILE` | `logs/agents/research/agent.log` (relative → repo root; empty disables) |
+| `LQABR_RESEARCH_LOG_FORMAT` | `auto` (`auto` \| `text` \| `json`) — console shape only; the log FILE is always JSON |
+| `LQABR_RESEARCH_LOG_DETAIL` | `1` — step inputs/outputs, call parameters, and length-marked prompt/note previews. `0` = the terser shape |
 | `LQABR_RESEARCH_CONFIG_FILE` | `<agent>/config/config.yaml` |

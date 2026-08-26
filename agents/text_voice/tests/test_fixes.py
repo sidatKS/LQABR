@@ -13,7 +13,7 @@ from lqabr_core.types import VoiceLead
 
 
 def _lead(**kw):
-    base = dict(phone_number="+15555550123", contact_id="C1",
+    base = dict(phone_number="+15555550123", object_id="C1",
                 employee_id="E1", full_name="Ada Lovelace",
                 company_name="Analytical Engines", industry="software",
                 job_title="Engineer")
@@ -67,7 +67,7 @@ def test_no_sleep_after_final_attempt(monkeypatch):
 class _FakeMcp:
     def __init__(self, lead): self._lead, self.recorded = lead, []
     def get_lead(self, cid): return self._lead
-    def record_call_outcome(self, cid, outcome, detail=None):
+    def record_call_outcome(self, cid, outcome, detail=None, current=None):
         self.recorded.append((cid, outcome))
         return {"status": "ok", "events": [], "failures": [],
                 "probability": 60, "stage": "x", "promoted_to_scheduling": True}

@@ -67,12 +67,12 @@ ALLOWED_METADATA_KEYS = frozenset({
     # Audience-resolved research hand-off (Rev 5): the blog Ticket id, so the
     # agent can read the summary. Still an id, never lead-profile data.
     "summary_ref_id",
-    # ADDED 2026-08-22: the blog post's publication timestamp. The central MCP
-    # reads a blog summary by blog_published_at (get_blog_summary), NOT by
-    # ticket id, so the research agent cannot fetch the summary from
-    # summary_ref_id alone. A timestamp is an identifier, not lead-profile
-    # data, so it is admissible under the same rule as summary_ref_id.
-    "blog_published_at",
+    # Blog-ticket hand-off (audience disabled): the ticket's own fields under
+    # HubSpot's ORIGINAL names, so the agent receives the ticket exactly as
+    # HubSpot sent it. The correlation id rides along as ``triggerId`` (camelCase)
+    # instead of the snake_case ``trigger_id`` the other agents get.
+    "objectId", "propertyName", "subscriptionType", "eventId", "triggerId",
+    "propertyValue", "portalId", "occurredAt", "attemptNumber", "changeSource",
 })
 
 
@@ -129,6 +129,11 @@ class A2AClient:
         metadata = A2AClient._guard_metadata(dict(metadata or {}))
         if not trigger_id:
             raise PayloadGuardError("a dispatch must carry a trigger_id")
+        # The correlation id is injected into params.metadata. The blog-ticket
+        # hand-off carries it as camelCase ``triggerId`` already, so skip the
+        # snake_case ``trigger_id`` for that path; every other agent still gets
+        # ``trigger_id`` exactly as before.
+        _correlation = {} if "triggerId" in metadata else {"trigger_id": trigger_id}
         envelope = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
@@ -139,7 +144,7 @@ class A2AClient:
                     "parts": [{"kind": "text", "text": trigger_id}],
                     "messageId": str(uuid.uuid4()),
                 },
-                "metadata": {**metadata, "trigger_id": trigger_id},
+                "metadata": {**metadata, **_correlation},
             },
         }
 
@@ -152,16 +157,32 @@ class A2AClient:
         # metadata, which _guard_metadata has just checked against
         # ALLOWED_METADATA_KEYS. The trigger-only guarantee is untouched.
         #
+        # HubSpot-shaped hand-off (research): params.metadata already carries
+        # the event under HubSpot's own names plus triggerId. Mirroring would
+        # repeat the same record id in two more spellings, which is what
+        # confused the agents. One id, one spelling -- send it as it stands.
+        if "objectId" in metadata:
+            return envelope
+
         # Remove this block once the agents read params.metadata.object_id.
         envelope["trigger_id"] = trigger_id
-        for snake, camel in (("object_id", "objectId"), ("object_ids", "objectIds"),
-                             ("batch_id", "batchId"), ("summary_ref_id", "summaryRefId")):
-            value = metadata.get(snake)
-            if value is not None:
-                if snake == "object_ids":
-                    value = list(value)
-                envelope[snake] = value
-                envelope[camel] = value
+        object_id = metadata.get("object_id") or metadata.get("objectId")
+        if object_id is not None:
+            envelope["object_id"] = object_id
+            envelope["objectId"] = object_id
+        # Grouped hand-off: the same mirroring for the plural form.
+        object_ids = metadata.get("object_ids")
+        if object_ids is not None:
+            envelope["object_ids"] = list(object_ids)
+            envelope["objectIds"] = list(object_ids)
+        batch_id = metadata.get("batch_id")
+        if batch_id is not None:
+            envelope["batch_id"] = batch_id
+            envelope["batchId"] = batch_id
+        summary_ref_id = metadata.get("summary_ref_id")
+        if summary_ref_id is not None:
+            envelope["summary_ref_id"] = summary_ref_id
+            envelope["summaryRefId"] = summary_ref_id
 
         return envelope
 
@@ -171,6 +192,7 @@ class A2AClient:
         endpoint: str,
         trigger_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        on_send: Optional[Any] = None,
     ) -> A2AResponse:
         """Hand off one trigger. Never raises for a remote failure.
 
@@ -178,8 +200,17 @@ class A2AClient:
         row wants response status, latency and retry count recorded even —
         especially — when the hand-off failed. The caller decides what a
         failure means for the HTTP response to HubSpot.
+
+        ``on_send``, if given, is called once with the exact body about to be
+        POSTed -- after the payload guard has passed, before the network call,
+        and reused as-is across retries. It exists so a caller can log the
+        literal wire body instead of reconstructing one, which would silently
+        drift (a second ``build_message`` call mints fresh ``id``/``messageId``
+        values that were never actually sent).
         """
         body = self.build_message(trigger_id, metadata)
+        if on_send is not None:
+            on_send(body)
         # Measure the JSON that actually goes on the wire, not Python's repr —
         # otherwise the "light payload" number is off by whatever repr adds.
         payload_size = len(json.dumps(body).encode("utf-8"))

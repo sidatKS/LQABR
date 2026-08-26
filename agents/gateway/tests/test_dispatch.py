@@ -8,6 +8,7 @@ that could identify or describe a lead.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 import requests
@@ -23,6 +24,22 @@ from soloai.protocols.a2a import (
 @pytest.fixture()
 def decision(router):
     return router.route_batch([make_event("lqabr_email_status", "OPENED")]).decisions[0]
+
+
+@pytest.fixture()
+def generic_decision(decision):
+    """A decision for a hypothetical agent NOT in {research, email, voice}.
+
+    All three of the registry's real agents are on the HubSpot-shaped
+    metadata branch as of 25-Aug-2026 (research/email/voice, in that order --
+    see dispatch.py::_metadata). The plain generic branch below it -- the
+    original Rev-3 {trigger_id, object_id, run_id, source, gateway_version}
+    shape, plus the include_routing_basis opt-in -- is therefore unreachable
+    through the real registry today, but it is still real code (it is what a
+    5th agent onboarded without HubSpot-shaped treatment would get), so it
+    still needs a decision that actually reaches it to stay covered."""
+    return replace(decision, agent="future-agent",
+                   endpoint="https://future-agent.example.test/a2a")
 
 
 def _client(session, **kw):
@@ -72,6 +89,20 @@ class TestA2AMessage:
             "batch_id", "object_ids", "batch_size", "trigger_ids",
             # Rev 5 audience resolution: the blog Ticket id travels on the wire.
             "summary_ref_id",
+            # Blog-ticket research hand-off (audience disabled): the HubSpot
+            # event forwarded VERBATIM under HubSpot's original names, plus the
+            # correlation id as camelCase ``triggerId``. Emitted ONLY for
+            # agent == "research", and for that route the top-level mirrors are
+            # suppressed -- one record id, one spelling (25-Aug-2026).
+            #
+            # propertyValue IS forwarded here, reversing the rule above for this
+            # route only: on a ticket.propertyChange the value is blog copy the
+            # research agent was written to consume, not a lead field. It stays
+            # refused for every other agent (see the parametrized test below,
+            # which still rejects the snake_case property_value).
+            "objectId", "propertyName", "propertyValue", "subscriptionType",
+            "portalId", "eventId", "occurredAt", "attemptNumber",
+            "changeSource", "triggerId",
         }
 
     @pytest.mark.parametrize("field", ["property_name", "property_value"])
@@ -97,39 +128,55 @@ class TestA2AMessage:
         assert result.payload_size_bytes < 1024
 
     def test_default_payload_is_the_trigger_id_the_record_id_and_correlation(
-            self, decision, fake_session_factory, audit):
+            self, generic_decision, fake_session_factory, audit):
+        """Covers the plain generic branch -- unreachable through the real
+        registry now that research/email/voice are all HubSpot-shaped, see
+        the generic_decision fixture above."""
         session = fake_session_factory()
-        gw_dispatch.Dispatcher(_client(session), audit).dispatch(decision, "run-1")
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(generic_decision, "run-1")
         metadata = session.last_body["params"]["metadata"]
         assert set(metadata) == {"trigger_id", "object_id", "run_id", "source",
                                  "gateway_version"}
 
     def test_the_record_id_is_the_one_the_agent_can_actually_resolve(
-            self, decision, fake_session_factory, audit):
+            self, generic_decision, fake_session_factory, audit):
         """D-05. This is the whole point of the change: the agent does
         GET /crm/v3/objects/contacts/<object_id> and has the lead. Neither the
-        trigger_id nor HubSpot's eventId is stored anywhere in the CRM."""
+        trigger_id nor HubSpot's eventId is stored anywhere in the CRM.
+        Generic branch only -- research/email/voice send objectId (HubSpot's
+        own spelling) inside params.metadata instead, see test_dispatch.py's
+        agent-specific tests below."""
         session = fake_session_factory()
-        gw_dispatch.Dispatcher(_client(session), audit).dispatch(decision, "run-1")
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(generic_decision, "run-1")
         assert session.last_body["params"]["metadata"]["object_id"] == "701"
 
     def test_opting_into_the_routing_basis_adds_only_the_route_id(
-            self, decision, fake_session_factory, audit):
+            self, generic_decision, fake_session_factory, audit):
+        """include_routing_basis only affects the generic branch -- research,
+        email and voice never look at it (they send propertyName/propertyValue
+        unconditionally, as HubSpot sent them, regardless of this setting)."""
         session = fake_session_factory()
         gw_dispatch.Dispatcher(_client(session), audit,
-                               include_routing_basis=True).dispatch(decision, "run-1")
+                               include_routing_basis=True).dispatch(generic_decision, "run-1")
         metadata = session.last_body["params"]["metadata"]
         assert metadata["route_id"] == "R3-email-opened"
         assert "property_name" not in metadata and "property_value" not in metadata
 
     def test_correlation_headers_let_the_sidecar_log_be_joined(
-            self, decision, fake_session_factory, audit):
+            self, generic_decision, fake_session_factory, audit):
         """config/agentgateway.yaml reads these off the request; without them
-        its access-log trigger_id/run_id fields are always null."""
+        its access-log trigger_id/run_id fields are always null.
+
+        KNOWN GAP, not introduced here: x-lqabr-run-id is read off
+        metadata['run_id'] in a2a.py::send_trigger, and the HubSpot-shaped
+        branch (research/email/voice) has never put run_id in metadata --
+        true for research since Rev 5, and now equally true for email and
+        voice since 25-Aug-2026. For those three agents this header is
+        always empty in practice. Flagged, not fixed here."""
         session = fake_session_factory()
-        gw_dispatch.Dispatcher(_client(session), audit).dispatch(decision, "run-1")
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(generic_decision, "run-1")
         headers = session.calls[-1]["headers"]
-        assert headers["x-lqabr-trigger-id"] == decision.trigger_id
+        assert headers["x-lqabr-trigger-id"] == generic_decision.trigger_id
         assert headers["x-lqabr-run-id"] == "run-1"
 
     def test_payload_size_measures_the_json_not_the_repr(
@@ -162,6 +209,48 @@ class TestDispatch:
         assert set(result.as_dict()) == {
             "trigger_id", "agent", "dispatched", "status", "latency_ms",
             "retries", "error"}
+
+    def test_email_gets_the_hubspot_event_verbatim_no_mirrors(
+            self, router, fake_session_factory, audit):
+        """Email 25-Aug-2026, Saroja's instruction: the email hand-off carries
+        exactly the HubSpot event under HubSpot's own field names, the same
+        treatment research already gets -- nothing gateway-invented, and none
+        of the old top-level object_id/objectId/trigger_id mirrors."""
+        email_decision = router.route_batch(
+            [make_event("lead_context", "notes about the lead")]).decisions[0]
+        assert email_decision.agent == "email"
+        session = fake_session_factory()
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(email_decision, "run-1")
+        body = session.last_body
+        assert set(body) == {"jsonrpc", "id", "method", "params"}, (
+            "no top-level mirrors for email any more")
+        metadata = body["params"]["metadata"]
+        assert metadata["objectId"] == "701"
+        assert metadata["propertyName"] == "lead_context"
+        assert metadata["propertyValue"] == "notes about the lead"
+        assert metadata["subscriptionType"] == "contact.propertyChange"
+        assert "object_id" not in metadata and "trigger_id" not in metadata
+
+    def test_voice_gets_the_hubspot_event_verbatim_no_mirrors(
+            self, router, fake_session_factory, audit):
+        """Voice 25-Aug-2026, same instruction as email: the voice hand-off
+        carries exactly the HubSpot event under HubSpot's own field names --
+        nothing gateway-invented, and none of the old top-level
+        object_id/objectId/trigger_id mirrors."""
+        voice_decision = router.route_batch(
+            [make_event("lqabr_email_status", "OPENED")]).decisions[0]
+        assert voice_decision.agent == "voice"
+        session = fake_session_factory()
+        gw_dispatch.Dispatcher(_client(session), audit).dispatch(voice_decision, "run-1")
+        body = session.last_body
+        assert set(body) == {"jsonrpc", "id", "method", "params"}, (
+            "no top-level mirrors for voice any more")
+        metadata = body["params"]["metadata"]
+        assert metadata["objectId"] == "701"
+        assert metadata["propertyName"] == "lqabr_email_status"
+        assert metadata["propertyValue"] == "OPENED"
+        assert metadata["subscriptionType"] == "contact.propertyChange"
+        assert "object_id" not in metadata and "trigger_id" not in metadata
 
 
 class TestRetries:

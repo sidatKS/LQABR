@@ -12,9 +12,14 @@ Give it ~10 seconds: it imports the SDK and runs MCP tool discovery before it
 answers. A health check earlier than that reports "down" on an agent that is
 merely still booting.
 
-Prerequisite: the **HubSpot MCP container must be up** on `:8091`
-(`bash mcp/run.sh`). The agent starts without it — `startup_check: warn` — but
-every run will fail at the first read.
+Prerequisite: the **HubSpot MCP container must be up**. In practice it runs on
+`:8080` (`tne736/lqabr-mcp-server:latest`) — note the code *default* is `:8091`,
+so the URL is set explicitly in `.env`. `setup_env.sh` writes `:8080`; if you
+build `.env` by hand, check `mcp.url` in `/health` matches where the container
+actually is. The agent starts without it — `mcp_startup_check: warn` — but
+every run then fails at the first read.
+
+Starting the container from scratch: see `SETUP.md`.
 
 ## Verify
 
@@ -26,15 +31,15 @@ curl -s localhost:8086/mcp/tools | python3 -m json.tool     # missing: []
 Then a dry run — computes the note, logs the write, sends nothing:
 
 ```bash
-LQABR_RESEARCH_DRY_RUN=1 python agents/research/src/agent.py \
-  --object-id <contact id> --blog-published-at <timestamp>
+LQABR_RESEARCH_DRY_RUN=1 python3 agents/research/src/agent.py \
+  --object-id <CONTACT id> --summary-object-id <BLOG POST id>
 ```
 
 Then live:
 
 ```bash
 curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
-  -d '{"object_id":"<contact id>","blog_published_at":"<timestamp>"}' \
+  -d '{"objectId":"<contact id>","blog_published_at":"<timestamp>"}' \
   | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"], "|", d["hubspot"]["status"], "|", d["error"][:120])'
 ```
 
@@ -44,7 +49,13 @@ curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
 tail -f logs/agents/research/agent.log
 
 # just the outcome of the last run
-grep -E '"event":"(run_complete|run_failed|context_write_)' logs/agents/research/agent.log | tail -3
+grep -E '"event":"(run_complete|run_failed|campaign_complete)' logs/agents/research/agent.log | tail -3
+
+# every step of the last run, with its inputs, outputs and duration
+grep '"event":"step_' logs/agents/research/agent.log | tail -20
+
+# what was sent to the model, and what it cost
+grep -E '"event":"(model_request|model_response)"' logs/agents/research/agent.log | tail -2
 ```
 
 Streams: `process` (what it did and why), `audit` (every outbound hop —

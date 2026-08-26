@@ -7,6 +7,7 @@ answer is bounded — never how the vendor is reached.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -23,21 +24,88 @@ except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
     from ..packages.research_core.types import (  # type: ignore
         BlogFacts, LeadFacts, ResearchNote)
 
+# A line that announces the note rather than being it: "Here is the
+# lead_context note:", "Below is the note for Brex:". Matched at any line
+# start, not just the first — the model often writes a research recap FIRST
+# and only then announces the note, so the opener is mid-text.
+#: An announcement, in any of the three shapes the model actually uses:
+#:
+#:   "Here is the lead_context note:"        an opener
+#:   "**Important note to the email writer:**"  an aside, bolded, mid-text
+#:   "⚠️ **Note before the note:**"            the same with a warning glyph
+#:
+#: The third and second shapes were added after a live campaign (2026-08-25)
+#: put 2,287 characters of the model's commentary about a mis-tagged blog post
+#: into two contacts' `lead_context`, where the Email agent reads it.
+_PREAMBLE = re.compile(
+    r"^[ \t]*(?:[^\w\s]{1,3}[ \t]*)?(?:\*{0,2}|_{0,2})"
+    r"(?:here(?:'s| is)\b|below is\b|i'?ll\b|i have\b|i've\b"
+    r"|let me\b|now let me\b|i'?m going to\b|sure[,!.]|certainly[,!.]"
+    r"|(?:an? )?(?:important|quick|brief)? ?note\b"
+    r"|(?:a )?(?:caveat|warning|disclaimer|heads[- ]up)\b)"
+    r"[^\n]{0,200}?:\**[ \t]*$",
+    re.IGNORECASE | re.MULTILINE)
+
+# A markdown rule the model puts between the announcement and the note.
+_LEADING_RULE = re.compile(r"\A(?:\s*(?:-{3,}|\*{3,}|_{3,})\s*\n)+")
+
+#: The same announcement written INLINE, so the commentary continues on the
+#: line rather than after it: `**Important note to the email writer:** The
+#: published post describes...`. The colon is mid-line, so `_PREAMBLE` (which
+#: anchors on end-of-line) cannot see it — the whole PARAGRAPH is the aside.
+_ASIDE = re.compile(
+    r"\A[ \t]*(?:[^\w\s]{1,3}[ \t]*)?(?:\*{0,2}|_{0,2})"
+    r"(?:(?:an? )?(?:important|quick|brief)? ?note\b"
+    r"|(?:a )?(?:caveat|warning|disclaimer|heads[- ]up)\b"
+    r"|here(?:'s| is)\b|below is\b)[^\n]{0,140}?:",
+    re.IGNORECASE)
+
+
+def _drop_leading_asides(text: str) -> str:
+    """Whole paragraphs the model addressed to us rather than to the record."""
+    paragraphs = re.split(r"\n\s*\n", text)
+    while len(paragraphs) > 1 and _ASIDE.match(paragraphs[0]):
+        paragraphs = paragraphs[1:]
+    return "\n\n".join(paragraphs).strip()
+
+
+def strip_preamble(text: str) -> str:
+    """Keep only the note, dropping anything the model said about writing it.
+
+    Takes what follows the LAST "here is the note:" style line, because a
+    recap paragraph before that line is commentary, not context. Guarded: the
+    opener must end in a colon at end-of-line, and at least 80 characters must
+    survive — otherwise the original is returned untouched, so a note that
+    merely contains such a phrase is never truncated.
+    """
+    tail = text
+    matches = list(_PREAMBLE.finditer(text))
+    if matches:
+        tail = text[matches[-1].end():]
+    tail = _LEADING_RULE.sub("", tail.lstrip("\n")).strip()
+    tail = _LEADING_RULE.sub("", _drop_leading_asides(tail)).strip()
+    return tail if len(tail) >= 80 else text.strip()
+
+
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "research.md"
-
-_FALLBACK_SYSTEM = (
-    "You are a B2B research assistant. Ground every claim in a search result; "
-    "never invent facts about a company. Write one plain-prose paragraph."
-)
-
 
 def load_system_prompt(settings: Settings) -> str:
     """The prompt file is the contract with the model — editing copy is a file
-    change, not a code change."""
+    change, not a code change.
+
+    It RAISES when the file is missing. There used to be a 141-character
+    fallback here against a 1,496-character contract, substituted silently: a
+    deploy that shipped without `prompts/research.md` would write notes from
+    two sentences into live CRM records and report `completed` on every one.
+    A broken deployment should fail, loudly, on the first lead.
+    """
     try:
         text = _PROMPT_PATH.read_text(encoding="utf-8")
-    except OSError:
-        return _FALLBACK_SYSTEM
+    except OSError as exc:
+        raise SearchError(
+            f"the model contract is missing: {_PROMPT_PATH} could not be read "
+            f"({exc.strerror}). This file IS the prompt — the agent will not "
+            "research from a substitute.") from exc
     return text.replace("{target_words}", str(settings.note_target_words))
 
 
@@ -101,20 +169,23 @@ class Composer:
         prompt = build_query(lead, blog)
         system = load_system_prompt(settings)
 
-        self._obs.process.emit("compose_start", object_id=lead.object_id,
-                               company=lead.company, industry=lead.industry,
-                               blog_chars=len(blog.blog_summary),
-                               search_enabled=settings.search_enabled)
-
         findings = self._provider.research(prompt, system=system)
+        cleaned = strip_preamble(findings.text)
+        if len(cleaned) != len(findings.text):
+            # The model narrated before writing. Say how much was dropped —
+            # a preamble stripper that starts eating the note must be visible.
+            self._obs.process.emit("compose_preamble_stripped",
+                                   objectId=lead.objectId,
+                                   raw_chars=len(findings.text),
+                                   kept_chars=len(cleaned),
+                                   dropped_chars=len(findings.text) - len(cleaned))
         note = ResearchNote(
-            text=findings.text.strip(),
-            sources=list(findings.sources) if settings.include_sources else [],
+            text=cleaned,
+            sources=list(findings.sources),
+            searches=findings.searches,
         )
-        self._obs.process.emit("compose_ok", object_id=lead.object_id,
-                               chars=len(note.text), sources=len(note.sources),
-                               searches=findings.searches)
         return note
 
 
-__all__ = ["Composer", "build_query", "load_system_prompt", "SearchError"]
+__all__ = ["Composer", "build_query", "load_system_prompt",
+           "strip_preamble", "SearchError"]
