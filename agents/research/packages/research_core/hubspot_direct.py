@@ -27,10 +27,10 @@ from typing import Any, Dict, List, Optional
 import requests
 
 try:
-    from .secrets import SecretError, resolve_secret
+    from .secrets import resolve_secret
     from .settings import Settings, get_settings
 except ImportError:  # pragma: no cover - direct import in tests
-    from secrets import SecretError, resolve_secret  # type: ignore
+    from secrets import resolve_secret  # type: ignore
     from settings import Settings, get_settings  # type: ignore
 
 
@@ -71,8 +71,17 @@ class HubSpotDirect:
         if self._obs is not None:
             self._obs.audit.emit(event, **fields)
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
+    def _request(self, method: str, path: str, *,
+                 params: Optional[Dict[str, Any]] = None,
+                 log_params: Optional[Dict[str, Any]] = None,
+                 **kwargs: Any) -> Dict[str, Any]:
+        """`params` is a real query string and goes to HubSpot; `log_params` is
+        what the audit line says. They used to be one argument named `params`
+        that was never sent — a reader on the GET below would assume otherwise."""
         url = f"{self._settings.hubspot_base_url or DEFAULT_BASE_URL}{path}"
+        sent = {**(params or {}), **(log_params or {})}
+        if params:
+            kwargs["params"] = params
         headers = {"Authorization": f"Bearer {self._bearer()}",
                    "Content-Type": "application/json"}
         last_error = ""
@@ -85,12 +94,12 @@ class HubSpotDirect:
             except requests.RequestException as exc:
                 last_error = str(exc)
                 self._emit("http_out", direction="outbound", service="hubspot",
-                           method=method, url=url, attempt=attempt,
+                           method=method, url=url, attempt=attempt, params=sent,
                            credential=self._credential_ref, error=last_error,
                            duration_ms=(time.perf_counter() - started) * 1000)
             else:
                 self._emit("http_out", direction="outbound", service="hubspot",
-                           method=method, url=url, attempt=attempt,
+                           method=method, url=url, attempt=attempt, params=sent,
                            credential=self._credential_ref,
                            status_code=response.status_code,
                            duration_ms=(time.perf_counter() - started) * 1000)
@@ -124,7 +133,13 @@ class HubSpotDirect:
             }
             if after:
                 body["after"] = after
-            page = self._request("POST", "/crm/v3/objects/companies/search", json=body)
+            page = self._request(
+                "POST", "/crm/v3/objects/companies/search", json=body,
+                # The filter IS the question being asked — a campaign that finds
+                # nobody is usually an industry spelled differently over there.
+                log_params={"filter": f"industry EQ {industry}",
+                            "limit": body["limit"], "after": after or "-",
+                            "have": len(ids)})
             ids.extend(str(row["id"]) for row in page.get("results", []) if row.get("id"))
             after = ((page.get("paging") or {}).get("next") or {}).get("after")
             if not after:
@@ -132,10 +147,37 @@ class HubSpotDirect:
         return ids[:limit]
 
     def _contacts_of(self, company_id: str) -> List[str]:
-        page = self._request(
-            "GET", f"/crm/v4/objects/companies/{company_id}/associations/contacts")
-        return [str(row["toObjectId"]) for row in page.get("results", [])
-                if row.get("toObjectId")]
+        """Every contact on this company — ALL pages of them.
+
+        This used to read page one and stop. A company with more contacts than
+        one page lost the remainder with no log line, so the campaign reported
+        a `leads_found` that was simply wrong. "Never silently dropped" applies
+        to the read side too.
+        """
+        path = f"/crm/v4/objects/companies/{company_id}/associations/contacts"
+        contacts: List[str] = []
+        after: Optional[str] = None
+        pages = 0
+        while True:
+            query = {"limit": 100}
+            if after:
+                query["after"] = after
+            page = self._request("GET", path, params=query,
+                                 log_params={"company_id": company_id,
+                                             "page": pages + 1})
+            pages += 1
+            contacts.extend(str(row["toObjectId"]) for row in page.get("results", [])
+                            if row.get("toObjectId"))
+            after = ((page.get("paging") or {}).get("next") or {}).get("after")
+            if not after:
+                break
+            if pages >= 50:      # a company with 5,000 contacts is a data bug
+                self._emit("associations_truncated", company_id=company_id,
+                           pages=pages, found=len(contacts),
+                           reason="stopped after 50 pages — say so rather than "
+                                  "return a count that is quietly short")
+                break
+        return contacts
 
     def list_leads_by_industry(self, industry: str, limit: int = 100) -> List[str]:
         """Contact record ids for every lead in one industry.
@@ -150,7 +192,8 @@ class HubSpotDirect:
         companies = self._companies_in_industry(industry, limit)
         if self._obs is not None:
             self._obs.process.emit("industry_companies_found",
-                                   industry=industry, count=len(companies))
+                                   industry=industry, count=len(companies),
+                                   companies=companies[:10])
 
         seen: Dict[str, None] = {}     # dedup, insertion-ordered
         for company_id in companies:
@@ -160,7 +203,4 @@ class HubSpotDirect:
                 break
 
         contact_ids = list(seen)[:limit]
-        if self._obs is not None:
-            self._obs.process.emit("industry_leads_found", industry=industry,
-                                   companies=len(companies), leads=len(contact_ids))
         return contact_ids

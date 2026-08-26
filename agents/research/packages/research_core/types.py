@@ -8,7 +8,7 @@ nothing that would tie the library to a transport.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -20,7 +20,7 @@ class LeadFacts:
     company it belongs to — plus the three ids the write tool demands back.
     """
 
-    object_id: str = ""
+    objectId: str = ""
     first_name: str = ""
     last_name: str = ""
     job_title: str = ""
@@ -78,9 +78,6 @@ class ResearchFindings:
     searches: int = 0
     model: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
 class ResearchNote:
@@ -88,28 +85,37 @@ class ResearchNote:
 
     text: str = ""
     sources: List[str] = field(default_factory=list)
+    #: How many web searches grounded it. Computed by the provider, logged,
+    #: and — until now — dropped at THIS boundary, so every response on the
+    #: wire reported `searches: 0`.
+    searches: int = 0
 
     def as_hubspot_text(self, max_chars: int = 60_000) -> str:
-        """The single blob written to the lead-context property.
+        """The single blob written to the lead-context property — prose only.
+
+        The cited URLs used to be appended here as a `Sources:` tail. Measured
+        over one live campaign that was 48% of everything written (8,384 of
+        17,630 characters), and the field's only consumer is the Email agent,
+        which writes outreach and cannot use a URL list. The citations stay on
+        the `model_response` log line, under this run's id.
 
         HubSpot multi-line text caps at 65 536 characters; stay under it rather
         than discovering the limit as a 400 at write time.
         """
-        blob = self.text.strip()
-        if self.sources:
-            blob = f"{blob}\n\nSources: " + ", ".join(self.sources)
-        return blob[:max_chars]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return self.text.strip()[:max_chars]
 
 
 @dataclass
 class WriteResult:
     """What the MCP did. A failed write never reads as a success."""
 
-    status: str = ""            # written | dry_run | skipped | error
-    object_id: str = ""
+    #: written      the note is on the record
+    #: dry_run      deliberately not sent (LQABR_RESEARCH_DRY_RUN=1)
+    #: skipped      nothing needed doing (context already present)
+    #: not_writable the note could NOT be landed — bad data on the lead
+    #: error        the MCP refused or could not be reached
+    status: str = ""
+    objectId: str = ""
     property_name: str = ""
     chars: int = 0
     tool: str = ""
@@ -117,6 +123,12 @@ class WriteResult:
 
     @property
     def ok(self) -> bool:
+        """The note is on the record, or deliberately did not need to be.
+
+        `not_writable` is NOT ok: a lead missing the ids the write tool demands
+        got no note, and reporting that as `completed` with an empty error is
+        the exact thing "status follows the WRITE" forbids.
+        """
         return self.status in ("written", "dry_run", "skipped")
 
     def to_dict(self) -> Dict[str, Any]:

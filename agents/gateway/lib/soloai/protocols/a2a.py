@@ -72,6 +72,7 @@ ALLOWED_METADATA_KEYS = frozenset({
     # HubSpot sent it. The correlation id rides along as ``triggerId`` (camelCase)
     # instead of the snake_case ``trigger_id`` the other agents get.
     "objectId", "propertyName", "subscriptionType", "eventId", "triggerId",
+    "propertyValue", "portalId", "occurredAt", "attemptNumber", "changeSource",
 })
 
 
@@ -156,6 +157,13 @@ class A2AClient:
         # metadata, which _guard_metadata has just checked against
         # ALLOWED_METADATA_KEYS. The trigger-only guarantee is untouched.
         #
+        # HubSpot-shaped hand-off (research): params.metadata already carries
+        # the event under HubSpot's own names plus triggerId. Mirroring would
+        # repeat the same record id in two more spellings, which is what
+        # confused the agents. One id, one spelling -- send it as it stands.
+        if "objectId" in metadata:
+            return envelope
+
         # Remove this block once the agents read params.metadata.object_id.
         envelope["trigger_id"] = trigger_id
         object_id = metadata.get("object_id") or metadata.get("objectId")
@@ -184,6 +192,7 @@ class A2AClient:
         endpoint: str,
         trigger_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        on_send: Optional[Any] = None,
     ) -> A2AResponse:
         """Hand off one trigger. Never raises for a remote failure.
 
@@ -191,8 +200,17 @@ class A2AClient:
         row wants response status, latency and retry count recorded even —
         especially — when the hand-off failed. The caller decides what a
         failure means for the HTTP response to HubSpot.
+
+        ``on_send``, if given, is called once with the exact body about to be
+        POSTed -- after the payload guard has passed, before the network call,
+        and reused as-is across retries. It exists so a caller can log the
+        literal wire body instead of reconstructing one, which would silently
+        drift (a second ``build_message`` call mints fresh ``id``/``messageId``
+        values that were never actually sent).
         """
         body = self.build_message(trigger_id, metadata)
+        if on_send is not None:
+            on_send(body)
         # Measure the JSON that actually goes on the wire, not Python's repr —
         # otherwise the "light payload" number is off by whatever repr adds.
         payload_size = len(json.dumps(body).encode("utf-8"))

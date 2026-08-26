@@ -6,7 +6,20 @@ prevent, so the tests pin which handler each envelope reaches.
 
 from __future__ import annotations
 
+import pytest
+from fastapi.testclient import TestClient
+
 from schema import A2AEnvelope
+
+
+@pytest.fixture
+def client(monkeypatch):
+    """The real app. The MCP is not reachable here and does not need to be —
+    both routes answer before any CRM work starts."""
+    monkeypatch.setenv("LQABR_RESEARCH_MCP_STARTUP_CHECK", "off")
+    import service_app
+    with TestClient(service_app.app) as running:
+        yield running
 
 
 def _envelope(**metadata):
@@ -15,43 +28,54 @@ def _envelope(**metadata):
 
 
 def test_the_post_id_becomes_the_campaign_target():
-    """On the blog-summary route the gateway's object_id IS the post."""
-    target = _envelope(object_id="330008697562").campaign_target()
-    assert target.object_id == "330008697562"
-    assert target.industry == ""          # comes off the post, not the envelope
+    """On the blog-summary route the gateway's objectId IS the post."""
+    target = _envelope(objectId="330008697562").campaign_target()
+    assert target.objectId == "330008697562"
     assert target.limit == 100
+    assert not hasattr(target, "industry")   # it comes off the post
 
 
-def test_the_gateway_can_override_industry_and_limit():
-    target = _envelope(object_id="330008697562",
-                       industry="FINANCIAL_SERVICES", limit=5).campaign_target()
-    assert target.industry == "FINANCIAL_SERVICES"
+def test_the_gateway_can_override_the_limit():
+    target = _envelope(objectId="330008697562", limit=5).campaign_target()
     assert target.limit == 5
+
+
+def test_an_industry_in_metadata_is_ignored():
+    """The gateway cannot send one — `industry` is not in its
+    ALLOWED_METADATA_KEYS and an unlisted key makes the dispatch raise — and
+    the industry belongs to the post. An envelope carrying one is ignored."""
+    target = _envelope(objectId="330008697562",
+                       industry="FINANCIAL_SERVICES").campaign_target()
+    assert not hasattr(target, "industry")
 
 
 def test_a_top_level_object_id_is_read_too():
     """The gateway mirrors the id outside metadata for older agents."""
-    envelope = A2AEnvelope(jsonrpc="2.0", object_id="330008697562")
-    assert envelope.campaign_target().object_id == "330008697562"
-    assert envelope.target().object_id == "330008697562"
+    envelope = A2AEnvelope(jsonrpc="2.0", objectId="330008697562")
+    assert envelope.campaign_target().objectId == "330008697562"
+    assert envelope.target().objectId == "330008697562"
 
 
 def test_an_empty_envelope_yields_no_target_rather_than_a_wrong_one():
     """No id must reject, never default to researching some other record."""
-    assert _envelope().campaign_target().object_id == ""
-    assert _envelope().target().object_id == ""
+    assert _envelope().campaign_target().objectId == ""
+    assert _envelope().target().objectId == ""
 
 
 def test_the_two_readings_share_the_id_but_not_the_meaning():
     """Same wire field, different record type — that is the whole point."""
-    envelope = _envelope(object_id="330008697562", summary_ref_id="329605630651")
-    assert envelope.campaign_target().object_id == "330008697562"   # the POST
-    assert envelope.target().object_id == "330008697562"            # a CONTACT
-    assert envelope.target().summary_ref_id == "329605630651"
+    envelope = _envelope(objectId="330008697562", summary_objectId="329605630651")
+    assert envelope.campaign_target().objectId == "330008697562"   # the POST
+    assert envelope.target().objectId == "330008697562"            # a CONTACT
+    assert envelope.target().summary_objectId == "329605630651"
 
 
-def test_the_campaign_route_has_its_own_configurable_path():
+def test_the_campaign_route_is_the_only_hand_off():
+    """The gateway's agents_registry.yaml has exactly one research route —
+    R-blog-summary, ticket.propertyChange on blog_summary. Nothing dispatches
+    a single contact here, so no route exists for one."""
     from research_core.settings import get_settings
+    import service_app
     settings = get_settings(refresh=True)
     assert settings.route_campaign_a2a == "/research/campaign/a2a"
     assert settings.route_campaign_a2a != settings.route_a2a

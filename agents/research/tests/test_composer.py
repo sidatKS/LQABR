@@ -38,12 +38,6 @@ def test_compose_returns_note_with_sources(lead, blog, fake_search):
     assert note.sources == ["https://example.com/a"]
 
 
-def test_sources_can_be_turned_off(lead, blog, fake_search, monkeypatch):
-    monkeypatch.setenv("LQABR_RESEARCH_INCLUDE_SOURCES", "0")
-    note = Composer(provider=fake_search, settings=get_settings(refresh=True)).compose(lead, blog)
-    assert note.sources == []
-
-
 def test_search_failure_propagates(lead, blog):
     from conftest import FakeSearch
     provider = FakeSearch(raises=SearchError("provider down"))
@@ -51,10 +45,15 @@ def test_search_failure_propagates(lead, blog):
         Composer(provider=provider, settings=get_settings(refresh=True)).compose(lead, blog)
 
 
-def test_note_appends_sources_for_hubspot(lead, blog, fake_search):
+def test_the_crm_field_is_prose_only(lead, blog, fake_search):
+    """The cited URLs were 48% of everything written over one live campaign,
+    and the Email agent — the field's only reader — cannot use them."""
     note = Composer(provider=fake_search, settings=get_settings(refresh=True)).compose(lead, blog)
     text = note.as_hubspot_text()
-    assert "Sources: https://example.com/a" in text
+    assert "Sources:" not in text and "https://" not in text
+    assert text == note.text.strip()
+    # still collected, so the count is logged and the response carries them
+    assert note.sources == ["https://example.com/a"]
 
 
 def test_note_is_truncated_to_the_cap(lead, blog):

@@ -13,7 +13,6 @@ model:
   # Bare Anthropic model id. An `anthropic/`-prefixed (LiteLLM) value is also
   # accepted — the prefix is stripped before the SDK call.
   name: claude-sonnet-4-6
-  temperature: 1.0
   max_tokens: 2000
 
 # The runtime connection to the HubSpot MCP container. This is the ONLY door to
@@ -30,6 +29,9 @@ mcp:
   retryable_statuses: [429, 500, 502, 503, 504]
   # Names on that server, DISCOVERED via tools/list at startup and asserted.
   # A rename there is a change here, never a code edit.
+  # What the MCP calls the record id in its arguments. It changed from
+  # object_id to objectId on 2026-08-25 — flip it here if it moves again.
+  object_id_arg: objectId
   tool_read_lead: get_lead_profile
   tool_read_blog: get_blog_summary
   tool_write: upsert_lead_profile
@@ -62,13 +64,10 @@ note:
   # discovering the limit as a 400 at write time.
   max_chars: 60000
   target_words: 160
-  include_sources: true
 
 service:
-  port: 8086
-  routes: all              # all | api
-  route_a2a: /research/a2a
-  route_run: /research/run
+  # The port is a deploy concern (`uvicorn --port`), not a knob this agent
+  # reads — it is deliberately absent here rather than present and ignored.
   cors_origins:
     - http://localhost:5173
 
@@ -80,3 +79,9 @@ logging:
   # Relative to the repo root, or absolute. Empty disables file logging.
   file: logs/agents/research/agent.log
   level: INFO
+  # auto = readable text when stdout is a terminal, JSON when it is not.
+  # The log FILE is always JSON, whatever this says.
+  format: auto
+  # The step inputs/outputs, the parameters on every outbound call, and the
+  # length-marked previews of the prompt and the note. false = the terser shape.
+  detail: true

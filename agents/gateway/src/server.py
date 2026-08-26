@@ -330,6 +330,9 @@ def create_app(
                 payload_bytes=batch.raw_size_bytes, signature_verified=signature_enabled,
                 concurrency=concurrency.snapshot(),
             )
+            # The body HubSpot actually sent. Opt-in (LQABR_LOG_PAYLOADS=1),
+            # so it costs nothing in production.
+            gateway_audit.record_ingress_payload(run_id, payload)
 
             # --- Step 2: route --------------------------------------------
             result = router.route_batch(batch.events)
