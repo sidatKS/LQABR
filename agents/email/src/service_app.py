@@ -20,7 +20,7 @@ polling and the keep-alive that were wrong. So:
     POST /email/campaign       STEP 2 — the gateway's entry point
     POST /mailgun/events       STEP 8 — Mailgun's inbound event call lands here
 
-CONTAINER LIFECYCLE 
+CONTAINER LIFECYCLE (Swaroop, 8:09 / 21:29)
 -------------------------------------------
 Zero instances at rest. A trigger reaches the gateway, the sandbox spins an
 instance (~32s cold start today), this app binds 0.0.0.0:$PORT — 8080 on
@@ -90,7 +90,7 @@ from pydantic import BaseModel
 
 import events as events_module
 # --------------------------------------------------------------- logging
-# One JSON line per event, stamped with object_id + run_id so a whole run
+# One JSON line per event, stamped with objectId + run_id so a whole run
 # greps back together. Inlined per module (no shared observability file); the
 # MCP is handed `MCPObservability` because mcp/hubspot/ cannot import agent code.
 import json as _json
@@ -104,7 +104,7 @@ _LOG = _logging.getLogger("lqabr.email")
 
 @_dataclass(frozen=True)
 class RunContext:
-    object_id: str
+    objectId: str
     run_id: str
 
 
@@ -112,7 +112,7 @@ def _emit(stream, ctx, **fields):
     _LOG.info(_json.dumps(
         {"stream": stream, "ts": _datetime.now(_timezone.utc).isoformat(),
          "agent": "email_agent",
-         "object_id": ctx.object_id if ctx else None,
+         "objectId": ctx.objectId if ctx else None,
          "run_id": ctx.run_id if ctx else None, **fields}, default=str))
 
 
@@ -171,27 +171,39 @@ def routes_mode() -> str:
 
 # --------------------------------------------------------------------- models
 class CampaignRequest(BaseModel):
-    """STEP 2's payload. The trigger carries an id and nothing more — the
-    lead profiles stay in HubSpot and are fetched back at step 5.
+    """STEP 2's payload. The trigger carries an id and nothing more — the lead
+    profile stays in HubSpot and is fetched back at step 5.
 
-    `object_id` is the field this agent uses internally. `trigger_id` is
-    accepted as an alias because the design document, the gateway and the
-    HubSpot property all call it that; rejecting one spelling over a rename
-    would be a pointless integration failure."""
+    THE GATEWAY SENDS ``objectId`` — camelCase, nested in the JSON-RPC
+    envelope's ``params.metadata``:
 
-    object_id: Optional[str] = None
-    trigger_id: Optional[str] = None
+        {"method": "message/send",
+         "params": {"metadata": {"objectId": "701", ...}}}
+
+    ``object_id`` and ``triggerId`` are still accepted as legacy wire aliases
+    so an older or flat caller keeps working; rejecting one spelling over a
+    rename would be a pointless integration failure. Only the WIRE name varies —
+    everything past this class uses ``objectId``."""
+
+    objectId: Optional[str] = None  # noqa: N815 - the gateway's spelling
+    triggerId: Optional[str] = None  # legacy wire alias
+    metadata: Optional[Dict[str, Any]] = None
+    params: Optional[Dict[str, Any]] = None
     limit: int = 0
     dry_run: bool = False
     run_id: Optional[str] = None
 
     def resolved_id(self) -> str:
-        value = (self.object_id or self.trigger_id or "").strip()
-        if not value:
-            raise HTTPException(
-                status_code=400,
-                detail="object_id (or its alias trigger_id) is required")
-        return value
+        """The HubSpot record id, wherever the caller put it."""
+        metadata = self.metadata or (self.params or {}).get("metadata") or {}
+        for candidate in (self.objectId, self.triggerId,
+                          metadata.get("objectId")):
+            if candidate and str(candidate).strip():
+                return str(candidate).strip()
+        raise HTTPException(
+            status_code=400,
+            detail="objectId is required — accepted as objectId, "
+                   "triggerId, or params.metadata.objectId")
 
 
 # ------------------------------------------------------------------- handlers
@@ -304,13 +316,13 @@ def create_app(routes: Optional[str] = None) -> FastAPI:
 
             UNAUTHENTICATED as of 2026-08-05 — the gateway-token check was
             removed (gateway wasn't sending it). No boundary here yet."""
-            object_id = body.resolved_id()
+            objectId = body.resolved_id()
 
             _log_audit(None, step=2, direction="inbound", endpoint=CAMPAIGN_ROUTE,
-                      method="POST", status_code=200, object_id=object_id,
+                      method="POST", status_code=200, objectId=objectId,
                       dry_run=body.dry_run)
             try:
-                return outreach.run_campaign(object_id, limit=body.limit,
+                return outreach.run_campaign(objectId, limit=body.limit,
                                              dry_run=body.dry_run, run_id=body.run_id)
             except SecretNotFoundError as exc:
                 # A credential that cannot be resolved is configuration, not a
