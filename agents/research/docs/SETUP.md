@@ -230,11 +230,15 @@ it. Nothing else re-states them - the layer-level `*_start` / `*_ok` echoes were
 removed once the frame carried the same fields, taking ~9 lines per lead with
 them.
 
-`LQABR_RESEARCH_LOG_DETAIL=0` drops the previews and the parameter bags if you
-want the terser shape.
+`LQABR_RESEARCH_LOG_MODE` is the detail axis — `terse` | `normal` | `debug`.
+`terse` drops the previews and the parameter bags; `debug` trims nothing at
+all, so do not leave it on and never set it on a shared box. (The old
+`LQABR_RESEARCH_LOG_DETAIL=0` still works and means `terse`.)
 
-Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The file at
-`logs/agents/research/agent.log` is always JSON, whatever the console shows.
+Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The files
+under `LQABR_RESEARCH_LOG_DIR` (default `logs/research/`) are always JSON,
+whatever the console shows — `research_process.log`, `research_audit.log` and
+`research_system.log`, joined on `run_id`.
 
 ---
 

@@ -19,6 +19,9 @@ def _clean_env(monkeypatch):
         if key.startswith("LQABR_RESEARCH_") or key == "ANTHROPIC_API_KEY":
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("LQABR_RESEARCH_LOG_FILE", "")
+    # ...and no test run leaks INTO the real log directory. Empty means
+    # console only; a sink test that wants files passes its own tmp dir.
+    monkeypatch.setenv("LQABR_RESEARCH_LOG_DIR", "")
     yield
 
 

@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ..obs import Observability, get_obs
+from ..obs import Observability, get_obs, preview
 from ..settings import Settings, get_settings
 from ..types import NormalizedDocument, SourceError, SourceSpec
 
@@ -76,6 +76,10 @@ def fetch(spec: SourceSpec, settings: Settings | None = None,
     obs.process.emit(
         "source_fetch_complete", kind=spec.kind, source_ref=spec.reference,
         chars=document.char_count, truncated=document.truncated, title=document.title,
+        # WHAT was fetched, not just how much of it. In debug this is the whole
+        # document: "the summary is wrong" is unanswerable without the text the
+        # model was actually given.
+        text_preview=preview(document.text),
     )
     return document
 

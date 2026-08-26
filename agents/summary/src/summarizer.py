@@ -13,10 +13,11 @@ tests it is a function, which is why the whole suite runs with no API key.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from summary_core.obs import Observability, get_obs
+from summary_core.obs import Observability, get_obs, preview
 from summary_core.secrets import ensure_provider_credentials
 from summary_core.settings import Settings, get_settings
 from summary_core.types import NormalizedDocument, SummaryResult
@@ -29,6 +30,31 @@ PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "summarize.md"
 #: we are paying for the model to guess; zero and a single stray code fence
 #: fails the run.
 MAX_MODEL_ATTEMPTS = 2
+
+
+def _usage_of(response: Any) -> Dict[str, Any]:
+    """Token counts off the provider reply, or {}.
+
+    Read defensively and never fatally: summary reaches the model through an
+    injected `completion` callable and an ADK path, so whether the reply
+    carries `usage` at all is not something this agent gets to assume. A
+    provider that does not report it gets a hop with no counts.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+    if usage is None:
+        return {}
+
+    def _field(name: str) -> Any:
+        if isinstance(usage, dict):
+            return usage.get(name)
+        return getattr(usage, name, None)
+
+    counts = {"input_tokens": _field("prompt_tokens") or _field("input_tokens"),
+              "output_tokens": _field("completion_tokens") or _field("output_tokens"),
+              "total_tokens": _field("total_tokens")}
+    return {name: value for name, value in counts.items() if value is not None}
 
 
 def build_instruction() -> str:
@@ -97,16 +123,40 @@ def summarize(document: NormalizedDocument, *,
     last_error = ""
     for attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
         obs.process.emit("model_call", model=settings.model, attempt=attempt,
-                         chars=document.char_count)
-        response = completion(model=settings.model, messages=messages,
-                              temperature=settings.temperature)
+                         chars=document.char_count,
+                         # The two payloads actually handed to the model. On a
+                         # RETRY messages[-1] is the correction, which is the
+                         # one thing worth reading when attempt 2 also fails.
+                         system_preview=preview(messages[0]["content"]),
+                         prompt_preview=preview(messages[-1]["content"]))
+        # The model is a metered external service, so the call belongs on the
+        # AUDIT trail like every other hop — with what it cost. Summary had no
+        # model hop at all: `model_call` on process said a call happened, and
+        # nothing recorded that it left the process or what it spent. The retry
+        # loop means tokens are per-ATTEMPT, which `attempt` already carries.
+        started = time.monotonic()
+        try:
+            response = completion(model=settings.model, messages=messages,
+                                  temperature=settings.temperature)
+        except Exception as exc:  # noqa: BLE001 - hop written, then re-raised
+            obs.hop(service="model", endpoint=settings.model, method="completion",
+                    attempt=attempt, error=f"{type(exc).__name__}: {exc}",
+                    duration_ms=round((time.monotonic() - started) * 1000, 1))
+            raise
+        obs.hop(service="model", endpoint=settings.model, method="completion",
+                status=200, attempt=attempt,
+                duration_ms=round((time.monotonic() - started) * 1000, 1),
+                usage=_usage_of(response))
         raw = _text_of(response)
         try:
             result = parse_summary(raw, source_kind=document.source_kind,
                                    source_ref=document.source_ref, model=settings.model)
         except SummaryValidationError as exc:
             last_error = str(exc)
-            obs.process.emit("model_output_invalid", attempt=attempt, reason=last_error)
+            # The rejected text itself. Without it "the model did not return a
+            # usable summary after 3 attempts" names the symptom and nothing else.
+            obs.process.emit("model_output_invalid", attempt=attempt, reason=last_error,
+                             raw_preview=preview(raw))
             if attempt >= MAX_MODEL_ATTEMPTS:
                 break
             messages = messages + [
@@ -118,7 +168,8 @@ def summarize(document: NormalizedDocument, *,
             continue
 
         obs.process.emit("model_output_ok", attempt=attempt, chars=len(result.summary),
-                         key_points=len(result.key_points))
+                         key_points=len(result.key_points),
+                         summary_preview=preview(result.summary))
         return result
 
     raise SummaryValidationError(

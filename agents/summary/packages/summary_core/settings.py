@@ -73,7 +73,25 @@ def _resolve_log_file(cfg: Dict[str, object] | None = None) -> str:
     cfg_val = _cfg(cfg or {}, "logging", "file", None)
     if cfg_val is not None:
         return _resolve(cfg_val)
-    return str(root / "logs" / "agents" / "summary" / "agent.log")
+    # OFF by default. It used to default to logs/agents/summary/agent.log,
+    # which after the sink split would quietly keep all three streams in one
+    # file and the split would never happen.
+    return ""
+
+
+def _resolve_log_dir(cfg: Dict[str, object] | None = None) -> str:
+    """Where the three per-stream files go. Same precedence as the log file;
+    a relative value resolves against the repo root; empty disables."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[4]
+    raw = os.environ.get("LQABR_SUMMARY_LOG_DIR")
+    if raw is None:
+        raw = str(_cfg(cfg or {}, "logging", "dir", "logs/summary"))
+    raw = str(raw).strip()
+    if raw == "":
+        return ""
+    path = Path(raw)
+    return str(path if path.is_absolute() else (root / path))
 
 
 def _load_config_map() -> Dict[str, object]:
@@ -166,7 +184,19 @@ class Settings:
     secrets_source: str = "env"         # env | secret_manager | auto
     gcp_project: str = ""
     log_level: str = "INFO"
-    log_file: str = ""    # native file log; empty = stdout only
+    #: Where the three per-stream files go; empty = stdout only.
+    log_dir: str = "logs/summary"
+    #: Deprecated single-file sink. When set, all three streams share it and
+    #: the boot emits `log_sink_legacy` — announced, never silently ignored.
+    log_file: str = ""
+    log_max_bytes: int = 52_428_800
+    log_backups: int = 5
+    #: terse | normal | debug — how much of a value reaches the log.
+    log_mode: str = "normal"
+    #: Console shape only — the FILES are always JSON. `auto` means readable
+    #: text when stdout is a terminal and JSON when it is not, so a deployed
+    #: stdout keeps its structured fields.
+    log_format: str = "auto"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -209,7 +239,19 @@ class Settings:
             secrets_source=_str("LQABR_SUMMARY_SECRETS_SOURCE", "env").lower(),
             gcp_project=_str("LQABR_SUMMARY_GCP_PROJECT"),
             log_level=_str("LQABR_SUMMARY_LOG_LEVEL", "INFO").upper(),
+            log_mode=(_str("LQABR_SUMMARY_LOG_MODE",
+                           str(_cfg(cfg, "logging", "mode", "normal"))).lower()
+                      if _str("LQABR_SUMMARY_LOG_MODE",
+                              str(_cfg(cfg, "logging", "mode", "normal"))).lower()
+                      in ("terse", "normal", "debug") else "normal"),
+            log_format=_str("LQABR_SUMMARY_LOG_FORMAT",
+                            str(_cfg(cfg, "logging", "format", "auto"))).lower(),
+            log_dir=_resolve_log_dir(cfg),
             log_file=_resolve_log_file(cfg),
+            log_max_bytes=_int("LQABR_SUMMARY_LOG_MAX_BYTES",
+                               _cfg(cfg, "logging", "max_bytes", 52_428_800)),
+            log_backups=_int("LQABR_SUMMARY_LOG_BACKUPS",
+                             _cfg(cfg, "logging", "backups", 5)),
         )
 
     # ------------------------------------------------------------------

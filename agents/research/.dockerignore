@@ -1,0 +1,17 @@
+# Keep the build context small, and keep run output OUT of the image.
+#
+# logs/ and *.log matter more than size: in `debug` mode the process log holds
+# the full prompt and the full composed note for every lead. Neither belongs in
+# a layer that gets pushed to a registry.
+logs/
+*.log
+
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+tests
+docs
+.env
+.env.bak
