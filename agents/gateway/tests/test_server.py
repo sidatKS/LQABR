@@ -40,7 +40,7 @@ def app_bundle(config_dir, registry, fake_session_factory, monkeypatch):
 
     config = load_config(config_dir / "config.yaml")
     hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True,
-                       level="verbose")
+                       mode="debug")
     audit = gw_audit.GatewayAudit(hooks)
     session = fake_session_factory()
     dispatcher = gw_dispatch.Dispatcher(

@@ -94,7 +94,7 @@ def hooks():
     """Audit hooks that keep every record and write nowhere noisy."""
     from soloai.audit_hooks import AuditHooks
     return AuditHooks(sink="file", file_path="/dev/null", keep_records=True,
-                      level="verbose")
+                      mode="debug")
 
 
 @pytest.fixture()

@@ -35,12 +35,14 @@ Run locally:  uvicorn server:app --port 8080   (from agents/gateway/src)
 """
 
 from __future__ import annotations
-
+import logging
 import asyncio
 import json
 import os
 import sys
 import time
+
+from logging.handlers import TimedRotatingFileHandler
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -88,6 +90,43 @@ from call_report import CallReportRelay, ReportRelayError, extract_correlation  
 from dispatch import Dispatcher  # noqa: E402
 from router import AgentRegistry, DedupeStore, Router  # noqa: E402
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+
+
+
+LOG_DIR = "C:\\Users\\SarojaNemmaluri\\LQABR\\logs"
+LOG_FILE = os.path.join(LOG_DIR, "gateway.log")
+AUDIT_LOG_FILE = os.path.join(LOG_DIR, "gateway_audit.log")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# 2. Define a common format for both console and file logs
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+formatter = logging.Formatter(LOG_FORMAT)
+
+logger = logging.getLogger("app.gateway")
+
+# Set up file handler for logging
+file_handler = TimedRotatingFileHandler(LOG_FILE, when="midnight", interval=1, backupCount=30)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+
+file_handler.propagate = False  # Prevent log messages from being propagated to the root logger
+
+logger.addHandler(file_handler)
+
+audit_logger = logging.getLogger("app.audit")
+
+audit_file_handler = TimedRotatingFileHandler(AUDIT_LOG_FILE, when="midnight", interval=1, backupCount=30)
+audit_file_handler.setLevel(logging.INFO)
+audit_file_handler.setLevel(logging.DEBUG)  # Set the desired log level for audit logs
+audit_file_handler.setFormatter(formatter)
+
+audit_file_handler.propagate = False  # Prevent log messages from being propagated to the root logger
+
+audit_logger.addHandler(audit_file_handler)
 
 def create_app(
     config: Any = None,
@@ -104,9 +143,18 @@ def create_app(
     """
     config = config if config is not None else load_config()
 
+    logger.info(" saroja gateway starting up: %s", {
+        "runtime": RUNTIME,
+        "config": config,
+    })  
     hooks = audit.hooks if audit is not None else AuditHooks.from_config(
         config, keep_records=keep_records)
     gateway_audit = audit or GatewayAudit(hooks)
+
+    audit_logger.debug(" debug audit gateway info : %s", {
+            "runtime": RUNTIME,
+            "gateway_audit": hooks,
+        })  
 
     registry = registry or AgentRegistry.from_document(load_registry_document())
 

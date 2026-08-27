@@ -114,6 +114,59 @@ cd agents/gateway/src
 uvicorn server:app --port 8080 --reload
 ```
 
+### Debug mode vs normal mode
+
+Same scheme as the research and summary agents' own `log_mode`: three tiers,
+`terse | normal | debug`, set the same way (an env var; no separate "debug"
+command since the gateway has no CLI entrypoint of its own, just `uvicorn`):
+
+```bash
+# normal mode -- LQABR_GATEWAY_LOG_MODE unset, defaults to "normal"
+uvicorn server:app --port 8080 --reload
+
+# debug mode -- unlocks per-event discard detail on the process stream
+LQABR_GATEWAY_LOG_MODE=debug uvicorn server:app --port 8080 --reload
+
+# terse mode -- audit stream only
+LQABR_GATEWAY_LOG_MODE=terse uvicorn server:app --port 8080 --reload
+```
+
+The old `LQABR_GATEWAY_LOG_LEVEL=minimal|standard|verbose` still works if set
+(mapped onto the names above), with a one-time `audit_mode_deprecated` notice
+on the system stream. Use `LQABR_GATEWAY_LOG_MODE` in new setups.
+
+`logs/agents/gateway/gateway_process.log`, `gateway_audit.log` and
+`gateway_system.log` are written the same in every mode -- like the research
+agent's `logs/agents/research/agent.log`, the file is always full JSON,
+whatever the console shows. That directory is configurable too
+(`LQABR_GATEWAY_LOG_DIR`, relative paths resolve against the repo root,
+same rule research uses for its own `log_dir`), and every file -- the main
+sink and the three per-stream ones -- rotates at `LQABR_GATEWAY_LOG_MAX_BYTES`
+(default ~50 MB, same as research) keeping `LQABR_GATEWAY_LOG_BACKUPS`
+backups (default 5).
+
+Console shape (`LQABR_GATEWAY_CONSOLE_FORMAT=auto|text|json|off`) only
+matters when `audit.sink: file` -- `auto` (the default) echoes a line to the
+terminal when one is actually attached, and stays quiet otherwise (Cloud Run,
+a pipe); the file itself never changes. That line is coloured and
+glyph-marked, the gateway's own counterpart to the research agent's console
+output (`▸`/`◂` for a hop in/out, `✓`/`✗`/`!` for outcome, ASCII fallback
+`>`/`<`/`+`/`x`/`!` on a non-UTF-8 console) -- a routing decision, an ingress
+or dispatch hop, and a run's closing summary each get their own readable
+shape; everything else still gets a coloured, aligned line rather than
+printing unstyled:
+
+```text
+13:40:01 ▸ hubspot   hubspot_ingress_received POST /webhooks/hubspot events=3
+13:40:01 ✓ routing_decision           agent=research property_name=hs_lead_status property_value=NEW route_id=r-hs-industry
+13:40:01 ◂ research  agent_dispatch http://research:8080/ 200 812ms
+13:40:02 ✗ run_summary events_received=5 routed=4 discarded=1 dispatched_ok=3 dispatched_failed=1 1893ms
+```
+
+`debug` mode also widens this line the same way it widens the file: every
+field is shown in full on indented continuation lines instead of being
+summarised or cut.
+
 For local runs without a HubSpot signature, set
 `gateway.ingress.signature.enabled: false` in `config.yaml` — do not ship that.
 

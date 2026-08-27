@@ -99,7 +99,7 @@ class TestDecisionLogging:
         legitimate discards; per-event logging is opt-in."""
         from conftest import gw_audit
         hooks = AuditHooks(sink="file", file_path="/dev/null",
-                           keep_records=True, level="standard")
+                           keep_records=True, mode="normal")
         audit = gw_audit.GatewayAudit(hooks)
         run_id = audit.new_run_id()
         result = router.route_batch([
@@ -124,7 +124,7 @@ class TestDecisionLogging:
     def test_minimal_level_keeps_only_the_audit_stream(self, router):
         from conftest import gw_audit
         hooks = AuditHooks(sink="file", file_path="/dev/null",
-                           keep_records=True, level="minimal")
+                           keep_records=True, mode="terse")
         audit = gw_audit.GatewayAudit(hooks)
         run_id = audit.new_run_id()
         decision = router.route_batch([make_event()]).decisions[0]

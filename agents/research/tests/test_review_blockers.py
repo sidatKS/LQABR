@@ -314,3 +314,74 @@ def test_one_version_everywhere():
                               if not line.lstrip().startswith("#"))
             assert '"lqabr-research-agent"' not in code, f"{path.name} hard-codes the name"
             assert '"0.1' not in code, f"{path.name} hard-codes a version"
+
+
+# --- second review pass ---------------------------------------------------
+
+def test_a_retry_is_visible_on_the_audit_stream(monkeypatch):
+    """Three hops all claiming `attempt: 1` cannot be told apart from three
+    separate operations. `_post` takes the attempt now and puts it on the hop."""
+    import logging, json
+    import requests
+    from research_core.obs import Observability
+    from research_core.mcp.client import MCPClient, MCPError
+    from research_core.settings import get_settings
+
+    rows = []
+
+    class _Rows(logging.Handler):
+        def emit(self, record): rows.append(json.loads(record.getMessage()))
+
+    logger = logging.getLogger("lqabr.test.retry")
+    logger.handlers.clear(); logger.propagate = False; logger.setLevel(logging.INFO)
+    logger.addHandler(_Rows())
+
+    settings = get_settings(refresh=True)
+    client = MCPClient(settings=settings,
+                       obs=Observability(run_id="res-retry", logger=logger))
+    client._sleep = lambda attempt: None
+    monkeypatch.setattr(
+        client._session, "request",
+        lambda *a, **k: (_ for _ in ()).throw(requests.ConnectionError("refused")))
+
+    with pytest.raises(MCPError):
+        client.initialize()
+
+    hops = [r for r in rows if r["event"] == "outbound_call"]
+    assert len(hops) >= 2, "the retry loop ran"
+    assert [h["attempt"] for h in hops] == list(range(1, len(hops) + 1)), \
+        "each hop names its own attempt"
+
+
+def test_a_rejection_carries_the_run_id_it_would_have_had():
+    """A refusal is the line you most want to find later. It used to log under
+    a freshly minted id that appeared once and led nowhere."""
+    from fastapi.testclient import TestClient
+    import service_app
+
+    with TestClient(service_app.app) as client:
+        body = client.post(
+            "/research/campaign/a2a",
+            json={"params": {"metadata": {"objectId": "533963448020",
+                                          "runId": "res-fromgateway01",
+                                          "subscriptionType": "contact.propertyChange"}}},
+        ).json()
+    # A rejection is a TOP-LEVEL JSON-RPC error, not a refusal buried in
+    # `result` — that is what makes the gateway score the dispatch ok=False.
+    assert "result" not in body
+    data = body["error"]["data"]
+    assert data["status"] == "rejected"
+    assert data["run_id"] == "res-fromgateway01", \
+        "the gateway's id, so the refusal joins that run's other lines"
+
+
+def test_a_rejection_without_a_gateway_id_still_gets_one_back():
+    from fastapi.testclient import TestClient
+    import service_app
+
+    with TestClient(service_app.app) as client:
+        body = client.post("/research/campaign/a2a",
+                           json={"params": {"metadata": {}}}).json()
+    data = body["error"]["data"]
+    assert data["status"] == "rejected"
+    assert data["run_id"].startswith("res-"), "echoed back so the caller can grep it"

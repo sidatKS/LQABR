@@ -99,12 +99,12 @@ class GatewayAudit:
     def __init__(self, hooks: AuditHooks, verbose_discards: Optional[bool] = None) -> None:
         self._hooks = hooks
         self.metrics = HandoffMetrics()
-        # At standard level, discards are summarised by reason; at verbose,
+        # At normal mode, discards are summarised by reason; at debug,
         # every discarded event gets its own process record. A subscription
         # that fires on every value produces a lot of legitimate discards, so
         # per-event logging is opt-in rather than the default.
         self._verbose_discards = (
-            hooks.level == "verbose" if verbose_discards is None else verbose_discards
+            hooks.mode == "debug" if verbose_discards is None else verbose_discards
         )
 
     # ------------------------------------------------------------- lifecycle
@@ -127,7 +127,7 @@ class GatewayAudit:
             concurrency_limit=concurrency_limit,
             chunk_size_hint=chunk_size_hint,
             agents=registry_health,
-            audit_level=self._hooks.level,
+            audit_mode=self._hooks.mode,
             streams=self._hooks.streams,
         )
         self._hooks.token_model_exclusion()

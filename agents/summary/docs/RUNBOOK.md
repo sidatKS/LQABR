@@ -81,6 +81,103 @@ Then, in order:
 
 Every response carries a `run_id`; every log line carries the same one.
 
+### Three files, one directory
+
+`LQABR_SUMMARY_LOG_DIR` (default `logs/summary`):
+
+| File | Stream | Holds |
+| --- | --- | --- |
+| `summary_process.log` | process | what the run did — steps in and out, their inputs, their outputs, the decisions |
+| `summary_audit.log` | audit | every outbound hop: service, endpoint, status, duration, attempt, and what the call **cost** in tokens |
+| `summary_system.log` | system | boot, resolved config, sink state, shutdown |
+
+*Audit records what a call cost; process records what it produced.* Token
+counts ride the audit hop and are **not** in the process log.
+
+`GET /health` reports the sink state under `logging`:
+
+```json
+"logging": {"mode": "normal",
+            "dir": "logs/summary",
+            "files": {"process": "summary_process.log",
+                      "audit": "summary_audit.log",
+                      "system": "summary_system.log"},
+            "degraded": []}
+```
+
+`degraded` is empty on a healthy agent. An entry such as `process:open` or
+`audit:rotate` means that stream fell back to the console and its file is not
+being written — the run itself is unaffected, because observability degrades
+rather than stopping work.
+
+### One run, across all three files
+
+`run_id` is the join key:
+
+```bash
+grep -hE '"run_id": ?"sum-abc123def456"' logs/summary/*.log | jq -s 'sort_by(.ts)'
+```
+
+The `?` matters: `json.dumps` emits `"run_id": "…"` **with** a space, so a
+pattern without one silently matches nothing. `grep -h` drops the filename
+prefix so the output stays parseable JSON; `jq -s`
+slurps it and `sort_by(.ts)` interleaves the three streams back into the order
+things actually happened. When the gateway dispatched the run, that `run_id` is
+the gateway's own — the same grep against `logs/gateway/` joins the two
+services.
+
+### Detail modes
+
+`LQABR_SUMMARY_LOG_MODE` — `terse` | `normal` | `debug` (default `normal`).
+
+| Mode | What changes |
+| --- | --- |
+| `terse` | outbound hops carry no `params`; previews are dropped. Smallest files. |
+| `normal` | params and length-marked previews. What you want day to day. |
+| `debug` | nothing is trimmed: full prompt, full model answer, full summary, full params, every field on its own console line. |
+
+`--debug` on the CLI sets the same mode for that one invocation. Diagnostics go
+to the log handlers, not to stdout, so `python3 agent.py --url … --debug | jq .`
+still parses.
+
+### What debug adds to a model call
+
+In `normal` the system prompt is logged **once** — in full the first time it is
+used, and again only if it changes; after that `system_chars` is the whole
+story, because it is the same 1,500 characters on every lead. The user prompt
+is always logged in full.
+
+In `debug` two more things appear on every `model_request`:
+
+| Field | What it holds |
+| --- | --- |
+| `system_preview` | the full system prompt on **every** request, not just the first — no scrolling back through the run to find it |
+| `payload` | the exact dict handed to the SDK: `model`, `max_tokens`, `messages`, `system`, `tools`. `sent_keys` names the keys; this says what was in them. |
+
+```bash
+# the complete prompt for one lead's model call
+grep '"event": "model_request"' logs/summary/summary_process.log \
+  | jq -r 'select(.objectId=="<contact id>") // . | .payload.system, .payload.messages[0].content'
+```
+
+`payload` is redacted like any other field, so a credential's value never
+reaches it — but it does hold the whole prompt twice over, which is one more
+reason debug is not a default.
+
+> **Caution — `debug` is not a "more logging" switch.**
+> It lifts `redact()`'s 500-character trim, and that trim was also an
+> incidental cap on how much of a credential could escape had one arrived as a
+> value under an innocent field name. Name-based redaction is the only net
+> left. The process log in debug mode also holds the full prompt and the full
+> generated summary. **Do not run debug mode on a shared box**, and turn it off
+> once the question it was turned on to answer has been answered. `logs/` and
+> `*.log` are in `.dockerignore` for the same reason.
+>
+> A credential's **name** is printed in every mode, debug included — that is
+> the rule, not an oversight. `secret_name: anthropic-api-key` is a name; a
+> token count is not a token.
+
+
 | Symptom | Where to look |
 |---|---|
 | `status: failed`, `error` mentions a host or scheme | the fetch guard refused the source. Allowlist it or fix the URL. |
