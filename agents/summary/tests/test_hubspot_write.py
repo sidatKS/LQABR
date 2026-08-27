@@ -45,7 +45,7 @@ class TestWrite:
         properties = arguments["properties"]
         assert "Spring Boot 4 arrives" in properties["blog_summary"]
         assert "virtual threads" in properties["blog_summary"]
-        assert properties["blog_industry"] == "Software"
+        assert properties["blog_industry"] == "SOFTWARE"   # normalised to the portal enum form
 
     def test_property_and_tool_names_follow_configuration(self, summary):
         server = FakeMCPSession(tools=["patch_ticket"], tool_results={"patch_ticket": {"ok": 1}})

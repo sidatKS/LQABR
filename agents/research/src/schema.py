@@ -141,17 +141,33 @@ class A2AEnvelope(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    #: Defaults to "2.0", so EVERY caller is answered in the JSON-RPC shape,
+    #: including a bare HubSpot webhook that never sent the field. That is
+    #: deliberate and tested (`test_a_contact_event_is_refused_at_the_door`
+    #: reads `["result"]` off a bare webhook). It also means the
+    #: `jsonrpc == "2.0"` branches in `_accept`/`_rejected` are unreachable
+    #: today — they are kept symmetric so the two paths cannot drift, but
+    #: turning them on is a change to the ACK shape, not a tidy-up.
     jsonrpc: str = "2.0"
     id: Optional[Any] = None
     method: str = ""
     params: Optional[Dict[str, Any]] = None
-    #: The gateway's compat shim mirrors every id at the top level, in BOTH
-    #: spellings, for agents that are plain REST rather than A2A. Metadata is
-    #: authoritative; these are the fallbacks.
-    object_id: Optional[str] = None
-    objectId: Optional[str] = None  # noqa: N815 - the wire spells it this way
-    summary_ref_id: Optional[str] = None
-    summaryRefId: Optional[str] = None  # noqa: N815
+
+    #: Mirrored at the top level by the gateway's compat shim, for agents that
+    #: are plain REST rather than A2A. Metadata wins when both are present.
+    objectId: Optional[str] = _wire("object_id", "objectId")
+    summary_objectId: Optional[str] = _wire(*_BLOG_ID)
+
+    #: HubSpot's own event fields. None of them are needed to RUN — the id is —
+    #: but `subscription_type` says which record kind arrived, and that is the
+    #: one mix-up this agent cannot recover from: a Ticket sent to the contact
+    #: route fails at read_lead with a CRM error that reads like a missing
+    #: record. `attempt_number` marks a redelivery, which otherwise looks like
+    #: a duplicate campaign nobody asked for.
+    subscription_type: Optional[str] = _wire("subscription_type", "subscriptionType")
+    property_name: Optional[str] = _wire("property_name", "propertyName")
+    event_id: Optional[Any] = _wire("event_id", "eventId")
+    attempt_number: Optional[int] = _wire("attempt_number", "attemptNumber")
 
     def _meta(self) -> Dict[str, Any]:
         """The metadata, with every key in ONE spelling."""
@@ -176,23 +192,15 @@ class A2AEnvelope(BaseModel):
                 return str(candidate).strip()
         return ""
 
-    @staticmethod
-    def _first(*candidates: Any) -> str:
-        for candidate in candidates:
-            if candidate and str(candidate).strip():
-                return str(candidate).strip()
-        return ""
-
     def target(self) -> ResearchTarget:
-        meta = self._meta()
         return ResearchTarget(
-            object_id=self._first(meta.get("object_id"),
-                                  self.object_id, self.objectId),
-            # Read the same three ways as object_id. The gateway puts this in
-            # metadata today, but an id that resolves one way and not the
-            # other is a trap waiting for the next caller.
-            summary_ref_id=self._first(meta.get("summary_ref_id"),
-                                       self.summary_ref_id, self.summaryRefId),
+            objectId=self._first(self._meta().get("object_id"),
+                                  self.objectId),
+            # Read the same ways as objectId. An id that resolves one way and
+            # not the other is a trap waiting for the next caller.
+            summary_objectId=self._first(self._meta().get("summary_object_id"),
+                                         self._meta().get("summary_ref_id"),
+                                         self.summary_objectId),
         )
 
     def campaign_target(self) -> CampaignTarget:

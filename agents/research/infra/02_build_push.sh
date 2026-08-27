@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the agent's own image from ITS OWN folder as the build context.
+# Build + push the research image. Mirrors agents/summary/infra/02_build_push.sh.
 set -euo pipefail
 source "$(dirname "$0")/config.sh"
 AGENT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

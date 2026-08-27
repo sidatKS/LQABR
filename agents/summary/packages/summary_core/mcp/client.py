@@ -31,7 +31,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..obs import Observability, get_obs
+from summary_core.gcp_id_token import auth_header
+
+from ..obs import Observability, get_obs, preview, summarize_args
 from ..settings import Settings, get_settings
 
 #: Fallback only — the live list comes from settings.mcp_retryable_statuses
@@ -94,6 +96,21 @@ def unwrap_result(result: Any) -> Any:
         return joined
 
 
+def result_shape(value: Any) -> Dict[str, Any]:
+    """What came back, in a form that fits on a log line.
+
+    Not the payload: its SHAPE. "which fields did the tool actually return" is
+    the question behind most read failures, and it is answerable from this
+    without dumping a record into the log. The payload itself rides alongside
+    as `result_preview`, which debug returns whole.
+    """
+    if isinstance(value, dict):
+        return {"kind": "object", "keys": sorted(str(k) for k in value)[:12]}
+    if isinstance(value, list):
+        return {"kind": "list", "items": len(value)}
+    return {"kind": type(value).__name__, "chars": len(str(value))}
+
+
 class MCPClient:
     """One connection to the HubSpot MCP container. Build one per process."""
 
@@ -119,6 +136,9 @@ class MCPClient:
             "Content-Type": "application/json",
             # Both, because the server chooses which transport to answer with.
             "Accept": "application/json, text/event-stream",
+            # Google-signed ID token when the MCP is a private Cloud Run
+            # service; nothing for loopback, so local dev is unchanged.
+            **auth_header(self._settings.mcp_base_url),
         }
         if self._mcp_session_id:
             headers["Mcp-Session-Id"] = self._mcp_session_id
@@ -239,6 +259,14 @@ class MCPClient:
         attempts = max(1, self._settings.max_retries)
         last_error = ""
 
+        # WHAT we asked the tool to do. The hop below says a call left the
+        # process; this says what was in it — summarised in normal mode, the
+        # arguments themselves in debug.
+        sent = summarize_args(arguments)
+        self._obs.process.emit("mcp_tool_call", tool=name,
+                               url=self._settings.mcp_base_url, arguments=sent,
+                               timeout_s=self._settings.mcp_timeout_seconds)
+
         for attempt in range(1, attempts + 1):
             self._rpc_id += 1
             response = self._post({
@@ -266,6 +294,9 @@ class MCPClient:
             result = body.get("result")
             if isinstance(result, dict) and result.get("isError"):
                 raise MCPError(f"MCP tool {name} reported an error: {unwrap_result(result)}")
-            return unwrap_result(result)
+            value = unwrap_result(result)
+            self._obs.process.emit("mcp_tool_result", tool=name, attempt=attempt,
+                                   **result_shape(value), result_preview=preview(value))
+            return value
 
         raise MCPError(f"MCP tools/call {name} failed after {attempts} attempts: {last_error}")
