@@ -14,7 +14,7 @@ import json
 import pytest
 
 from conftest import gw_router, make_event
-from soloai.audit_hooks import AuditHooks, ProfileFieldLeak, Stream
+from soloai.obs import Observability, ProfileFieldLeak, Stream
 
 
 def _records(hooks, stream=None, event=None):
@@ -98,7 +98,7 @@ class TestDecisionLogging:
         """A subscription that fires on every value produces a lot of
         legitimate discards; per-event logging is opt-in."""
         from conftest import gw_audit
-        hooks = AuditHooks(sink="file", file_path="/dev/null",
+        hooks = Observability(sink="file", file_path="/dev/null",
                            keep_records=True, mode="normal")
         audit = gw_audit.GatewayAudit(hooks)
         run_id = audit.new_run_id()
@@ -123,7 +123,7 @@ class TestDecisionLogging:
 
     def test_minimal_level_keeps_only_the_audit_stream(self, router):
         from conftest import gw_audit
-        hooks = AuditHooks(sink="file", file_path="/dev/null",
+        hooks = Observability(sink="file", file_path="/dev/null",
                            keep_records=True, mode="terse")
         audit = gw_audit.GatewayAudit(hooks)
         run_id = audit.new_run_id()
@@ -255,7 +255,7 @@ class TestProfileDataGuard:
 
     def test_guard_can_be_disabled_but_is_on_in_the_shipped_config(self, config):
         assert config.get("audit.forbid_profile_fields") is True
-        permissive = AuditHooks(sink="file", file_path="/dev/null",
+        permissive = Observability(sink="file", file_path="/dev/null",
                                 forbid_profile_fields=False, keep_records=True)
         assert permissive.process("x", email="a@b.test")   # no raise
 

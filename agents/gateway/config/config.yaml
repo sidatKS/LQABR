@@ -118,10 +118,11 @@ audit:
   # real terminal is attached; silent otherwise (Cloud Run, a pipe).
   console_format: ${LQABR_GATEWAY_CONSOLE_FORMAT:-auto}
   # Where the three per-stream files (gateway_process.log, gateway_audit.log,
-  # gateway_system.log) go. Relative resolves against the repo root, same
-  # rule as research's log_dir. Same default research/summary use for
-  # themselves, one directory over: logs/agents/gateway.
-  log_dir: ${LQABR_GATEWAY_LOG_DIR:-}
+  # gateway_system.log) go. Relative resolves against the repo root. Defaults
+  # to ./logs/gateway -- the SAME folder as file_path above, so the main sink
+  # (gateway.jsonl) and the three per-stream files all live together in one
+  # place, logs/gateway.
+  log_dir: ${LQABR_GATEWAY_LOG_DIR:-./logs/gateway}
   # Bytes before a file rolls over (main sink + all three per-stream files);
   # 0 disables rotation. Same default and backup count as research (~50 MB,
   # 5 backups) -- at gateway volumes this will rarely if ever fire.

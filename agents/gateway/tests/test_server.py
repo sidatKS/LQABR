@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from conftest import gw_audit, gw_dispatch, gw_router, gw_server, make_event
 from soloai import load_config
-from soloai.audit_hooks import AuditHooks
+from soloai.obs import Observability
 from soloai.protocols.a2a import A2AClient
 from soloai.protocols.http import compute_v3_signature
 
@@ -39,7 +39,7 @@ def app_bundle(config_dir, registry, fake_session_factory, monkeypatch):
     monkeypatch.setenv("LQABR_VAPI_WEBHOOK_SECRET", VAPI_SECRET)
 
     config = load_config(config_dir / "config.yaml")
-    hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True,
+    hooks = Observability(sink="file", file_path="/dev/null", keep_records=True,
                        mode="debug")
     audit = gw_audit.GatewayAudit(hooks)
     session = fake_session_factory()
@@ -258,7 +258,7 @@ class TestRetryContract:
             monkeypatch):
         monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
         monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         session = fake_session_factory(fake_response_factory(500, text="agent down"))
         dispatcher = gw_dispatch.Dispatcher(
@@ -311,7 +311,7 @@ class TestRetryContract:
                 return fake_response_factory(200)
 
         session = SlowSession()
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         dispatcher = gw_dispatch.Dispatcher(
             A2AClient(session=session, backoff_seconds=0, sleep=lambda _s: None), audit)
@@ -352,7 +352,7 @@ class TestRetryContract:
         so the redelivery gets a real second attempt."""
         monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
         monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         session = fake_session_factory([
             fake_response_factory(500, text="down"),   # attempt 1
@@ -485,7 +485,7 @@ class TestFailClosedConfig:
     def test_the_problem_is_recorded_at_startup_too(self, config_dir, registry, monkeypatch):
         monkeypatch.delenv("HUBSPOT_APP_SECRET", raising=False)
         monkeypatch.delenv("LQABR_GATEWAY_PUBLIC_URL", raising=False)
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         app = gw_server.create_app(config=load_config(config_dir / "config.yaml"),
                                    registry=registry, audit=audit)
@@ -512,7 +512,7 @@ class TestIngressDoesNotBlockTheEventLoop:
                 return type("R", (), {"status_code": 200, "text": "{}",
                                       "json": staticmethod(lambda: {"result": {}})})()
 
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         dispatcher = gw_dispatch.Dispatcher(A2AClient(session=SlowSession()), audit)
         app = gw_server.create_app(config=load_config(config_dir / "config.yaml"),
@@ -546,7 +546,7 @@ class TestGroupedMode:
     def _app(self, config_dir, registry, session, monkeypatch, batch_size=20):
         monkeypatch.setenv("HUBSPOT_APP_SECRET", SECRET)
         monkeypatch.setenv("LQABR_GATEWAY_PUBLIC_URL", BASE)
-        hooks = AuditHooks(sink="file", file_path="/dev/null", keep_records=True)
+        hooks = Observability(sink="file", file_path="/dev/null", keep_records=True)
         audit = gw_audit.GatewayAudit(hooks)
         dispatcher = gw_dispatch.Dispatcher(
             A2AClient(session=session, backoff_seconds=0, sleep=lambda _s: None),

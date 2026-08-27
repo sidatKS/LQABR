@@ -22,7 +22,7 @@ spans. What it cannot produce is **why this agent and not another one**. That is
 what this module writes, and why the process stream always carries
 ``property_name`` and ``property_value`` next to the chosen agent.
 
-``GatewayAudit`` is a façade over ``lib/soloai/audit_hooks``: the business logic
+``GatewayAudit`` is a façade over ``lib/soloai/obs``: the business logic
 calls intention-named methods, the hooks own the four streams and the
 profile-data guard.
 """
@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult
 
-from soloai.audit_hooks import AuditHooks, ProfileFieldLeak, Stream, new_run_id
+from soloai.obs import Observability, ProfileFieldLeak, Stream, new_run_id
 
 
 @dataclass
@@ -96,7 +96,7 @@ class HandoffMetrics:
 class GatewayAudit:
     """Step 3's write path, and the gateway's whole observability surface."""
 
-    def __init__(self, hooks: AuditHooks, verbose_discards: Optional[bool] = None) -> None:
+    def __init__(self, hooks: Observability, verbose_discards: Optional[bool] = None) -> None:
         self._hooks = hooks
         self.metrics = HandoffMetrics()
         # At normal mode, discards are summarised by reason; at debug,
@@ -517,7 +517,7 @@ class GatewayAudit:
 
     # ------------------------------------------------------------ passthrough
     @property
-    def hooks(self) -> AuditHooks:
+    def hooks(self) -> Observability:
         return self._hooks
 
     def emit(self, stream: Stream, event: str, **fields: Any) -> Optional[Dict[str, Any]]:

@@ -89,11 +89,23 @@ def registry(registry_document, agent_env):
     return gw_router.AgentRegistry.from_document(registry_document, environ=agent_env)
 
 
+@pytest.fixture(autouse=True)
+def _reset_logging():
+    """Tear down the shared ``lqabr.gateway`` logger before and after every
+    test, so handlers one test attached (e.g. an app built via ``create_app``
+    with no injected audit) never leak into the next -- exactly research's own
+    ``_fresh()`` autouse fixture for its shared-logger tree."""
+    from soloai.obs import reset_logging
+    reset_logging()
+    yield
+    reset_logging()
+
+
 @pytest.fixture()
 def hooks():
     """Audit hooks that keep every record and write nowhere noisy."""
-    from soloai.audit_hooks import AuditHooks
-    return AuditHooks(sink="file", file_path="/dev/null", keep_records=True,
+    from soloai.obs import Observability
+    return Observability(sink="file", file_path="/dev/null", keep_records=True,
                       mode="debug")
 
 

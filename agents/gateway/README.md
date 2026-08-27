@@ -26,7 +26,7 @@ agents/gateway/
 ├── lib/
 │   └── soloai/         co-located runtime adapter (D-02)
 │       ├── config.py
-│       ├── audit_hooks.py      the four FR-7 log streams
+│       ├── obs.py              the four FR-7 log streams
 │       └── protocols/
 │           ├── http.py         signature, batch, concurrency
 │           ├── a2a.py          gateway -> agent, trigger only
@@ -227,7 +227,7 @@ jq 'select(.trigger_id=="trg-…")' < logs   # or the same filter in Cloud Loggi
 
 Three guards, all tested:
 
-* `audit_hooks` **raises** rather than writing a record containing any of the
+* `obs.py` **raises** rather than writing a record containing any of the
   nine lead parameters. A log line is the easiest way for profile data to
   escape a service that swore it carried none.
 * `protocols/a2a` **raises** if anything outside a small allow-list is attached
