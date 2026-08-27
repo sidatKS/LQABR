@@ -8,15 +8,18 @@ ARE the contract. Do not rename either.
   2  company_id              employees  Company_ID              company_id              Company (DEDUP)
   3  decision_maker_flag     employees  Decision_Maker_Flag     decision_maker (bool)   Contact
   4  job_title               contacts   Job_Title               jobtitle                Contact
-  5  email                   contacts   Email                   email_id (CUSTOM)       Contact
+  5  email                   contacts   Email                   email (standard)        Contact
   6  phone                   contacts   Phone                   phone                   Contact
   7  industry                companies  Industry                industry (UPPER)        Company
   8  annual_revenue_m        companies  "Annual_Revenue (M)"    annualrevenue           Company
   9  frequency_of_purchase   companies  Frequency_of_Purchase   frequency_of_purchase   Company
 
-email -> "email_id" is deliberate: HubSpot's standard ``email`` property enforces
-one contact per address, and the seed data shares a placeholder address, so
-contacts dedup on ``employee_id`` in a custom field instead.
+email -> standard ``email`` — DECIDED 2026-08-25, superseding the custom
+``email_id`` property (which required portal provisioning and hid the address
+from HubSpot's native UI). Dedup stays on ``employee_id``. The cost: HubSpot
+enforces one contact per address, so two employee rows sharing an email will
+have the second contact create rejected — that lands in
+errors/schema_mismatch.jsonl like any other HubSpot rejection.
 
 Validation (Step 5, item 1) is a step INSIDE the write tool, not a tool of its
 own. Scope is DECIDED (context §8, Q2): baseline only, no network — required
@@ -36,8 +39,16 @@ from typing import Any
 CONTACT_DEDUP_PROPERTY = "employee_id"
 COMPANY_DEDUP_PROPERTY = "company_id"
 
-CONTACT_PROPERTIES = ("employee_id", "decision_maker", "jobtitle", "email_id", "phone")
-COMPANY_PROPERTIES = ("company_id", "industry", "annualrevenue", "frequency_of_purchase")
+CONTACT_PROPERTIES = ("employee_id", "decision_maker", "jobtitle", "email", "phone")
+COMPANY_PROPERTIES = (
+    "company_id", "industry", "annualrevenue", "frequency_of_purchase",
+    # Added 2026-08-25: four standard company properties. Wire names are the
+    # HubSpot labels snake_cased; internal ids differ where noted.
+    "name",                # wire: company_name    (label "Company name")
+    "hs_industry_group",   # wire: industry_group  (label "Industry group")
+    "about_us",            # wire: about_us        (label "About Us")
+    "website",             # wire: website_url     (label "Website URL")
+)
 
 REQUIRED_FIELDS = ("employee_id", "company_id", "decision_maker_flag")
 OPTIONAL_FIELDS = (
@@ -47,8 +58,12 @@ OPTIONAL_FIELDS = (
     "industry",
     "annual_revenue_m",
     "frequency_of_purchase",
+    "company_name",
+    "industry_group",
+    "about_us",
+    "website_url",
 )
-LEAD_PROFILE_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS  # all 9, in contract order
+LEAD_PROFILE_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS  # 9 + contact_name + 4 company fields
 
 DECISION_MAKER_TRUE = "yes"
 
@@ -85,6 +100,13 @@ class LeadProfile:
     annual_revenue_m: str | None = None
     frequency_of_purchase: str | None = None
 
+    # Added 2026-08-25 — standard Company properties, optional, never blanked
+    # when omitted. Wire names mirror the HubSpot labels.
+    company_name: str | None = None     # -> name
+    industry_group: str | None = None   # -> hs_industry_group
+    about_us: str | None = None         # -> about_us
+    website_url: str | None = None      # -> website
+
     # -- derived ------------------------------------------------------------
 
     @property
@@ -105,7 +127,7 @@ class LeadProfile:
         if self.job_title is not None:
             props["jobtitle"] = self.job_title
         if self.email is not None:
-            props["email_id"] = self.email  # CUSTOM property, not standard "email"
+            props["email"] = self.email  # standard property (decided 2026-08-25)
         if self.phone is not None:
             props["phone"] = self.phone
         if self.contact_name is not None:
@@ -125,6 +147,14 @@ class LeadProfile:
             props["annualrevenue"] = self.annual_revenue_m
         if self.frequency_of_purchase is not None:
             props["frequency_of_purchase"] = self.frequency_of_purchase
+        if self.company_name is not None:
+            props["name"] = self.company_name
+        if self.industry_group is not None:
+            props["hs_industry_group"] = self.industry_group
+        if self.about_us is not None:
+            props["about_us"] = self.about_us
+        if self.website_url is not None:
+            props["website"] = self.website_url
         return props
 
 

@@ -186,7 +186,9 @@ class VoiceLead:
 
     # --- Contact ---------------------------------------------------------
     employee_id: Optional[str] = None
-    email_id: Optional[str] = None
+    # Standard HubSpot `email` property (decided 2026-08-26; the custom
+    # `email_id` field name is retired repo-wide).
+    email: Optional[str] = None
     phone_number: Optional[str] = None
     job_title: Optional[str] = None
     decision_maker: Optional[str] = None
@@ -215,7 +217,7 @@ class VoiceLead:
 
     # voice_status values meaning this lead's call is already done and must not
     # be re-dialed. Rev 5 Step 3: "confirm this lead hasn't already been
-    # completed or opted out". Both are real values of the lqabr_voice_status
+    # completed or opted out". Both are real values of the voice_status
     # enumeration in the portal.
     TERMINAL_VOICE_STATUSES = ("COMPLETED", "VOICEMAIL_LEFT")
 

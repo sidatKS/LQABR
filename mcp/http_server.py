@@ -46,17 +46,17 @@ app = FastAPI(title=SERVER_NAME, version=SERVER_VERSION)
 
 # --------------------------------------------------------------------- tools
 def _tool_get_profile(session, args: Dict[str, Any]) -> Any:
-    return session.get_lead_profile_details(str(args.get("object_id", "")))
+    return session.get_lead_profile_details(str(args.get("objectId", "")))
 
 
 def _tool_list_leads(session, args: Dict[str, Any]) -> Any:
     limit = int(args.get("limit", 25) or 25)
-    return session.list_trigger_leads(str(args.get("object_id", "")), limit=limit)
+    return session.list_trigger_leads(str(args.get("objectId", "")), limit=limit)
 
 
 def _tool_patch(session, args: Dict[str, Any]) -> Any:
     return session.post_patch_crm(
-        str(args.get("object_id", "")),
+        str(args.get("objectId", "")),
         dict(args.get("properties") or {}),
         object_type=str(args.get("object_type", "contact") or "contact"),
     )
@@ -67,28 +67,28 @@ def _tool_patch(session, args: Dict[str, Any]) -> Any:
 TOOLS: Dict[str, Dict[str, Any]] = {
     "get_lead_profile_details": {
         "fn": _tool_get_profile,
-        "desc": "Read a lead's profile from HubSpot by contact object_id.",
-        "props": {"object_id": "string"},
+        "desc": "Read a lead's profile from HubSpot by contact objectId (the HubSpot record id).",
+        "props": {"objectId": "string"},
     },
     "get_lead_profile": {  # Text/Voice alias
         "fn": _tool_get_profile,
         "desc": "Alias of get_lead_profile_details (Text/Voice vocabulary).",
-        "props": {"object_id": "string"},
+        "props": {"objectId": "string"},
     },
     "list_trigger_leads": {
         "fn": _tool_list_leads,
-        "desc": "The lead profiles HubSpot chunked under one trigger object_id.",
-        "props": {"object_id": "string", "limit": "integer"},
+        "desc": "The lead profiles HubSpot chunked under one trigger objectId.",
+        "props": {"objectId": "string", "limit": "integer"},
     },
     "post_patch_crm": {
         "fn": _tool_patch,
         "desc": "Write properties onto a HubSpot object (object_type: contact|ticket).",
-        "props": {"object_id": "string", "properties": "object", "object_type": "string"},
+        "props": {"objectId": "string", "properties": "object", "object_type": "string"},
     },
     "upsert_lead_profile": {  # Text/Voice alias
         "fn": _tool_patch,
         "desc": "Alias of post_patch_crm (Text/Voice vocabulary); writes contact properties.",
-        "props": {"object_id": "string", "properties": "object"},
+        "props": {"objectId": "string", "properties": "object"},
     },
 }
 
@@ -102,7 +102,7 @@ def _tools_list_payload() -> List[Dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {k: {"type": v} for k, v in spec["props"].items()},
-                "required": ["object_id"],
+                "required": ["objectId"],
             },
         })
     return out

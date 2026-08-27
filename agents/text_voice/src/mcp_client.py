@@ -49,8 +49,7 @@ _KEY_TO_FIELD = {
     "frequency_of_purchase": "frequency_of_purchase",
     "decision_maker_flag": "decision_maker",
     "decision_maker": "decision_maker",
-    "email": "email_id",
-    "email_id": "email_id",
+    "email": "email",
     "phone": "phone_number",
     "phone_number": "phone_number",
     "contact_name": "full_name",
@@ -61,9 +60,9 @@ _KEY_TO_FIELD = {
     "contact_hs_id": "object_id",
     "contact_id": "object_id",
     "company_hs_id": "hubspot_company_id",
-    "lqabr_voice_status": "voice_status",
+    # Un-prefixed status properties (decided 2026-08-25; the old lqabr_*
+    # prefixed names are retired).
     "voice_status": "voice_status",
-    "lqabr_email_status": "email_status",
     "email_status": "email_status",
     "probability": "probability",
     "opted_out": "opted_out",
@@ -256,7 +255,7 @@ class StepFiveMCPClient:
             self, object_id: str) -> Tuple[Optional[VoiceLead], Dict[str, Any]]:
         """The lead plus extras (lead_context) from one get_lead_profile call."""
         result = self._call_tool("get_lead_profile",
-                                 {"object_id": str(object_id)})
+                                 {"objectId": str(object_id)})
         if _is_not_found(result):
             return None, {"lead_context": ""}
         if not isinstance(result, dict):
@@ -273,7 +272,7 @@ class StepFiveMCPClient:
         properties = dict(properties)
         properties["last_modfied_voice"] = str(int(time.time() * 1000))
         result = self._call_tool("upsert_lead_profile",
-                                 {"object_id": str(contact_id),
+                                 {"objectId": str(contact_id),
                                   "properties": properties})
         if isinstance(result, dict) and str(result.get("status", "")).lower() in (
                 "halted", "failed", "error"):
@@ -285,10 +284,10 @@ class StepFiveMCPClient:
     def upsert_lead(self, contact_id: str, voice_status: str) -> Dict[str, Any]:
         if voice_status not in _VOICE_STATUS_VALUES:
             raise CRMError(f"voice_status {voice_status!r} is not one of "
-                           f"the lqabr_voice_status values "
+                           f"the voice_status values "
                            f"{_VOICE_STATUS_VALUES}")
         return self._push_properties(
-            contact_id, {"lqabr_voice_status": voice_status})
+            contact_id, {"voice_status": voice_status})
 
     def record_call_outcome(self, contact_id: str, outcome: str) -> Dict[str, Any]:
         """Rev 5 Step 8: read probability, apply the outcome's event increments, one write."""
@@ -313,7 +312,7 @@ class StepFiveMCPClient:
                                      "probability": probability})
 
         properties = {"probability": str(probability),
-                      "lqabr_voice_status": _VOICE_STATUS_FOR_OUTCOME[outcome]}
+                      "voice_status": _VOICE_STATUS_FOR_OUTCOME[outcome]}
         try:
             result["upsert"] = self._push_properties(contact_id, properties)
         except CRMError as exc:

@@ -79,6 +79,9 @@ class Stream(str, Enum):
 #: and a log line is a way for it to cross.
 PROFILE_FIELDS = frozenset({
     "company_id", "company", "industry", "annual_revenue", "revenue",
+    # `email_id` is NOT a live field any more (standard `email` only,
+    # decided 2026-08-26); it stays in this DENYLIST purely so a legacy
+    # payload replayed at the gateway still gets redacted, never logged.
     "frequency_of_purchase", "employee_id", "email_id", "email",
     "phone_number", "phone", "job_title", "decision_maker_name",
     "full_name", "first_name", "last_name", "linkedin_url",

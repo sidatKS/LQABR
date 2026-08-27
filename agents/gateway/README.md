@@ -90,7 +90,7 @@ Edit `config/agents_registry.yaml` to change any of this — never the code.
 | Route | Trigger | Value acted on | Owning agent |
 |---|---|---|---|
 | `R2-lead-context` | `lead_context` changed | *(non-empty)* | Email |
-| `R3-email-opened` | `lqabr_email_status` changed | `OPENED` | Voice |
+| `R3-email-opened` | `email_status` changed | `OPENED` | Voice |
 | `R-blog-summary` | `blog_summary` changed (Ticket) | *(non-empty)* | Research |
 
 `R1-contact-created` (Contact created -> Email) was disabled 25-Aug-2026;
@@ -277,7 +277,7 @@ Rev 3 Step 2 says to *ignore events whose `changeSource` is an agent
 write-back (`API`)*. Taken literally that removes:
 
 * `R1` — the Contact is **created by the lead-profile agent** via the API
-* `R3` — `lqabr_email_status=OPENED` is **written by the Email agent**
+* `R3` — `email_status=OPENED` is **written by the Email agent**
 
 Only `R2` (a human setting `decision_maker`) would survive, so the pipeline
 would stop after the first hop. Rev 3 also states the purpose of the guard:

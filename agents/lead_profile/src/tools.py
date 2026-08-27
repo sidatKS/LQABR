@@ -462,8 +462,9 @@ async def get_lead_profile(employee_id: str, email: str) -> dict[str, Any]:
 
     Args:
         employee_id: The primary lookup key. Pass an empty string to look up by email.
-        email: Fallback lookup key. Searches the CUSTOM "email_id" property, not
-            HubSpot's standard email field. Pass an empty string when using employee_id.
+        email: Fallback lookup key. Searches HubSpot's STANDARD "email"
+            property (decided 2026-08-26; the custom "email_id" is retired).
+            Pass an empty string when using employee_id.
 
     Returns:
         The nine-field lead profile plus contact_hs_id and company_hs_id, or

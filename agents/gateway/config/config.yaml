@@ -158,8 +158,8 @@ loop_guard:
   #   what "so the system does not trigger itself" actually requires.
   # all_api: the literal Rev 3 reading — drop every changeSource in
   #   ignored_change_sources. WARNING: this disables three of the four
-  #   configured routes, because contact.creation, lqabr_email_status and
-  #   lqabr_voice_status are all written by agents via the API. See D-03.
+  #   configured routes, because contact.creation, email_status and
+  #   voice_status are all written by agents via the API. See D-03.
   mode: self_trigger
   ignored_change_sources: [API]   # applied only when mode: all_api
 

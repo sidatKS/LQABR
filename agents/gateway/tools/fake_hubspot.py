@@ -12,7 +12,7 @@ and leaves the tunnel/deploy as a separate problem to solve once.
     python agents/gateway/tools/fake_hubspot.py
 
     # pick the route
-    python agents/gateway/tools/fake_hubspot.py --property lqabr_email_status --value OPENED
+    python agents/gateway/tools/fake_hubspot.py --property email_status --value OPENED
     python agents/gateway/tools/fake_hubspot.py --property decision_maker --value true
     python agents/gateway/tools/fake_hubspot.py --created           # contact.creation
 
@@ -62,7 +62,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fire a signed HubSpot webhook at the gateway")
     parser.add_argument("--url", default="http://localhost:8080",
                         help="gateway origin (must match LQABR_GATEWAY_PUBLIC_URL)")
-    parser.add_argument("--property", default="lqabr_email_status")
+    parser.add_argument("--property", default="email_status")
     parser.add_argument("--value", default="OPENED")
     parser.add_argument("--object-id", default="524046551750",
                         help="a real contact id from portal 246777241")
