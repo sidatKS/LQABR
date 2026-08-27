@@ -22,7 +22,7 @@ buildable, and what this package is:
     Its static config is ``config/agentgateway.yaml``.
   * this package is the **Python adapter** over it: the same module tree Rev 3
     specifies (``protocols/http.py``, ``protocols/mcp.py``, ``protocols/a2a.py``,
-    ``audit_hooks.py``), with the gateway's business logic depending only on
+    ``obs.py``), with the gateway's business logic depending only on
     these interfaces.
 
 Recorded as **D-02** in the deviation register. Everything else in Rev 3 is
@@ -37,21 +37,37 @@ should one ever ship — is a change inside this package alone.
 from __future__ import annotations
 
 from .config import Config, load_config, load_registry_document
-from .audit_hooks import (
-    AuditHooks,
+from .obs import (
+    Observability,
     ProfileFieldLeak,
+    Step,
     Stream,
+    STREAMS,
+    configure_logging,
+    current_mode,
+    get_obs,
     new_run_id,
+    set_detail,
+    set_mode,
+    sink_state,
 )
 
 __all__ = [
-    "AuditHooks",
+    "Observability",
     "Config",
     "ProfileFieldLeak",
+    "Step",
     "Stream",
+    "STREAMS",
+    "configure_logging",
+    "current_mode",
+    "get_obs",
     "load_config",
     "load_registry_document",
     "new_run_id",
+    "set_detail",
+    "set_mode",
+    "sink_state",
     "RUNTIME",
 ]
 

@@ -100,9 +100,34 @@ protocols:
 
 # Rev 3 FR-7. Four streams, collected to the runtime's own logging standard.
 audit:
-  level: standard                 # minimal | standard | verbose
+  # terse | normal | debug -- same three tiers, same names, as
+  # LQABR_RESEARCH_LOG_MODE / LQABR_SUMMARY_LOG_MODE.
+  # Normal mode: leave LQABR_GATEWAY_LOG_MODE unset (defaults to "normal").
+  # Debug mode:  LQABR_GATEWAY_LOG_MODE=debug before starting uvicorn --
+  #              unlocks per-event discard detail on the process stream.
+  mode: ${LQABR_GATEWAY_LOG_MODE:-}
+  # DEPRECATED -- old minimal|standard|verbose naming. Still read (mapped onto
+  # `mode` above, with a one-time system-stream notice) if `mode` /
+  # LQABR_GATEWAY_LOG_MODE is unset. New deployments should use `mode`.
+  level: ${LQABR_GATEWAY_LOG_LEVEL:-}
   sink: file                      # LOCAL DEV: native file log under logs/gateway/
   file_path: ./logs/gateway/gateway.jsonl # relative to CWD -> run uvicorn from repo root
+  # auto | text | json | off -- console shape when sink: file (the file
+  # itself is always full JSON regardless, same guarantee research makes for
+  # logs/agents/research/agent.log). auto = human-readable text only when a
+  # real terminal is attached; silent otherwise (Cloud Run, a pipe).
+  console_format: ${LQABR_GATEWAY_CONSOLE_FORMAT:-auto}
+  # Where the three per-stream files (gateway_process.log, gateway_audit.log,
+  # gateway_system.log) go. Relative resolves against the repo root. Defaults
+  # to ./logs/gateway -- the SAME folder as file_path above, so the main sink
+  # (gateway.jsonl) and the three per-stream files all live together in one
+  # place, logs/gateway.
+  log_dir: ${LQABR_GATEWAY_LOG_DIR:-./logs/gateway}
+  # Bytes before a file rolls over (main sink + all three per-stream files);
+  # 0 disables rotation. Same default and backup count as research (~50 MB,
+  # 5 backups) -- at gateway volumes this will rarely if ever fire.
+  log_max_bytes: ${LQABR_GATEWAY_LOG_MAX_BYTES:-52428800}
+  log_backups: ${LQABR_GATEWAY_LOG_BACKUPS:-5}
   streams:
     audit: true                   # network activity: where from, when, which endpoint
     process: true                 # the routing decision + property/value behind it
