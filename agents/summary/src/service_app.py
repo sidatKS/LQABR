@@ -62,7 +62,8 @@ from pipeline import run_summary  # noqa: E402
 from schema import HubSpotTarget, SummaryRequest, SummaryResponse  # noqa: E402
 from summary_core.mcp.client import MCPError  # noqa: E402
 from summary_core.mcp.hubspot import HubSpotMCP  # noqa: E402
-from summary_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
+from summary_core.obs import (configure_logging, get_obs,  # noqa: E402
+                              new_run_id, sink_state)
 from summary_core.settings import get_settings  # noqa: E402
 
 SERVICE = "lqabr-summary-agent"
@@ -84,28 +85,37 @@ def _startup_mcp_check() -> None:
         discovered = hubspot.ensure_ready()
     except MCPError as exc:
         MCP_STATE.update(checked=True, ok=False, tools=[], error=str(exc))
-        get_obs().process.emit("mcp_startup_check_failed", reason=str(exc),
-                               mode=settings.mcp_startup_check)
+        # system, not process: a startup probe is a boot fact, and research
+        # emits its equivalent on the same stream.
+        get_obs().system.emit("mcp_startup_check_failed", reason=str(exc),
+                              mode=settings.mcp_startup_check)
         if settings.mcp_startup_check == "strict":
             # Deliberate: a strict deployment would rather not serve at all
             # than accept work it cannot land on the CRM.
             raise
         return
     MCP_STATE.update(checked=True, ok=True, tools=sorted(discovered), error="")
-    get_obs().process.emit("mcp_startup_check_ok", tools=sorted(discovered))
+    get_obs().system.emit("mcp_startup_check_ok", tools=sorted(discovered))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings(refresh=True)
-    configure_logging(settings.log_level, settings.log_file)
+    configure_logging(settings.log_level, settings.log_dir,
+                      settings.log_format,
+                      max_bytes=settings.log_max_bytes,
+                      backups=settings.log_backups,
+                      log_file=settings.log_file, mode=settings.log_mode)
     obs = get_obs(new_run_id(), refresh=True)
     tools.configure(settings)
-    obs.process.emit("service_start", service=SERVICE, version=VERSION,
+    # RE-HOMED from process to system (phase 4). Startup and shutdown are
+    # system-stream facts by definition, and after the sink split they were the
+    # reason summary_system.log would otherwise hold no records at all.
+    obs.system.emit("service_start", service=SERVICE, version=VERSION,
                      routes=settings.routes, **{"config": settings.redacted()})
     _startup_mcp_check()
     yield
-    obs.process.emit("service_stop", service=SERVICE)
+    obs.system.emit("service_stop", service=SERVICE)
 
 
 app = FastAPI(
@@ -136,6 +146,10 @@ def _health_payload() -> Dict[str, Any]:
         "routes": settings.routes,
         "model": settings.model,
         "dry_run": settings.dry_run,
+        # Where the three log streams are actually landing. `degraded` is the
+        # field that matters: empty on a healthy agent, and naming a stream
+        # whose file could not be opened or rotated otherwise.
+        "logging": {"mode": settings.log_mode, **sink_state()},
         "mcp": {
             "url": settings.mcp_base_url,
             "checked": MCP_STATE["checked"],
@@ -245,7 +259,7 @@ class A2AEnvelope(BaseModel):
 
     def target_object_id(self) -> str:
         metadata = (self.params or {}).get("metadata") or {}
-        for candidate in (metadata.get("object_id"), metadata.get("summary_ref_id"),
+        for candidate in (metadata.get("objectId"), metadata.get("object_id"), metadata.get("summary_ref_id"),
                           self.object_id, self.objectId):
             if candidate:
                 return str(candidate)

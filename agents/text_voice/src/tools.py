@@ -248,10 +248,13 @@ def _extract_object_id(payload: Any) -> Optional[str]:
         return None
     if isinstance(payload.get("params"), dict):
         metadata = payload["params"].get("metadata")
-        if isinstance(metadata, dict) and metadata.get("object_id"):
-            return str(metadata["object_id"])
-    if payload.get("object_id"):
-        return str(payload["object_id"])
+        if isinstance(metadata, dict):
+            for key in ("objectId", "object_id"):
+                if metadata.get(key):
+                    return str(metadata[key])
+    for key in ("objectId", "object_id"):
+        if payload.get(key):
+            return str(payload[key])
     return None
 
 

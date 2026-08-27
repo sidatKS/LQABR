@@ -78,17 +78,17 @@ class TestDecisionLogging:
         together with the property and value it was based on.*"""
         run_id = audit.new_run_id()
         decision = router.route_batch([
-            make_event("lqabr_email_status", "OPENED")]).decisions[0]
+            make_event("email_status", "OPENED")]).decisions[0]
         audit.record_decision(run_id, decision)
         record = _records(hooks, Stream.PROCESS, "routing_decision")[0]
         assert record["agent"] == "voice"
-        assert record["property_name"] == "lqabr_email_status"
+        assert record["property_name"] == "email_status"
         assert record["property_value"] == "OPENED"
         assert record["route_id"] == "R3-email-opened"
 
     def test_discards_are_logged_with_a_reason(self, audit, hooks, router):
         run_id = audit.new_run_id()
-        result = router.route_batch([make_event("lqabr_email_status", "BOUNCED")])
+        result = router.route_batch([make_event("email_status", "BOUNCED")])
         audit.record_discards(run_id, result.discarded)
         record = _records(hooks, Stream.PROCESS, "event_discarded")[0]
         assert record["reason"] == "not_routing_condition"
@@ -103,7 +103,7 @@ class TestDecisionLogging:
         audit = gw_audit.GatewayAudit(hooks)
         run_id = audit.new_run_id()
         result = router.route_batch([
-            make_event("lqabr_email_status", "SENT", event_id=f"e{i}") for i in range(5)])
+            make_event("email_status", "SENT", event_id=f"e{i}") for i in range(5)])
         audit.record_discards(run_id, result.discarded)
         assert _records(hooks, Stream.PROCESS, "event_discarded") == []
         summary = _records(hooks, Stream.PROCESS, "events_discarded")[0]
@@ -265,8 +265,8 @@ class TestHandoffMetrics:
     def test_counts_the_handoff(self, audit, router):
         run_id = audit.new_run_id()
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", event_id="e1"),
-            make_event("lqabr_email_status", "SENT", event_id="e2"),
+            make_event("email_status", "OPENED", event_id="e1"),
+            make_event("email_status", "SENT", event_id="e2"),
         ])
         audit.record_ingress(run_id, source_ip=None, endpoint="/x", method="POST",
                              event_count=2, payload_bytes=1, signature_verified=True)

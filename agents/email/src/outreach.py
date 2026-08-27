@@ -54,7 +54,10 @@ DEFAULT_BATCH_LIMIT = int(os.environ.get("LQABR_EMAIL_BATCH_LIMIT", "25"))
 CONSTRUCTION_TEMPERATURE = float(os.environ.get("LQABR_EMAIL_TEMPERATURE", "1.0"))
 #: Already outreached — a redelivered trigger must not email these twice.
 ALREADY_SENT_STATUSES = frozenset({"SENT", "DELIVERED", "OPENED"})
-#: "Not workable". Retryable — a later campaign works the lead again.
+#: The HubSpot ``email_status`` value for "not workable" — what this path
+#: writes when a send is refused or a lead cannot be read/constructed. The full
+#: Mailgun-event -> status translation is ``events.HUBSPOT_EMAIL_STATUS``; every
+#: terminal there collapses to this same value.
 FAILED_STATUS = "FAILED"
 MAILGUN_SEND_ENDPOINT = "mailgun:/messages"
 
@@ -198,9 +201,9 @@ def start_run(objectId: str, run_id: Optional[str] = None,
 # ------------------------------------------------------------------- step 5
 def _set_email_status(ctx: RunContext, mcp_session: MCPSession, objectId: str,
                       status: str, *, step: int, reason: str = "") -> bool:
-    """Write lqabr_email_status + timestamp. Best-effort: a failed write
-    returns False, never raises."""
-    props: Dict[str, Any] = {"lqabr_email_status": status}
+    """Write ``email_status`` (+ last-modified stamp) for one lead.
+    Best-effort: a failed write is logged and reported False, never raised."""
+    props: Dict[str, Any] = {"email_status": status}
     lm_prop = last_modified_email_property()
     if lm_prop:
         props[lm_prop] = int(time.time() * 1000)
@@ -413,8 +416,8 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
     names its own lead. A rejected send is written back FAILED, never raised."""
     if dry_run:
         log_process(ctx, step=7, event="send_skipped_dry_run",
-                    objectId=profile.object_id, to=profile.email_id, skill=skill_name)
-        return {"status": "dry-run", "objectId": profile.object_id, "to": profile.email_id,
+                    object_id=profile.object_id, to=profile.email, skill=skill_name)
+        return {"status": "dry-run", "object_id": profile.object_id, "to": profile.email,
                 "subject": subject, "skill": skill_name}
 
     # The lead was already claimed SENT by work_lead, before construction —
@@ -428,10 +431,11 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
     client = mailgun or MailgunClient(max_retries=1)
     try:
         sent = client.send_email(
-            to=profile.email_id, subject=subject, html=html_body,
-            tags=["lqabr", "email-outreach", f"trigger-{ctx.objectId}"],
-            # lqabr_object_id IS the lead — echoed on every event, which is
-            # what replaces run state. run_id only keeps the logs correlated.
+            to=profile.email, subject=subject, html=html_body,
+            tags=["lqabr", "email-outreach", f"trigger-{ctx.object_id}"],
+            # lqabr_object_id IS the lead: Mailgun echoes it on every event so
+            # the inbound path names the HubSpot record with no lookup. run_id
+            # rides along only to keep that event's logs correlated.
             variables={"lqabr_object_id": profile.object_id, "lqabr_run_id": ctx.run_id},
         )
     except MailgunError as exc:
@@ -456,10 +460,17 @@ def send_one(ctx: RunContext, mcp_session: MCPSession, profile: ValidatedProfile
     log_audit(ctx, step=7, direction="outbound", endpoint=MAILGUN_SEND_ENDPOINT,
               method="POST", status_code=200, message_id=message_id)
 
-    # No status write here — SENT was claimed before construction.
-    return {"status": "sent", "message_id": message_id,
-            "objectId": profile.object_id, "to": profile.email_id,
-            "skill": skill_name}
+    result: Dict[str, Any] = {"status": "sent", "message_id": message_id,
+                              "object_id": profile.object_id, "to": profile.email,
+                              "skill": skill_name}
+    # Mark SENT so a redelivered trigger does not email the lead twice.
+    try:
+        mcp_session.crm.mark_sent(profile.object_id)
+    except (CRMError, SchemaValidationError) as exc:
+        log_process(ctx, step=7, event="sent_status_writeback_failed",
+                    object_id=profile.object_id, error=str(exc))
+        result["warning"] = f"crm-error: SENT status writeback failed: {exc}"
+    return result
 
 
 # ------------------------------------------------------------- the campaign

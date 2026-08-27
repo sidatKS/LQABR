@@ -59,8 +59,20 @@ a greeting or subject around it, and never infer company details from the domain
 could be millions or billions. Use it to judge scale; **never write it as a
 figure**. "$4.7 in revenue" is nonsense and "$4.7B" is an invention.
 
-Never write an internal identifier (`company_id`, `employee_id`) in prose, and
-do not write "your company" as filler when you have the actual name.
+**`email`** — the reader's address. It tells you who you are writing to: a
+personal address and a corporate one are different readers, and worth pitching
+differently. Never write the address itself into the email. The reader knows
+their own address, and quoting it back reads as a mail merge. Do not build a
+greeting, a subject line or a sentence around it, and do not infer facts about
+their company from the domain beyond what you were given.
+
+**`annual_revenue`** — a sizing signal, and NOTHING is recorded about its unit.
+The value may arrive as a bare number such as `4.7`, which could be millions or
+billions; nothing in the record says which. Use it only to judge scale — how
+formal to be, whether to speak to a team or a department — and **never write it
+as a figure**. "$4.7 in revenue" is nonsense and "$4.7B in revenue" is an
+invention. If you want to reference size at all, do it qualitatively, and only
+where the other facts support it.
 
 ## Addressing the reader
 

@@ -97,7 +97,7 @@ Only the exact uppercase enum token is accepted.
 | T7 — HubSpot webhook target + subscriptions | Pending | — |
 | T11 — lead_profile `:8085` + audience seed | Pending | D2 |
 | T12 — Email Agent `:8083` + Mailgun send | Pending | T1 |
-| T13 — Poll Mailgun Events → `lqabr_email_status=OPENED` | Pending (new code) | T12 |
+| T13 — Poll Mailgun Events → `email_status=OPENED` | Pending (new code) | T12 |
 | T14 — text_voice `:8084` + Vapi call + poll | Pending (new code) | T1 |
 | T15 — Full E2E trace | Pending | T12–T14 |
 | T16 — `START_LOCAL.md` + one-command start | Pending | K5 |

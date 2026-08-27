@@ -666,8 +666,8 @@ def get_lead_profile(
     Step 6. Called by the email / voice / scheduler agents, NOT by the
     lead_profile agent.
 
-    ``employee_id`` is the primary key. ``email`` searches the CUSTOM
-    ``email_id`` property, not HubSpot's standard ``email``.
+    ``employee_id`` is the primary key. ``email`` searches HubSpot's standard
+    ``email`` property (decided 2026-08-25; previously the custom ``email_id``).
 
     Returns the 9-field LeadProfile plus contact_hs_id / company_hs_id on a
     wrapper, so a consumer can write status back without re-searching.
@@ -677,7 +677,7 @@ def get_lead_profile(
     if not employee_id and not email:
         raise ValueError("get_lead_profile requires employee_id or email")
 
-    lookup_property = CONTACT_DEDUP_PROPERTY if employee_id else "email_id"
+    lookup_property = CONTACT_DEDUP_PROPERTY if employee_id else "email"
     lookup_value = employee_id or email
     obs.process.emit("lead_lookup", lookup_property=lookup_property, lookup_value=lookup_value)
 
@@ -746,11 +746,15 @@ def get_lead_profile(
         company_id=company_props.get("company_id") or "",
         decision_maker_flag=decision_maker_flag,
         job_title=clean_optional(contact_props.get("jobtitle")),
-        email=clean_optional(contact_props.get("email_id")),
+        email=clean_optional(contact_props.get("email")),
         phone=clean_optional(contact_props.get("phone")),
         industry=clean_optional(company_props.get("industry")),
         annual_revenue_m=clean_optional(company_props.get("annualrevenue")),
         frequency_of_purchase=clean_optional(company_props.get("frequency_of_purchase")),
+        company_name=clean_optional(company_props.get("name")),
+        industry_group=clean_optional(company_props.get("hs_industry_group")),
+        about_us=clean_optional(company_props.get("about_us")),
+        website_url=clean_optional(company_props.get("website")),
     )
 
     obs.process.emit(

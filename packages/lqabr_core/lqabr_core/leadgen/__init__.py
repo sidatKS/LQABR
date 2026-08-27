@@ -5,7 +5,8 @@ This subpackage is deliberately ISOLATED from the 9-pointer model in
 schema the Lead Profile Agent uses:
 
     Contact + Company + association, dedup on custom ``employee_id`` /
-    ``company_id`` properties, email stored in the custom ``email_id`` property.
+    ``company_id`` properties, email stored in the STANDARD ``email``
+    property (decided 2026-08-25; the custom ``email_id`` is retired).
 
 The two models coexist (a known, documented reconciliation item). Nothing here
 is re-exported from ``lqabr_core`` top-level; import the specific module:

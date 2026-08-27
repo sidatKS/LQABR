@@ -247,7 +247,7 @@ building it.
    │  verify signature  →  route each event                    │
    │                                                           │
    │     3 × decision_maker=true        → email                │
-   │     2 × lqabr_email_status=OPENED  → voice                │
+   │     2 × email_status=OPENED  → voice                │
    │                                                           │
    │  GROUP BY AGENT  →  mint one batch_id per group           │
    └───────────┬───────────────────────────┬───────────────────┘

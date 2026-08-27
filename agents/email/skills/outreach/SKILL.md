@@ -101,10 +101,10 @@ Eleven fields, and no others.
 
 | Field | What it is for |
 |---|---|
-| `email_id` | who you are writing to. **Never written into the email** |
-| `first_name`, `last_name` | the greeting |
-| `company` | the real name — use it once, early |
-| `job_title` | whose desk this lands on; the concern you speak to |
+| `email` | who you are writing to. **Never written into the email** |
+| `first_name`, `last_name` | the greeting, per the shared rules |
+| `company` | the real company name — use it once, early |
+| `job_title` | the concern you speak to |
 | `industry` | which sector restraint binds |
 | `industry_group` | the sharper read — prefer it over `industry` |
 | `company_about` | what they sell — context, never recited back |

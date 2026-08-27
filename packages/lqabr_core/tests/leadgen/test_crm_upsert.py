@@ -68,11 +68,13 @@ def test_dedup_is_on_employee_id_and_company_id(fake_hubspot):
     assert len(fake_hubspot.companies) == 1
 
 
-def test_custom_email_id_property_is_written_not_standard_email(fake_hubspot):
+def test_standard_email_property_is_written(fake_hubspot):
+    """Decided 2026-08-25: the standard ``email`` property, not the custom
+    ``email_id`` (which required portal provisioning)."""
     result = upsert_lead_profiles(make(), "lead-1")
     props = fake_hubspot.contacts[result.contact_hs_id]
-    assert props["email_id"] == "lead@example.com"
-    assert "email" not in props
+    assert props["email"] == "lead@example.com"
+    assert "email_id" not in props
     assert props["decision_maker"] is True
 
 

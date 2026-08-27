@@ -101,9 +101,15 @@ async def upsert_lead_profile(
     industry: str | None = None,
     annual_revenue_m: str | None = None,
     frequency_of_purchase: str | None = None,
+    company_name: str | None = None,
+    industry_group: str | None = None,
+    about_us: str | None = None,
+    website_url: str | None = None,
     lead_ref_id: str | None = None,
 ) -> dict[str, Any]:
-    """The nine-field contract, flattened for the wire. Field names are the contract."""
+    """The contract fields, flattened for the wire. Field names are the contract.
+    company_name / industry_group / about_us / website_url (added 2026-08-25)
+    map to HubSpot's standard name / hs_industry_group / about_us / website."""
     _bind_run("mcp_client")
     profile = LeadProfile(
         employee_id=employee_id,
@@ -115,6 +121,10 @@ async def upsert_lead_profile(
         industry=industry,
         annual_revenue_m=annual_revenue_m,
         frequency_of_purchase=frequency_of_purchase,
+        company_name=company_name,
+        industry_group=industry_group,
+        about_us=about_us,
+        website_url=website_url,
     )
     ref = lead_ref_id or new_lead_ref_id()
     try:
@@ -143,7 +153,7 @@ async def upsert_lead_profile(
 async def get_lead_profile(
     employee_id: str | None = None, email: str | None = None
 ) -> dict[str, Any]:
-    """employee_id is the primary key. email searches the CUSTOM email_id property."""
+    """employee_id is the primary key. email searches HubSpot's standard email property."""
     _bind_run("mcp_client")
     if not employee_id and not email:
         return {"found": False, "error": "employee_id or email is required"}
