@@ -87,7 +87,7 @@ Passed by `05_deploy_agents.sh` as `--set-env-vars`.
 | `LQABR_EMAIL_BATCH_LIMIT` | `25` | Leads per run — what keeps a run inside the request timeout |
 | `LQABR_EMAIL_ROUTES` | `all` | One service serves the gateway entry **and** the Mailgun push |
 | `LQABR_HUBSPOT_OBJECT_ID_PROPERTY` | `object_id` | Contact property the campaign's leads are chunked under. **Confirm against the live schema** — a wrong name now fails the run. |
-| `LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY` | `email_campaign_complete` | Set when `lqabr_email_status` reaches OPENED — the step-10 hand-off |
+| `LQABR_HUBSPOT_CAMPAIGN_COMPLETE_PROPERTY` | `email_campaign_complete` | Set when `email_status` reaches OPENED — the step-10 hand-off |
 | `LQABR_EMAIL_ALLOW_QUEUE_FALLBACK` | `0` | Leave off. On, a wrong object-id property silently works the not-yet-emailed queue — i.e. emails a different audience. |
 | `LQABR_HUBSPOT_TOKEN_TTL_SECONDS` | `3600` | Bearer cache lifetime per run |
 | `LQABR_EMAIL_RUNSTATE_DIR` | `/var/lib/lqabr/email/runstate` | Provisioned in the image and owned by `nobody`; without a writable path every run 503s at step 3 |

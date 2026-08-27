@@ -9,9 +9,11 @@ that also didn't match. Confirmed live against the real account
 ALREADY EXISTS — there is nothing left to create:
 
     employee_id          (string/text)      — pre-existing
-    email_id             (string/text)      — standard HubSpot property
+    email                (string/text)      — standard HubSpot property
+                         (the custom `email_id` property is retired,
+                         decided 2026-08-26 — do not recreate it)
     probability          (number/number)    — pre-existing
-    lqabr_email_status   (enumeration)      — pre-existing; allowed values
+    email_status   (enumeration)      — pre-existing; allowed values
                          are PENDING, SENT, DELIVERED, OPENED, FAILED,
                          BOUNCED (an email delivery-status field, not a
                          pipeline stage — see lqabr_core/crm/hubspot.py)
@@ -44,8 +46,8 @@ BASE = "https://api.hubapi.com"
 
 EXPECTED_EMAIL_STATUS_OPTIONS = {"PENDING", "SENT", "DELIVERED", "OPENED", "FAILED", "BOUNCED"}
 REQUIRED_PROPERTIES = [
-    "employee_id", "email_id", "company_id", "probability",
-    "lqabr_email_status", "last_modified_email",
+    "employee_id", "email", "company_id", "probability",
+    "email_status", "last_modified_email",
 ]
 
 
@@ -62,9 +64,9 @@ def main() -> int:
         print(f"MISSING required properties: {missing}", file=sys.stderr)
         return 1
 
-    status_options = {o["value"] for o in props["lqabr_email_status"].get("options", [])}
+    status_options = {o["value"] for o in props["email_status"].get("options", [])}
     if status_options != EXPECTED_EMAIL_STATUS_OPTIONS:
-        print(f"lqabr_email_status options changed: expected {EXPECTED_EMAIL_STATUS_OPTIONS}, "
+        print(f"email_status options changed: expected {EXPECTED_EMAIL_STATUS_OPTIONS}, "
               f"got {status_options}", file=sys.stderr)
         return 1
 

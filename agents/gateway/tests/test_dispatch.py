@@ -23,7 +23,7 @@ from soloai.protocols.a2a import (
 
 @pytest.fixture()
 def decision(router):
-    return router.route_batch([make_event("lqabr_email_status", "OPENED")]).decisions[0]
+    return router.route_batch([make_event("email_status", "OPENED")]).decisions[0]
 
 
 @pytest.fixture()
@@ -238,7 +238,7 @@ class TestDispatch:
         nothing gateway-invented, and none of the old top-level
         object_id/objectId/trigger_id mirrors."""
         voice_decision = router.route_batch(
-            [make_event("lqabr_email_status", "OPENED")]).decisions[0]
+            [make_event("email_status", "OPENED")]).decisions[0]
         assert voice_decision.agent == "voice"
         session = fake_session_factory()
         gw_dispatch.Dispatcher(_client(session), audit).dispatch(voice_decision, "run-1")
@@ -247,7 +247,7 @@ class TestDispatch:
             "no top-level mirrors for voice any more")
         metadata = body["params"]["metadata"]
         assert metadata["objectId"] == "701"
-        assert metadata["propertyName"] == "lqabr_email_status"
+        assert metadata["propertyName"] == "email_status"
         assert metadata["propertyValue"] == "OPENED"
         assert metadata["subscriptionType"] == "contact.propertyChange"
         assert "object_id" not in metadata and "trigger_id" not in metadata
@@ -309,7 +309,7 @@ class TestRetries:
 class TestBatchDispatch:
     def test_dispatches_every_decision(self, router, fake_session_factory, audit):
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", event_id="e1"),
+            make_event("email_status", "OPENED", event_id="e1"),
             make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory()
@@ -324,7 +324,7 @@ class TestBatchDispatch:
     def test_one_failure_does_not_stop_the_others(
             self, router, fake_session_factory, fake_response_factory, audit):
         result = router.route_batch([
-            make_event("lqabr_email_status", "OPENED", event_id="e1"),
+            make_event("email_status", "OPENED", event_id="e1"),
             make_event("lead_context", "ctx", event_id="e2"),
         ])
         session = fake_session_factory([
@@ -363,7 +363,7 @@ class TestGroupedDispatch:
             self, router, fake_session_factory, audit):
         events = ([make_event("lead_context", "ctx", object_id=str(700 + i),
                               event_id=f"e{i}") for i in range(14)]
-                  + [make_event("lqabr_email_status", "OPENED", object_id=str(800 + i),
+                  + [make_event("email_status", "OPENED", object_id=str(800 + i),
                                 event_id=f"o{i}") for i in range(6)])
         result = router.route_batch(events)
         assert len(result.decisions) == 20

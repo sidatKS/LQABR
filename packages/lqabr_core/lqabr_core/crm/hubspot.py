@@ -3,27 +3,25 @@
 Uses the HubSpot CRM v3 REST API with a private-app access token from
 Secret Manager (`lqabr-hubspot-access-token`).
 
-Most `lqabr_*` custom properties this used to write/read were deleted from
-the portal; two survived (`lqabr_voice_status`, `lqabr_email_status`) and
-are real, currently-existing enumeration fields. Field mapping:
+All `lqabr_*` prefixed custom properties are retired (decided 2026-08-25):
+the status enumerations are the UN-prefixed `voice_status` and
+`email_status` properties. Field mapping:
 
     full_name        firstname + lastname
     job_title        jobtitle
     company           company
-    email             email, falling back to the custom `email_id` property
-                      (some contacts, e.g. enrichment-sourced leads, only
-                      have the address there)
+    email             email (the standard HubSpot property — the custom
+                      `email_id` property is retired, decided 2026-08-26)
     phone             phone
     external ids      employee_id
     decision_maker    decision_maker (not `decision_maker_flag` — that name
                       doesn't exist in this portal)
     opted_out         opted_out
     probability       probability
-    voice_status      lqabr_voice_status (label shows as "voice_status" in
-                      the HubSpot UI, but the real property name has the
-                      `lqabr_` prefix) — written by record_event() for
+    voice_status      voice_status (un-prefixed, decided 2026-08-25) —
+                      written by record_event() for
                       VOICEMAIL_LEFT/CALL_ANSWERED/CALL_ENGAGED
-    email_status      lqabr_email_status — read-only here (nothing in this
+    email_status      email_status — read-only here (nothing in this
                       file writes it; the Email Agent does). Must be in
                       _PROPERTIES and mapped into extra{} on every read path
                       (_from_contact), or callers like outreach.py's
@@ -35,8 +33,10 @@ are real, currently-existing enumeration fields. Field mapping:
     stage             not stored — derived from probability on read
                       (see stage_for_probability)
 
-`upsert_lead`/`_to_properties` still target the old `lqabr_*` names and are
-unused by the Text/Voice Agent; fixing them is out of scope here.
+`upsert_lead`/`_to_properties` (the old lqabr_*-writing ingest path) were
+DELETED 2026-08-26 along with lqabr_core/profile.py — dead code, no callers.
+Lead creation belongs to the Lead Profile Agent (lqabr_core.leadgen); this
+adapter reads leads and records engagement, it does not create them.
 """
 
 from __future__ import annotations
@@ -55,19 +55,18 @@ from lqabr_core.types import EngagementEvent, EventType, LeadProfile, LeadStage
 
 BASE_URL = "https://api.hubapi.com"
 
-# Every property we read back from HubSpot. Most `lqabr_*` custom properties
-# were deleted from this portal — only real, currently-existing fields are
-# used. `stage` has no real-field equivalent; it's derived from `probability`
-# instead of stored (see stage_for_probability). Two `lqabr_*` properties
-# survived the deletion and are still real: `lqabr_voice_status` (label
-# "voice_status" in the HubSpot UI) and `lqabr_email_status`.
+# Every property we read back from HubSpot — only real, currently-existing
+# fields. `stage` has no real-field equivalent; it's derived from
+# `probability` instead of stored (see stage_for_probability). The status
+# enumerations are the UN-prefixed `voice_status` / `email_status`
+# (decided 2026-08-25; the old lqabr_* prefixed names are retired).
 _PROPERTIES = [
-    "firstname", "lastname", "jobtitle", "company", "email", "email_id", "phone",
-    "employee_id", "decision_maker", "opted_out", "probability", "lqabr_voice_status",
-    "lqabr_email_status",
+    "firstname", "lastname", "jobtitle", "company", "email", "phone",
+    "employee_id", "decision_maker", "opted_out", "probability", "voice_status",
+    "email_status",
 ]
 
-# EventType -> lqabr_voice_status value (enumeration: PENDING, INITIATED,
+# EventType -> voice_status value (enumeration: PENDING, INITIATED,
 # COMPLETED, FAILED, VOICEMAIL_LEFT). Only call-related events map to
 # something here; email/meeting events leave voice_status untouched.
 _VOICE_STATUS_FOR_EVENT = {
@@ -146,28 +145,6 @@ class HubSpotClient(CRMClient):
         raise CRMError(f"HubSpot {method} {path} failed after {self._max_retries} retries: {last_error}")
 
     # ------------------------------------------------------------- mapping
-    def _to_properties(self, profile: LeadProfile) -> Dict[str, Any]:
-        first, last = _split_name(profile.full_name)
-        props: Dict[str, Any] = {
-            "firstname": first,
-            "lastname": last,
-            "jobtitle": profile.job_title,
-            "company": profile.company,
-            "email": profile.email,
-            "phone": profile.phone,
-            "lqabr_industry": profile.industry,
-            "lqabr_company_size_revenue": profile.company_size_revenue,
-            "lqabr_location": profile.location,
-            "lqabr_timezone": profile.timezone,
-            "lqabr_linkedin_url": profile.linkedin_url,
-            "lqabr_source": profile.source.value,
-            "lqabr_employee_id": profile.external_employee_id,
-            "lqabr_company_id": profile.external_company_id,
-            "lqabr_stage": profile.stage.value,
-            "lqabr_probability": str(profile.probability),
-        }
-        return {k: v for k, v in props.items() if v not in (None, "")}
-
     @staticmethod
     def _from_contact(contact: Dict[str, Any]) -> LeadProfile:
         p = contact.get("properties", {})
@@ -177,9 +154,7 @@ class HubSpotClient(CRMClient):
             full_name=full_name,
             job_title=p.get("jobtitle"),
             company=p.get("company"),
-            # some contacts (e.g. enrichment-sourced leads) hold the address in
-            # the custom `email_id` property instead of the standard `email` one
-            email=p.get("email") or p.get("email_id"),
+            email=p.get("email"),
             phone=p.get("phone"),
             external_employee_id=p.get("employee_id"),
             stage=stage_for_probability(probability),
@@ -187,23 +162,11 @@ class HubSpotClient(CRMClient):
             object_id=contact.get("id"),
             opted_out=p.get("opted_out") == "true",
             extra={"decision_maker": p.get("decision_maker"),
-                   "voice_status": p.get("lqabr_voice_status"),
-                   "email_status": p.get("lqabr_email_status")},
+                   "voice_status": p.get("voice_status"),
+                   "email_status": p.get("email_status")},
         )
 
     # ----------------------------------------------------------------- api
-    def upsert_lead(self, profile: LeadProfile) -> LeadProfile:
-        existing = self.find_lead_by_email(profile.email) if profile.email else None
-        props = self._to_properties(profile)
-        if existing and existing.object_id:
-            self._request("PATCH", f"/crm/v3/objects/contacts/{existing.object_id}",
-                          json={"properties": props})
-            profile.object_id = existing.object_id
-        else:
-            created = self._request("POST", "/crm/v3/objects/contacts", json={"properties": props})
-            profile.object_id = created.get("id")
-        return profile
-
     def get_lead(self, object_id: str) -> LeadProfile:
         contact = self._request(
             "GET", f"/crm/v3/objects/contacts/{object_id}",
@@ -212,12 +175,11 @@ class HubSpotClient(CRMClient):
         return self._from_contact(contact)
 
     def find_lead_by_email(self, email: str) -> Optional[LeadProfile]:
-        # filterGroups are OR'd together — some contacts store the address in
-        # the standard `email` property, others in the custom `email_id` one.
+        # The address lives only in the standard HubSpot `email` property
+        # (the custom `email_id` is retired, decided 2026-08-26).
         body = {
             "filterGroups": [
                 {"filters": [{"propertyName": "email", "operator": "EQ", "value": email}]},
-                {"filters": [{"propertyName": "email_id", "operator": "EQ", "value": email}]},
             ],
             "properties": _PROPERTIES,
             "limit": 1,
@@ -250,14 +212,14 @@ class HubSpotClient(CRMClient):
         return [self._from_contact(c) for c in result.get("results", [])]
 
     def record_event(self, event: EngagementEvent) -> LeadProfile:
-        """Writes `probability` always, plus `lqabr_voice_status` for
+        """Writes `probability` always, plus `voice_status` for
         call-related events (see _VOICE_STATUS_FOR_EVENT). The other
         counter fields (lqabr_*_count) this used to also write no longer have
         a real HubSpot property to land in.
 
         `last_modfied_voice` (real API name, typo included — confirmed via
         the portal's own property definition, not the UI label) is stamped
-        only for the same call-related events that write `lqabr_voice_status`
+        only for the same call-related events that write `voice_status`
         (2026-08-06, user request): this is the Text/Voice Agent's own
         last-touched marker, so an email or meeting-scheduled event recorded
         through this same shared method must not stamp it.
@@ -270,7 +232,7 @@ class HubSpotClient(CRMClient):
         properties: Dict[str, Any] = {"probability": str(new_probability)}
         voice_status = _VOICE_STATUS_FOR_EVENT.get(event.event_type)
         if voice_status is not None:
-            properties["lqabr_voice_status"] = voice_status
+            properties["voice_status"] = voice_status
             properties["last_modfied_voice"] = str(int(time.time() * 1000))
 
         self._request("PATCH", f"/crm/v3/objects/contacts/{event.contact_id}",

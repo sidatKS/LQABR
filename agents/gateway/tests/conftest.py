@@ -162,7 +162,7 @@ def fake_response_factory():
 
 # --------------------------------------------------------------------- events
 def make_event(
-    property_name: Optional[str] = "lqabr_email_status",
+    property_name: Optional[str] = "email_status",
     property_value: Optional[str] = "OPENED",
     *,
     object_id: str = "701",

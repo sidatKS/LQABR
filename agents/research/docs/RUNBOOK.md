@@ -35,33 +35,131 @@ LQABR_RESEARCH_DRY_RUN=1 python3 agents/research/src/agent.py \
   --object-id <CONTACT id> --summary-object-id <BLOG POST id>
 ```
 
-Then live:
+`/health` also reports where the logs are going:
+
+```json
+"logging": {"mode": "normal",
+            "dir": "logs/research",
+            "files": {"process": "research_process.log",
+                      "audit": "research_audit.log",
+                      "system": "research_system.log"},
+            "degraded": []}
+```
+
+`degraded` is the one field to read. It is empty on a healthy agent; an entry
+such as `process:open` or `audit:rotate` means that stream fell back to the
+console and its file is **not** being written. The run itself is unaffected —
+observability degrades, it never stops a campaign.
+
+Then live — the campaign route is the only one the gateway drives, and its
+`objectId` is a blog **POST**:
 
 ```bash
-curl -sX POST localhost:8086/research/run -H 'Content-Type: application/json' \
-  -d '{"objectId":"<contact id>","blog_published_at":"<timestamp>"}' \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"], "|", d["hubspot"]["status"], "|", d["error"][:120])'
+curl -sX POST localhost:8086/research/campaign/a2a \
+  -H 'Content-Type: application/json' \
+  -d '{"params":{"metadata":{"objectId":"<blog post id>",
+                             "subscriptionType":"ticket.propertyChange"}}}' \
+  | python3 -m json.tool
+```
+
+It acks immediately and runs in the background; the outcome is in the logs, not
+in that response. For one lead by hand, use the CLI — it needs both ids:
+
+```bash
+python3 agents/research/src/agent.py \
+  --object-id <CONTACT id> --summary-object-id <BLOG POST id>
 ```
 
 ## Read the logs
 
-```bash
-tail -f logs/agents/research/agent.log
+Three files, one directory (`LQABR_RESEARCH_LOG_DIR`, default `logs/research`):
 
-# just the outcome of the last run
-grep -E '"event":"(run_complete|run_failed|campaign_complete)' logs/agents/research/agent.log | tail -3
+| File | Stream | Holds |
+| --- | --- | --- |
+| `research_process.log` | process | what the run did — steps in and out, their inputs, their outputs, the decisions |
+| `research_audit.log` | audit | every outbound hop: service, endpoint, status, duration, attempt, and what the call **cost** in tokens |
+| `research_system.log` | system | boot, resolved config, sink state, shutdown |
+
+The split is deliberate: *audit records what a call cost, process records what
+it produced*. Token counts therefore ride the audit hop and are **not** in the
+process log.
+
+```bash
+tail -f logs/research/research_process.log
+
+# the outcome of the last run
+grep -E '"event":"(run_complete|run_failed|campaign_complete)' \
+  logs/research/research_process.log | tail -3
 
 # every step of the last run, with its inputs, outputs and duration
-grep '"event":"step_' logs/agents/research/agent.log | tail -20
+grep '"event":"step_' logs/research/research_process.log | tail -20
 
-# what was sent to the model, and what it cost
-grep -E '"event":"(model_request|model_response)"' logs/agents/research/agent.log | tail -2
+# what every outbound call cost
+grep '"event":"outbound_call"' logs/research/research_audit.log | tail -10
 ```
 
-Streams: `process` (what it did and why), `audit` (every outbound hop —
-endpoint, status, duration; never a payload), `system` (start/stop).
-Correlate a run with `run_id`; when the gateway dispatched it, that id is the
-gateway's own, which ties the two logs together.
+### One run, across all three files
+
+Every line of a run carries the same `run_id`. That is the join key — and it is
+the gateway's own id when the gateway dispatched the run, which ties the two
+services' logs together too:
+
+```bash
+grep -hE '"run_id": ?"res-abc123def456"' logs/research/*.log | jq -s 'sort_by(.ts)'
+```
+
+The `?` matters: `json.dumps` emits `"run_id": "…"` **with** a space, so a
+pattern without one silently matches nothing. `grep -h` drops the filename
+prefix so the output stays parseable JSON;
+`jq -s` slurps it and `sort_by(.ts)` interleaves the three streams back into
+the order things actually happened.
+
+### Detail modes
+
+`LQABR_RESEARCH_LOG_MODE` — `terse` | `normal` | `debug` (default `normal`).
+
+| Mode | What changes |
+| --- | --- |
+| `terse` | outbound hops carry no `params`; previews are dropped. Smallest files. |
+| `normal` | params and length-marked previews. What you want day to day. |
+| `debug` | nothing is trimmed: full prompt, full model answer, full note, full params, every field on its own console line. |
+
+### What debug adds to a model call
+
+In `normal` the system prompt is logged **once** — in full the first time it is
+used, and again only if it changes; after that `system_chars` is the whole
+story, because it is the same 1,500 characters on every lead. The user prompt
+is always logged in full.
+
+In `debug` two more things appear on every `model_request`:
+
+| Field | What it holds |
+| --- | --- |
+| `system_preview` | the full system prompt on **every** request, not just the first — no scrolling back through the run to find it |
+| `payload` | the exact dict handed to the SDK: `model`, `max_tokens`, `messages`, `system`, `tools`. `sent_keys` names the keys; this says what was in them. |
+
+```bash
+# the complete prompt for one lead's model call
+grep '"event": "model_request"' logs/research/research_process.log \
+  | jq -r 'select(.objectId=="<contact id>") // . | .payload.system, .payload.messages[0].content'
+```
+
+`payload` is redacted like any other field, so a credential's value never
+reaches it — but it does hold the whole prompt twice over, which is one more
+reason debug is not a default.
+
+> **Caution — `debug` is not a "more logging" switch.**
+> It lifts `redact()`'s 500-character trim, and that trim was also an
+> incidental cap on how much of a credential could escape had one arrived as a
+> value under an innocent field name. Name-based redaction is the only net
+> left. The process log in debug mode also holds the full prompt and the full
+> generated note. **Do not run debug mode on a shared box**, and do not leave
+> it on after the question it was turned on to answer has been answered.
+> `logs/` and `*.log` are in `.dockerignore` for the same reason.
+>
+> A credential's **name** is printed in every mode, including debug — that is
+> the rule, not an oversight. `secret_name: hubspot-private-app-token` is a
+> name; a token count is not a token.
 
 ## Failures
 
@@ -82,7 +180,7 @@ just the agent:
 
 ```bash
 # 1. the write landed
-grep '"event":"context_write_ok"' logs/agents/research/agent.log | tail -1
+grep '"event":"context_write_ok"' logs/research/research_process.log | tail -1
 
 # 2. HubSpot delivered the resulting event to the gateway
 grep lead_context logs/gateway/gateway.jsonl | tail -3

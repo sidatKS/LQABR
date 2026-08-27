@@ -7,7 +7,7 @@
 The Email Agent is the first outreach stage in the LQABR pipeline. It owns exactly two responsibilities:
 
 1. **Draft and send** a personalized first-touch email to a lead that already has a 9-pointer profile in HubSpot.
-2. **Listen for engagement** (delivered / opened / clicked) and translate it into HubSpot state — `lqabr_email_status` (shown in the UI under the label "email_status") and `probability` — so the orchestrator knows when to hand the lead to the next stage.
+2. **Listen for engagement** (delivered / opened / clicked) and translate it into HubSpot state — `email_status` (shown in the UI under the label "email_status") and `probability` — so the orchestrator knows when to hand the lead to the next stage.
 
 It does not decide *who* to contact next in the broader pipeline (that's the orchestrator's job), and it does not itself decide when a lead is "hot enough" to promote — it only writes the signal; `lqabr_core/probability.py` owns the threshold logic.
 
@@ -52,7 +52,7 @@ It does not decide *who* to contact next in the broader pipeline (that's the orc
 3. Map `event-data.event` through `EVENT_MAP`. An event type we don't score returns `200 {"status": "ignored", "event": ...}` immediately.
 4. Pull `hubspot_contact_id` out of `event-data.user-variables` — the same value `send_outreach_email` stamped onto the message at send time (see §5.1, step 7). Missing → `422`, and it's logged as an error rather than dropped quietly, since a missing ID here means the *send* path is misconfigured, not the webhook.
 5. For a `clicked` event, also capture the clicked URL as `detail`.
-6. Build an `EngagementEvent` and call `HubSpotClient.record_event()` — this single call applies the probability increment, writes `probability` + `lqabr_email_status` back to HubSpot in one PATCH, and determines whether the lead has crossed `TEXT_VOICE_THRESHOLD`.
+6. Build an `EngagementEvent` and call `HubSpotClient.record_event()` — this single call applies the probability increment, writes `probability` + `email_status` back to HubSpot in one PATCH, and determines whether the lead has crossed `TEXT_VOICE_THRESHOLD`.
 7. A `CRMError` from that call becomes HTTP `500`, deliberately — Mailgun retries on 5xx responses, so a transient HubSpot outage doesn't lose the event.
 8. On success: `200 {"status": "recorded", "event": ..., "contact_id": ..., "probability": ..., "stage": ...}`.
 
@@ -94,10 +94,10 @@ flowchart TD
     SOE -->|"4 LLM drafts subject + html\nfrom real profile data"| SOE
     SOE -->|"5 verify contact exists"| HS
     SOE -->|"6 POST /messages\nsubject, html,\nhubspot_contact_id tag"| MG
-    SOE -->|"7 PATCH lqabr_email_status=SENT\n(first send only)"| HS
+    SOE -->|"7 PATCH email_status=SENT\n(first send only)"| HS
     MG -->|"8 delivered / opened / clicked\nsigned webhook event"| WH
     WH -->|"9 verify signature,\nmap event to status"| WH
-    WH -->|"10 PATCH probability +\nlqabr_email_status"| HS
+    WH -->|"10 PATCH probability +\nemail_status"| HS
     HS -.->|"11 probability >= 30\n(TEXT_VOICE_THRESHOLD)"| ORCH
 ```
 
@@ -114,7 +114,7 @@ flowchart TD
 5. Inside the tool: `HubSpotClient.find_lead_by_email()` re-verifies the contact exists in HubSpot (independent of step 2 — this is the actual gate; a lead not in `list_email_queue`'s limited page can still pass here).
 6. `_safe_format()` substitutes any `{first_name}` / `{company}` / `{job_title}` / `{industry}` / `{cta_url}` / `{sender_name}` placeholders the draft happens to contain — plain substring replacement, so stray braces in the drafted text can't crash the send (unlike `str.format()`). If the agent supplied no draft at all, `DEFAULT_SUBJECT` / `DEFAULT_HTML` are used instead, so a send never fails for lack of content.
 7. `MailgunClient.send_email()` POSTs to Mailgun with `o:tracking-opens`/`o:tracking-clicks` enabled and the lead's `hubspot_contact_id` attached as a Mailgun user-variable — this is the correlation key the webhook uses later.
-8. If this is the lead's first send (`stage` was `PROFILED`/`INGESTED`), `HubSpotClient.set_stage()` writes `lqabr_email_status = SENT`.
+8. If this is the lead's first send (`stage` was `PROFILED`/`INGESTED`), `HubSpotClient.set_stage()` writes `email_status = SENT`.
 9. The tool returns `{"status": "sent", ...}` or a verbatim `{"error": ...}` — Mailgun/CRM failures are never swallowed.
 
 ### 5.2 Inbound: engagement → probability
@@ -124,7 +124,7 @@ See §3 above for the full endpoint-level reference; summarized in flow terms:
 1. Mailgun fires a signed webhook event (`delivered`, `opened`, or `clicked`) to `webhook_app.py`'s `POST /webhooks/mailgun` — this only happens if the webhook service is actually deployed and its URL registered in Mailgun's dashboard; it is **not** something the agent process itself runs.
 2. The webhook verifies the HMAC signature (`verify_webhook_signature`), rejecting anything unsigned/forged with `401`.
 3. It reads `hubspot_contact_id` back out of the event's user-variables (the same value stamped in step 5.1.7) — a scored event missing this ID is a loud `422`, never a silent drop.
-4. `HubSpotClient.record_event()` computes the new probability via `apply_event()` (delivered +2, opened +5, clicked +10, capped 0–100) and writes both `probability` and `lqabr_email_status` back to HubSpot in one PATCH.
+4. `HubSpotClient.record_event()` computes the new probability via `apply_event()` (delivered +2, opened +5, clicked +10, capped 0–100) and writes both `probability` and `email_status` back to HubSpot in one PATCH.
 5. If the new probability crosses `TEXT_VOICE_THRESHOLD` (30), the lead's in-memory `stage` flips to `TEXT_VOICE_OUTREACH` — there is currently no HubSpot property that persists cross-agent pipeline stage directly, so the orchestrator picks this up by reading `probability` against the same threshold, not a stage field.
 6. A HubSpot write failure here returns `500`, deliberately — so Mailgun's own retry mechanism resends the event rather than the engagement silently vanishing.
 
@@ -150,4 +150,4 @@ See §3 above for the full endpoint-level reference; summarized in flow terms:
 ## 8. Known Gaps / Follow-ups
 
 - The webhook (`webhook_app.py`) is not currently deployed anywhere — Mailgun has nowhere to push events to until it's stood up on Cloud Run (or similar) with a public HTTPS URL registered in Mailgun's dashboard. Until then, engagement can only be synced manually (see `agents/email/manual_mailgun_send.py`'s `status`/`watch` commands, built as a stand-in for local testing).
-- There is no HubSpot property that persists cross-agent pipeline `stage` directly for the email channel — `lqabr_email_status` (delivery lifecycle) and `probability` (score) are the only two fields; stage is inferred from probability by every consumer, not stored as its own value. Flagged in `hubspot.py` as a follow-up once the Text/Voice handoff needs a real field to read.
+- There is no HubSpot property that persists cross-agent pipeline `stage` directly for the email channel — `email_status` (delivery lifecycle) and `probability` (score) are the only two fields; stage is inferred from probability by every consumer, not stored as its own value. Flagged in `hubspot.py` as a follow-up once the Text/Voice handoff needs a real field to read.

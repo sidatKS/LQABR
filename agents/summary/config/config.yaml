@@ -28,4 +28,13 @@ mcp:
 # Empty string disables file logging (stdout only).
 # Precedence: LQABR_SUMMARY_LOG_FILE env > this > code default.
 logging:
-  file: logs/agents/summary/agent.log
+  # Where the three per-stream files go: summary_process.log,
+  # summary_audit.log, summary_system.log. Relative resolves against the repo
+  # root; empty disables file logging entirely.
+  dir: logs/summary
+  # terse | normal | debug — credentials stay redacted in every mode.
+  mode: normal
+  max_bytes: 52428800
+  backups: 5
+  # DEPRECATED single-file sink; setting it emits `log_sink_legacy`.
+  # file: ""

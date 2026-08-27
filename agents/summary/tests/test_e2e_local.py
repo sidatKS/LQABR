@@ -72,10 +72,10 @@ class StubMCP(BaseHTTPRequestHandler):
                 # client sent one rather than trusting it did.
                 assert self.headers.get("Mcp-Session-Id") == "stub-session-1"
                 WRITES.append(arguments)
-                payload = {"status": "written", "object_id": arguments.get("object_id"),
+                payload = {"status": "written", "object_id": arguments.get("objectId"),
                            "properties": sorted(arguments.get("properties") or {})}
             elif name == "get_lead_profile_details":
-                payload = {"object_id": arguments.get("object_id"), "industry": "Fintech"}
+                payload = {"object_id": arguments.get("objectId"), "industry": "Fintech"}
             else:
                 payload = {"leads": []}
             # Tool results come back as content blocks, as the protocol says.
@@ -144,7 +144,7 @@ def test_text_to_hubspot_over_the_wire(client):
 
     assert len(WRITES) == 1
     written = WRITES[0]
-    assert written["object_id"] == "ticket-777"
+    assert written["objectId"] == "ticket-777"
     assert "Spring Boot 4" in written["properties"]["blog_summary"]
     assert "virtual threads" in written["properties"]["blog_summary"]
     assert written["properties"]["blog_industry"] == "Software"
@@ -157,7 +157,7 @@ def test_a2a_envelope_over_the_wire(client):
                                "parts": [{"kind": "text", "text": "prose to summarise"}]},
                    "metadata": {"object_id": "ticket-888", "trigger_id": "t-1"}}})
     assert response.json()["hubspot"]["status"] == "written"
-    assert WRITES[-1]["object_id"] == "ticket-888"
+    assert WRITES[-1]["objectId"] == "ticket-888"
 
 
 def test_json_source_end_to_end(client):
@@ -175,4 +175,4 @@ def test_dry_run_reaches_the_server_for_discovery_but_never_writes(client, monke
         body = dry_client.post("/summary/run", json={
             "source": "prose", "hubspot": {"object_id": "ticket-000"}}).json()
     assert body["hubspot"]["status"] == "dry_run"
-    assert all(w["object_id"] != "ticket-000" for w in WRITES)
+    assert all(w["objectId"] != "ticket-000" for w in WRITES)

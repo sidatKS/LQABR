@@ -16,10 +16,12 @@ enumeration value with a 400, so catching it here turns a runtime failure
 into a named, logged validation result.
 
 Property names are owned by the HubSpot schema and must match it exactly.
-Confirmed live (ldqfingsrv-dev, 2026-07-23):
+Confirmed live (ldqfingsrv-dev, 2026-07-23; status properties renamed to the
+un-prefixed `email_status`/`voice_status` per the 2026-08-25 decision —
+the old lqabr_* prefixed names are retired):
 
-    contacts   employee_id, jobtitle, email_id, phone,
-               employee_id, lqabr_email_status (enumeration:
+    contacts   employee_id, jobtitle, email (standard), phone,
+               employee_id, email_status (enumeration:
                PENDING/SENT/DELIVERED/OPENED/FAILED/BOUNCED), probability
     companies  company_id, industry, annualrevenue, frequency_of_purchase
 
@@ -54,9 +56,10 @@ from lqabr_core.types import LeadProfile
 #: These are `LeadProfile` ATTRIBUTE names, because that is what
 #: `validate_profile` getattrs them against — not the HubSpot column names.
 #: The two differ for the external ids (`external_employee_id` ->
-#: `employee_id`, `external_company_id` -> `company_id`) and for the address
-#: (`email` -> `email_id`); using the column name here silently reports every
-#: lead as missing that pointer.
+#: `employee_id`, `external_company_id` -> `company_id`); the address uses the
+#: STANDARD HubSpot `email` property (decided 2026-08-26 — the custom
+#: `email_id` property is retired everywhere), so attribute and column now
+#: share the name `email`.
 PROFILE_POINTERS = (
     "external_employee_id", "job_title", "external_company_id", "email", "phone",
     "industry", "company_size_revenue", "location", "linkedin_url",
@@ -74,7 +77,7 @@ PROFILE_POINTERS = (
 #: references that must never reach an email, so they are not construction
 #: inputs and are not what an operator checks the copy against.
 CONSTRUCTION_FIELDS = (
-    "email_id", "first_name", "last_name", "company", "job_title",
+    "email", "first_name", "last_name", "company", "job_title",
     "industry", "industry_group", "company_about", "company_website",
     "annual_revenue", "lead_context",
 )
@@ -82,23 +85,24 @@ CONSTRUCTION_FIELDS = (
 #: Named for email construction. The email greets the lead by `first_name`
 #: (firstname/lastname are standard HubSpot properties); `employee_id` stays
 #: an internal identifier and is never written into the prose. Of these only
-#: the email ID is fatal on its own — a lead with no address cannot be emailed.
-NAMED_FOR_CONSTRUCTION = ("first_name", "last_name", "company_id", "email_id",
+#: the email address is fatal on its own — a lead with no address cannot be
+#: emailed.
+NAMED_FOR_CONSTRUCTION = ("first_name", "last_name", "company_id", "email",
                           "industry", "job_title")
-REQUIRED_TO_SEND = ("email_id",)
+REQUIRED_TO_SEND = ("email",)
 
 #: Contact properties this MCP is allowed to write.
 #: firstname/lastname are STANDARD HubSpot properties that exist on every
 #: portal; the lead-profile agent writes them and the email agent reads them
 #: to greet the lead by first name.
 WRITABLE_CONTACT_PROPERTIES = frozenset({
-    "firstname", "lastname", "jobtitle", "company_id", "email_id", "phone",
-    "employee_id", "lqabr_email_status", "probability",
+    "firstname", "lastname", "jobtitle", "company_id", "email", "phone",
+    "employee_id", "email_status", "probability",
     # MVP 2026-08-21: the Text/Voice agent (Rev 5) writes these two contact
     # properties through the MCP. `last_modfied_voice` keeps the exact
     # (misspelled) name the agent sends in agents/text_voice/src/mcp_client.py
     # — the allowlist must match the wire name or HubSpot 400s the write.
-    "lqabr_voice_status", "last_modfied_voice",
+    "voice_status", "last_modfied_voice",
 })
 
 #: Ticket properties this MCP is allowed to write. The Summary agent lands a
@@ -109,7 +113,7 @@ WRITABLE_TICKET_PROPERTIES = frozenset({
     os.environ.get("LQABR_HUBSPOT_BLOG_INDUSTRY_PROPERTY", "blog_industry"),
 })
 
-#: Confirmed allowed values of the lqabr_email_status enumeration. Anything
+#: Confirmed allowed values of the email_status enumeration. Anything
 #: else is a 400 from HubSpot.
 EMAIL_STATUS_VALUES = ("PENDING", "SENT", "DELIVERED", "OPENED", "FAILED", "BOUNCED")
 
@@ -166,11 +170,13 @@ class ValidatedProfile:
     """The schema-validated 9-parameter profile the MCP returns at step 5,
     flattened into exactly what email construction consumes.
 
-    Field names follow the HubSpot columns (`email_id`, not `email`) so the
-    read side, the write side and the CRM all say the same word."""
+    Field names follow the HubSpot columns — the address lives in the
+    STANDARD HubSpot `email` property (decided 2026-08-26; the custom
+    `email_id` is retired) — so the read side, the write side and the CRM
+    all say the same word."""
 
     object_id: str
-    email_id: str
+    email: str
     first_name: str = ""
     last_name: str = ""
     employee_id: str = ""
@@ -234,7 +240,7 @@ class ValidatedProfile:
 
         THE TWO THAT NEED A RULE, NOT JUST A VALUE:
 
-        `email_id` is offered (confirmed field list, 2026-08-18) so the model
+        `email` is offered (confirmed field list, 2026-08-18) so the model
         knows who it is writing to — a personal address and a corporate one are
         different readers. It must NEVER be written into the body; DRAFTING_RULES
         forbids it. Addressing the message is step 11's job, not the prose's.
@@ -257,7 +263,7 @@ class ValidatedProfile:
         one is filtered out by `skills.lead_facts()` rather than reaching the
         model as a blank."""
         return {
-            "email_id": self.email_id,
+            "email": self.email,
             "first_name": self.first_name,
             "last_name": self.last_name,
             "company": self.company,
@@ -279,7 +285,7 @@ class ValidatedProfile:
         view has to show the gap; the model's copy of it needs something to
         write with."""
         values = {
-            "email_id": self.email_id,
+            "email": self.email,
             "first_name": self.first_name,
             "last_name": self.last_name,
             "company": self.company,
@@ -295,7 +301,7 @@ class ValidatedProfile:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "object_id": self.object_id, "email_id": self.email_id,
+            "object_id": self.object_id, "email": self.email,
             "first_name": self.first_name, "last_name": self.last_name,
             "employee_id": self.employee_id,
             "job_title": self.job_title,
@@ -342,7 +348,7 @@ def validate_profile(profile: LeadProfile) -> ValidatedProfile:
 
     return ValidatedProfile(
         object_id=str(profile.object_id),
-        email_id=profile.email,   # LeadProfile.email <- HubSpot column email_id
+        email=profile.email,   # LeadProfile.email <- standard HubSpot `email`
         first_name=first_name,
         last_name=last_name,
         employee_id=profile.external_employee_id or "",
@@ -401,11 +407,11 @@ def validate_writeback(properties: Dict[str, Any],
         if value is None:
             continue
 
-        if name == "lqabr_email_status":
+        if name == "email_status":
             text = str(value).upper()
             if text not in EMAIL_STATUS_VALUES:
                 raise SchemaValidationError(
-                    f"schema-error: lqabr_email_status={value!r} is not one of {EMAIL_STATUS_VALUES}")
+                    f"schema-error: email_status={value!r} is not one of {EMAIL_STATUS_VALUES}")
             validated[name] = text
         elif name == "probability":
             try:
