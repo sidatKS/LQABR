@@ -46,39 +46,54 @@ def run_summary(request: SummaryRequest, *,
     source_info = SourceInfo()
 
     # ---- step 1: normalise the input, whatever kind it was ----------
-    try:
-        spec = request.to_spec()
-        source_info.kind = spec.kind
-        source_info.reference = spec.reference
-        obs.process.emit("run_start", source_kind=spec.kind, source_ref=spec.reference,
-                         object_id=(request.hubspot.object_id if request.hubspot else ""),
-                         dry_run=settings.dry_run)
-        document = sources.fetch(spec, settings, session=session, obs=obs)
-    except SourceError as exc:
-        obs.process.emit("run_failed", step="fetch", reason=str(exc))
-        return SummaryResponse(run_id=obs.run_id, status="failed", source=source_info,
-                               model=settings.model, error=str(exc))
+    spec = request.to_spec()
+    source_info.kind = spec.kind
+    source_info.reference = spec.reference
+    obs.process.emit("run_start", source_kind=spec.kind, source_ref=spec.reference,
+                     object_id=(request.hubspot.object_id if request.hubspot else ""),
+                     model=settings.model, dry_run=settings.dry_run)
+
+    with obs.step("fetch", source_kind=spec.kind, source_ref=spec.reference) as step:
+        try:
+            document = sources.fetch(spec, settings, session=session, obs=obs)
+        except SourceError as exc:
+            step.failed(str(exc))
+            obs.process.emit("run_failed", step="fetch", reason=str(exc))
+            return SummaryResponse(run_id=obs.run_id, status="failed",
+                                   source=source_info, model=settings.model,
+                                   error=str(exc))
+        step.ok(title=document.title, chars=document.char_count,
+                truncated=document.truncated)
 
     source_info.title = document.title
     source_info.chars = document.char_count
     source_info.truncated = document.truncated
 
     # ---- step 2: summarise ------------------------------------------
-    try:
-        result = summarize(document, settings=settings, obs=obs, completion=completion)
-    except SummaryValidationError as exc:
-        obs.process.emit("run_failed", step="summarize", reason=str(exc))
-        return SummaryResponse(run_id=obs.run_id, status="failed", source=source_info,
-                               model=settings.model, error=str(exc))
-    except Exception as exc:
-        # The provider itself failed — no key, rate limit, outage. That is a
-        # reported outcome with the step named, not a 500 with a provider
-        # stack trace: the caller asked a valid question, and an operator
-        # needs to know it was the MODEL hop that broke.
-        reason = f"the model call failed ({type(exc).__name__}): {exc}"
-        obs.process.emit("run_failed", step="summarize", reason=reason)
-        return SummaryResponse(run_id=obs.run_id, status="failed", source=source_info,
-                               model=settings.model, error=reason)
+    with obs.step("summarize", chars=document.char_count, model=settings.model,
+                  source_kind=spec.kind) as step:
+        try:
+            result = summarize(document, settings=settings, obs=obs,
+                               completion=completion)
+        except SummaryValidationError as exc:
+            step.failed(str(exc))
+            obs.process.emit("run_failed", step="summarize", reason=str(exc))
+            return SummaryResponse(run_id=obs.run_id, status="failed",
+                                   source=source_info, model=settings.model,
+                                   error=str(exc))
+        except Exception as exc:
+            # The provider itself failed — no key, rate limit, outage. That is
+            # a reported outcome with the step named, not a 500 with a provider
+            # stack trace: the caller asked a valid question, and an operator
+            # needs to know it was the MODEL hop that broke.
+            reason = f"the model call failed ({type(exc).__name__}): {exc}"
+            step.failed(reason)
+            obs.process.emit("run_failed", step="summarize", reason=reason)
+            return SummaryResponse(run_id=obs.run_id, status="failed",
+                                   source=source_info, model=settings.model,
+                                   error=reason)
+        step.ok(chars=len(result.summary), key_points=len(result.key_points),
+                industry=result.industry)
 
     # ---- step 3: land it on HubSpot ---------------------------------
     target = request.hubspot
@@ -96,14 +111,25 @@ def run_summary(request: SummaryRequest, *,
                               error="no hubspot.object_id was supplied, so nothing was written")
     else:
         hubspot = hubspot or HubSpotMCP(settings=settings, obs=obs)
-        outcome = hubspot.write_summary(
-            target.object_id, result,
-            industry=target.industry,
-            object_type=target.object_type,
-            subject=target.subject,
-            blog_published_at=target.blog_published_at,
-            extra_properties=target.properties,
-        )
+        with obs.step("write_summary", object_id=target.object_id,
+                      object_type=target.object_type or settings.hubspot_object_type,
+                      style=settings.mcp_write_style,
+                      dry_run=settings.dry_run) as step:
+            outcome = hubspot.write_summary(
+                target.object_id, result,
+                industry=target.industry,
+                object_type=target.object_type,
+                subject=target.subject,
+                blog_published_at=target.blog_published_at,
+                extra_properties=target.properties,
+            )
+            written = {"write_status": outcome.status}
+            if outcome.status == "skipped":
+                step.skipped(outcome.error or outcome.status, **written)
+            elif outcome.ok:
+                step.ok(**written)
+            else:
+                step.failed(outcome.error, **written)
 
     response = SummaryResponse(
         run_id=obs.run_id,

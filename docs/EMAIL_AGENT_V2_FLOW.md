@@ -180,7 +180,7 @@ lqabr/
  │  v:lqabr_correlation_token · v:lqabr_object_id · v:lqabr_run_id ·
  │  v:hubspot_contact_id  — echoed back on every later event.
  │  Run state persisted: object_id + run_id → lead → message id.
- │  CRM mirrored: lqabr_email_status PENDING → SENT.
+ │  CRM mirrored: email_status PENDING → SENT.
  │  ✗ Rejected send → terminal `stopped` from enums.py, persisted, and
  │    written back immediately (no webhook is coming for a mail that never left).
  │  logs: audit_log   the outbound Mailgun call + response
@@ -208,10 +208,10 @@ lqabr/
  ▼
  ┌ STEP 9 ── Write the status back ────── mcp/hubspot — POST · PATCH
  │  Same central MCP, same schema as the read.
- │    lqabr_email_status      DELIVERED | OPENED | FAILED | BOUNCED
+ │    email_status      DELIVERED | OPENED | FAILED | BOUNCED
  │    probability             += lqabr_core.probability increments
  │                               (+2 delivered · +5 opened · +10 clicked)
- │    email_campaign_complete set WHEN lqabr_email_status REACHES OPENED
+ │    email_campaign_complete set WHEN email_status REACHES OPENED
  │  Probability is read back from HubSpot first — on conflict, CRM wins.
  │  Terminal status → the run ends after the write-back, with no hand-off.
  │  logs: process_log writeback_validated / writeback_applied / run_ended
@@ -219,7 +219,7 @@ lqabr/
  ▼
  ┌ STEP 10 ─ Hand off to text / voice ─── no new surface in the email agent
  │  Triggered by the campaign-complete COLUMN ALONE — not a probability
- │  threshold. The column is set when lqabr_email_status reaches OPENED. Probability is still written, for reporting only.
+ │  threshold. The column is set when email_status reaches OPENED. Probability is still written, for reporting only.
  │  Ownership passes; the email agent stops acting on the lead. Terminal.
  │  logs: process_log handoff_condition_met
  └──────────────────────────────────────────────────────────────────────────
@@ -253,9 +253,9 @@ status, delivered, clicked, campaign_complete, terminal, events[]}`.
 
 | Property | Written at | Values |
 |---|---|---|
-| `lqabr_email_status` | 7 · 9 | PENDING · SENT · DELIVERED · OPENED · FAILED · BOUNCED |
+| `email_status` | 7 · 9 | PENDING · SENT · DELIVERED · OPENED · FAILED · BOUNCED |
 | `probability` | 9 | 0–100, increments from `lqabr_core/probability.py` only |
-| `email_campaign_complete` | 9 | boolean — set when `lqabr_email_status` reaches OPENED (confirmed 2026-08-04). A click maps to OPENED too, so one rule covers both. |
+| `email_campaign_complete` | 9 | boolean — set when `email_status` reaches OPENED (confirmed 2026-08-04). A click maps to OPENED too, so one rule covers both. |
 | `object_id` | read at 5 | the campaign chunk key |
 
 **Status precedence** (which status won):

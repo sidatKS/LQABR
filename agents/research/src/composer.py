@@ -28,37 +28,41 @@ except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
 # lead_context note:", "Below is the note for Brex:". Matched at any line
 # start, not just the first — the model often writes a research recap FIRST
 # and only then announces the note, so the opener is mid-text.
-#: An announcement, in any of the three shapes the model actually uses:
+#: The model announcing the note rather than writing it. Built from every
+#: opener seen in production (15 of them, across four campaigns on 2026-08-25),
+#: which is why it is this permissive:
 #:
-#:   "Here is the lead_context note:"        an opener
-#:   "**Important note to the email writer:**"  an aside, bolded, mid-text
-#:   "⚠️ **Note before the note:**"            the same with a warning glyph
+#:   "Here is the `lead_context` note:"
+#:   "⚠️ **Important note before the lead_context note:**"
+#:   "**⚠️ Editorial note before the lead_context note:**"   glyph INSIDE the bold
+#:   "⚠️ **Important flag before writing the note:**"        flag, not note
+#:   "**Note to writer:**"
+#:   "I now have sufficient information… Let me note upfront:"
 #:
-#: The third and second shapes were added after a live campaign (2026-08-25)
-#: put 2,287 characters of the model's commentary about a mis-tagged blog post
-#: into two contacts' `lead_context`, where the Email agent reads it.
-_PREAMBLE = re.compile(
-    r"^[ \t]*(?:[^\w\s]{1,3}[ \t]*)?(?:\*{0,2}|_{0,2})"
-    r"(?:here(?:'s| is)\b|below is\b|i'?ll\b|i have\b|i've\b"
+#: `_JUNK` is the run of markdown, emoji and punctuation any of them may open
+#: with, in any order — matching `**` before `⚠️` and after it.
+_JUNK = r"[^A-Za-z0-9\n]{0,12}"
+_OPENERS = (
+    r"here(?:'s| is)\b|below is\b|i'?ll\b|i(?: now)? have\b|i'?ve\b"
     r"|let me\b|now let me\b|i'?m going to\b|sure[,!.]|certainly[,!.]"
-    r"|(?:an? )?(?:important|quick|brief)? ?note\b"
-    r"|(?:a )?(?:caveat|warning|disclaimer|heads[- ]up)\b)"
-    r"[^\n]{0,200}?:\**[ \t]*$",
+    r"|(?:an? )?(?:important|quick|brief|editorial|final|one)?[ \t]*"
+    r"(?:note|flag|caveat|warning|disclaimer|heads[- ]up)\b"
+)
+
+#: The announcement as its own line, ending in a colon — what `strip_preamble`
+#: splits on, keeping only what follows the LAST one.
+_PREAMBLE = re.compile(
+    rf"^[ \t]*{_JUNK}(?:{_OPENERS})[^\n]{{0,200}}?:\**[ \t]*$",
     re.IGNORECASE | re.MULTILINE)
 
 # A markdown rule the model puts between the announcement and the note.
 _LEADING_RULE = re.compile(r"\A(?:\s*(?:-{3,}|\*{3,}|_{3,})\s*\n)+")
 
 #: The same announcement written INLINE, so the commentary continues on the
-#: line rather than after it: `**Important note to the email writer:** The
-#: published post describes...`. The colon is mid-line, so `_PREAMBLE` (which
-#: anchors on end-of-line) cannot see it — the whole PARAGRAPH is the aside.
-_ASIDE = re.compile(
-    r"\A[ \t]*(?:[^\w\s]{1,3}[ \t]*)?(?:\*{0,2}|_{0,2})"
-    r"(?:(?:an? )?(?:important|quick|brief)? ?note\b"
-    r"|(?:a )?(?:caveat|warning|disclaimer|heads[- ]up)\b"
-    r"|here(?:'s| is)\b|below is\b)[^\n]{0,140}?:",
-    re.IGNORECASE)
+#: line rather than after it. The colon is mid-line, so `_PREAMBLE` (anchored on
+#: end-of-line) cannot see it — the whole PARAGRAPH is the aside.
+_ASIDE = re.compile(rf"\A[ \t]*{_JUNK}(?:{_OPENERS})[^\n]{{0,200}}?:",
+                    re.IGNORECASE)
 
 
 def _drop_leading_asides(text: str) -> str:

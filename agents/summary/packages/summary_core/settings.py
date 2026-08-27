@@ -83,7 +83,28 @@ def _resolve_log_file(cfg: Dict[str, object] | None = None) -> str:
     cfg_val = _cfg(cfg or {}, "logging", "file", None)
     if cfg_val is not None:
         return _resolve(cfg_val)
-    return str(root / "logs" / "agents" / "summary" / "agent.log")
+    # OFF by default. It used to default to logs/agents/summary/agent.log,
+    # which after the sink split would quietly keep all three streams in one
+    # file and the split would never happen.
+    return ""
+
+
+def _resolve_log_dir(cfg: Dict[str, object] | None = None) -> str:
+    """Where the three per-stream files go. Same precedence as the log file;
+    a relative value resolves against the repo root; empty disables."""
+    from pathlib import Path
+    # Same flattened-image guard as _resolve_log_file above: in the container
+    # parents[4] does not exist and would raise IndexError at import time.
+    _up = Path(__file__).resolve().parents
+    root = _up[4] if len(_up) > 4 and _up[3].name == "agents" else _up[2]
+    raw = os.environ.get("LQABR_SUMMARY_LOG_DIR")
+    if raw is None:
+        raw = str(_cfg(cfg or {}, "logging", "dir", "logs/summary"))
+    raw = str(raw).strip()
+    if raw == "":
+        return ""
+    path = Path(raw)
+    return str(path if path.is_absolute() else (root / path))
 
 
 def _load_config_map() -> Dict[str, object]:
@@ -131,7 +152,7 @@ class Settings:
     mcp_tool_read: str = "get_lead_profile_details"
     mcp_tool_write: str = "post_patch_crm"
     mcp_tool_list_leads: str = "list_trigger_leads"
-    #: "patch" -> post_patch_crm{object_id, properties} (generic contact/ticket patch).
+    #: "patch" -> post_patch_crm{objectId, properties} (generic contact/ticket patch).
     #: "blog_summary" -> upsert_blog_summary{subject, blog_summary, blog_published_at,
     #: blog_industry}, the FastMCP central server's blog writer (keyed on blog_published_at).
     mcp_write_style: str = "patch"
@@ -149,7 +170,7 @@ class Settings:
     #: The ARGUMENT names the write tool expects. Overridable for the
     #: same reason the tool names are: a server-side rename must never
     #: require a code edit here.
-    mcp_arg_object_id: str = "object_id"
+    mcp_arg_object_id: str = "objectId"
     mcp_arg_properties: str = "properties"
 
     # ── HubSpot target ───────────────────────────────────────
@@ -182,7 +203,19 @@ class Settings:
     secrets_source: str = "env"         # env | secret_manager | auto
     gcp_project: str = ""
     log_level: str = "INFO"
-    log_file: str = ""    # native file log; empty = stdout only
+    #: Where the three per-stream files go; empty = stdout only.
+    log_dir: str = "logs/summary"
+    #: Deprecated single-file sink. When set, all three streams share it and
+    #: the boot emits `log_sink_legacy` — announced, never silently ignored.
+    log_file: str = ""
+    log_max_bytes: int = 52_428_800
+    log_backups: int = 5
+    #: terse | normal | debug — how much of a value reaches the log.
+    log_mode: str = "normal"
+    #: Console shape only — the FILES are always JSON. `auto` means readable
+    #: text when stdout is a terminal and JSON when it is not, so a deployed
+    #: stdout keeps its structured fields.
+    log_format: str = "auto"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -206,7 +239,7 @@ class Settings:
                 ("FINANCIAL_SERVICES", "LEGAL_SERVICES", "HEALTHCARE"))),
             mcp_assert_tools=_bool("LQABR_SUMMARY_MCP_ASSERT_TOOLS", True),
             mcp_startup_check=_str("LQABR_SUMMARY_MCP_STARTUP_CHECK", "warn").lower(),
-            mcp_arg_object_id=_str("LQABR_SUMMARY_MCP_ARG_OBJECT_ID", "object_id"),
+            mcp_arg_object_id=_str("LQABR_SUMMARY_MCP_ARG_OBJECT_ID", "objectId"),
             mcp_arg_properties=_str("LQABR_SUMMARY_MCP_ARG_PROPERTIES", "properties"),
             hubspot_object_type=_str("LQABR_SUMMARY_HUBSPOT_OBJECT_TYPE", "ticket"),
             hubspot_summary_property=_str("LQABR_SUMMARY_HUBSPOT_SUMMARY_PROPERTY", "blog_summary"),
@@ -228,7 +261,19 @@ class Settings:
             secrets_source=_str("LQABR_SUMMARY_SECRETS_SOURCE", "env").lower(),
             gcp_project=_str("LQABR_SUMMARY_GCP_PROJECT"),
             log_level=_str("LQABR_SUMMARY_LOG_LEVEL", "INFO").upper(),
+            log_mode=(_str("LQABR_SUMMARY_LOG_MODE",
+                           str(_cfg(cfg, "logging", "mode", "normal"))).lower()
+                      if _str("LQABR_SUMMARY_LOG_MODE",
+                              str(_cfg(cfg, "logging", "mode", "normal"))).lower()
+                      in ("terse", "normal", "debug") else "normal"),
+            log_format=_str("LQABR_SUMMARY_LOG_FORMAT",
+                            str(_cfg(cfg, "logging", "format", "auto"))).lower(),
+            log_dir=_resolve_log_dir(cfg),
             log_file=_resolve_log_file(cfg),
+            log_max_bytes=_int("LQABR_SUMMARY_LOG_MAX_BYTES",
+                               _cfg(cfg, "logging", "max_bytes", 52_428_800)),
+            log_backups=_int("LQABR_SUMMARY_LOG_BACKUPS",
+                             _cfg(cfg, "logging", "backups", 5)),
         )
 
     # ------------------------------------------------------------------

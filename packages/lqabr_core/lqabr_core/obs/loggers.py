@@ -44,6 +44,66 @@ def _log_to_file_enabled() -> bool:
     return os.getenv("LQABR_LOG_TO_FILE", "false").strip().lower() in {"1", "true", "yes"}
 
 
+def _pretty_enabled() -> bool:
+    """LQABR_LOG_PRETTY=true renders the CONSOLE in a human-readable, aligned
+    format. The .jsonl file sinks ALWAYS keep full JSON regardless — pretty is
+    a view for a person watching the terminal, never a change to the record.
+    Off by default so Cloud Run (which ingests stdout as JSON) is unaffected."""
+    return os.getenv("LQABR_LOG_PRETTY", "false").strip().lower() in {"1", "true", "yes"}
+
+
+#: keys that are console noise when a person is watching one local run;
+#: they stay in the JSON record untouched.
+_PRETTY_SKIP = {"ts", "log", "run_id", "agent", "event"}
+
+#: view-layer lead-progress state: lead_ref_id -> "n/total". Populated from
+#: lead_dispatch records (which carry position/of) so every later line about
+#: the same lead can be prefixed [ n/total]. Cleared when a new push loop
+#: starts. Console-only — the JSON records are untouched.
+_LEAD_PROGRESS: dict[str, str] = {}
+
+
+def _progress_prefix(record: dict[str, Any]) -> str:
+    event = record.get("event")
+    if event in {"step4_start", "run_started"}:
+        _LEAD_PROGRESS.clear()
+    ref = record.get("lead_ref_id")
+    if not ref:
+        return ""
+    if "position" in record and "of" in record:
+        _LEAD_PROGRESS[str(ref)] = f"{record['position']}/{record['of']}"
+    tag = _LEAD_PROGRESS.get(str(ref))
+    return f"[{tag:>5}] " if tag else ""
+
+
+def _pretty_line(record: dict[str, Any]) -> str:
+    """One aligned line: HH:MM:SS  STREAM  [ n/of]  event  key=value …"""
+    ts = str(record.get("ts", ""))
+    clock = ts[11:19] if len(ts) >= 19 else ts
+    tag = str(record.get("log", "")).upper().ljust(7)
+    prefix = _progress_prefix(record)
+    event_name = str(record.get("event", ""))
+    event = event_name.ljust(30)
+    skip = set(_PRETTY_SKIP)
+    if prefix and event_name == "lead_dispatch":
+        skip |= {"position", "of"}          # already shown in the [ n/of] prefix
+    parts: list[str] = []
+    # Make the totals unmissable at loop start and loop end.
+    if event_name in {"step4_start", "step4_complete"} and "profiles_seen" in record:
+        parts.append(f"total_leads={record['profiles_seen']}")
+        skip.add("profiles_seen")
+    for key, value in record.items():
+        if key in skip:
+            continue
+        if key in {"lead_ref_id", "summary_ref_id"} and isinstance(value, str):
+            value = "…" + value[-8:]
+        text = str(value)
+        if len(text) > 120:
+            text = text[:117] + "…"
+        parts.append(f"{key}={text}")
+    return f"{clock}  {tag} {prefix}{event} " + "  ".join(parts)
+
+
 def _file_sink(log_type: str) -> TextIO | None:
     """Optional per-stream file sink. Off by default; Cloud Run reads stdout."""
     if not _log_to_file_enabled():
@@ -104,8 +164,9 @@ class LogStream:
             line = json.dumps({**{k: str(v) for k, v in record.items()}}, ensure_ascii=False)
 
         out = self.stream or sys.stdout
+        console_line = _pretty_line(record) if _pretty_enabled() else line
         try:
-            out.write(line + "\n")
+            out.write(console_line + "\n")
             out.flush()
         except Exception:  # pragma: no cover
             pass

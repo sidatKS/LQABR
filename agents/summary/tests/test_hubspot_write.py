@@ -41,7 +41,7 @@ class TestWrite:
         assert result.ok
 
         arguments = server.tool_calls[0]["params"]["arguments"]
-        assert arguments["object_id"] == "ticket-1"
+        assert arguments["objectId"] == "ticket-1"
         properties = arguments["properties"]
         assert "Spring Boot 4 arrives" in properties["blog_summary"]
         assert "virtual threads" in properties["blog_summary"]
@@ -52,10 +52,10 @@ class TestWrite:
         result = build(server, mcp_tool_write="patch_ticket",
                        hubspot_summary_property="post_summary",
                        hubspot_industry_property="post_industry",
-                       mcp_arg_object_id="objectId").write_summary("t-9", summary)
+                       mcp_arg_object_id="object_id").write_summary("t-9", summary)
         assert result.status == "written"
         arguments = server.tool_calls[0]["params"]["arguments"]
-        assert arguments["objectId"] == "t-9"
+        assert arguments["object_id"] == "t-9"
         assert set(arguments["properties"]) == {"post_summary", "post_industry"}
 
     def test_dry_run_computes_the_write_without_sending_it(self, summary):
@@ -101,7 +101,7 @@ class TestWrite:
 class TestRead:
     def test_profile_is_returned_when_the_mcp_has_one(self):
         server = FakeMCPSession(tool_results={
-            "get_lead_profile_details": {"email_id": "a@b.com", "industry": "Fintech"}})
+            "get_lead_profile_details": {"email": "a@b.com", "industry": "Fintech"}})
         assert build(server).get_lead_profile("42")["industry"] == "Fintech"
 
     def test_a_failed_read_degrades_to_no_profile(self):

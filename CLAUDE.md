@@ -38,10 +38,10 @@ Node/npm toolchain anywhere. What exists and runs today:
   `types` (LeadProfile 9 pointers, stages, events), `probability` (the
   single source of truth for increments/thresholds), `secrets` (Secret
   Manager with env fallback), `crm` (CRMClient interface + HubSpotClient),
-  `mailgun`, `timezones`, `profile` (record → profile → upsert). Also `obs`
+  `mailgun`, `timezones`. Also `obs`
   (four-stream run/lead observability) and `leadgen` — the Lead Profile
   Agent's **isolated** path: `leadgen.hubspot` (Contact+Company+association
-  upsert, `employee_id`/`company_id` dedup, custom `email_id`),
+  upsert, `employee_id`/`company_id` dedup, standard `email` property),
   `leadgen.secrets`, and `leadgen.server` (the MCP front door). It coexists
   with the 9-pointer `types`/`crm` model rather than replacing it.
 - `agents/{ingestion, lead_profile, email, text_voice, scheduling,
@@ -86,7 +86,8 @@ HubSpot is the system of record for lead data — see
   its opt-in operator console, whose model comes from `LQABR_AGENT_MODEL`
   (default `anthropic/claude-sonnet-4-6`, routed via LiteLLM).
 - **CRM:** HubSpot (private-app token). All lead state lives on the contact
-  (`lqabr_*` properties). The adapter is `lqabr_core.crm.HubSpotClient`
+  (custom contact properties — un-prefixed, e.g. `email_status`, `voice_status`;
+  the old `lqabr_*` prefixed names are retired, decided 2026-08-25). The adapter is `lqabr_core.crm.HubSpotClient`
   behind the vendor-neutral `CRMClient` interface.
 - **Services:** Mailgun (email + event webhooks), Twilio (SMS + voice with
   answering-machine detection), ZoomInfo (contact search), Zoom Scheduler

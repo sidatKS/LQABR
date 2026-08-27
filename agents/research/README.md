@@ -91,8 +91,9 @@ PYTHONPATH=src:packages python -m pytest -q
 `config/config.yaml` is the config map; every value is overridable by a
 `LQABR_RESEARCH_*` environment variable. Full table in `docs/ENV_VARS.md`.
 
-Logs: `logs/agents/research/agent.log` — written by the agent itself, path from
-the config map.
+Logs: `logs/research/` — three files written by the agent itself
+(`research_process.log`, `research_audit.log`, `research_system.log`), joined
+on `run_id`; directory from the config map.
 
 ## Docs
 

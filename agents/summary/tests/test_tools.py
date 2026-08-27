@@ -53,7 +53,7 @@ class TestWrite:
     def test_writes_and_reports_the_status(self, wired):
         result = tools.write_summary_to_hubspot("t-1", SUMMARY_JSON)
         assert result["status"] == "written"
-        assert wired.tool_calls[0]["params"]["arguments"]["object_id"] == "t-1"
+        assert wired.tool_calls[0]["params"]["arguments"]["objectId"] == "t-1"
 
     def test_empty_summary_is_skipped_not_written(self, wired):
         result = tools.write_summary_to_hubspot("t-1", json.dumps({"summary": "  "}))

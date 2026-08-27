@@ -67,7 +67,7 @@ the actual name.
 
 ## Two fields you are given to KNOW, never to WRITE
 
-**`email_id`** — the reader's address. It tells you who you are writing to: a
+**`email`** — the reader's address. It tells you who you are writing to: a
 personal address and a corporate one are different readers, and worth pitching
 differently. Never write the address itself into the email. The reader knows
 their own address, and quoting it back reads as a mail merge. Do not build a

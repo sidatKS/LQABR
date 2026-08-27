@@ -46,11 +46,13 @@ except ImportError:
     pass
 
 from fastapi import BackgroundTasks, FastAPI  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
 from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
-from research_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
+from research_core.obs import (configure_logging, get_obs,  # noqa: E402
+                                new_run_id, sink_state)
 from research_core import SERVICE_NAME, __version__  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 
@@ -91,8 +93,15 @@ _MCP_STATE: Dict[str, Any] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging(SETTINGS.log_level, SETTINGS.log_file, SETTINGS.log_format,
-                      detail=SETTINGS.log_detail)
+    configure_logging(SETTINGS.log_level, SETTINGS.log_dir, SETTINGS.log_format,
+                      max_bytes=SETTINGS.log_max_bytes,
+                      backups=SETTINGS.log_backups, log_file=SETTINGS.log_file,
+                      mode=SETTINGS.log_mode)
+    if SETTINGS.log_detail_deprecated:
+        get_obs().system.emit(
+            "log_detail_deprecated", mode=SETTINGS.log_mode,
+            detail="LQABR_RESEARCH_LOG_DETAIL still works and resolved to this "
+                   "mode. Use LQABR_RESEARCH_LOG_MODE=terse|normal|debug.")
     obs = get_obs(new_run_id(), refresh=True)
     obs.system.emit("service_start", service=SERVICE_NAME, version=__version__,
                     config=SETTINGS.redacted())
@@ -129,6 +138,7 @@ def _health_payload() -> Dict[str, Any]:
             "list_leads": SETTINGS.mcp_tool_list_leads,
         },
         "hubspot": {"context_property": SETTINGS.hubspot_context_property},
+        "logging": {"mode": SETTINGS.log_mode, **sink_state()},
     }
 
 
@@ -192,15 +202,37 @@ def _guarded(runner: Any, route: str) -> Any:
     return _run
 
 
-def _rejected(envelope: A2AEnvelope, route: str, reason: str) -> Dict[str, Any]:
-    get_obs().audit.emit("http_in", route=route, status=400, reason=reason)
-    return {"jsonrpc": "2.0", "id": envelope.id,
-            "result": {"status": "rejected", "reason": reason}}
+def _rejected(envelope: A2AEnvelope, route: str, reason: str,
+              run_id: str) -> Any:
+    """A refusal, correlatable.
+
+    It used to log under whatever id `get_obs()` happened to mint for the
+    request context — an id that appeared on exactly one line and led nowhere.
+    A rejection is the line you most want to find later, so it carries the
+    SAME id the run would have had: the gateway's when it sent one, and the
+    one echoed back to the caller either way.
+    """
+    get_obs().audit.emit("http_in", route=route, status=400, reason=reason,
+                         run_id=run_id, **envelope.source())
+    body: Dict[str, Any] = {"status": "rejected", "reason": reason,
+                            "run_id": run_id}
+    if envelope.jsonrpc == "2.0":
+        # A TOP-LEVEL `error`, not a rejection buried in `result`. The gateway
+        # reads exactly this: `parsed.get("error")` makes the dispatch ok=False
+        # and terminal, with the whole reason carried into its audit line. A
+        # 2xx whose refusal sits under `result` is recorded there as a
+        # SUCCESSFUL hand-off, which is how a refused campaign disappears.
+        # (A bare 4xx would also flip ok, but the gateway keeps only
+        # `HTTP 400: ` plus the first 200 characters of the body.)
+        return {"jsonrpc": "2.0", "id": envelope.id,
+                "error": {"code": -32602, "message": reason, "data": body}}
+    # A plain HTTP caller — a hand-written curl — gets the status it expects.
+    return JSONResponse(status_code=400, content=body)
 
 
 def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
             target: Any, runner: Any, logged: Dict[str, Any],
-            result: Dict[str, Any], expects: str) -> Dict[str, Any]:
+            result: Dict[str, Any], expects: str) -> Any:
     """Acknowledge, then work in the background.
 
     The gateway answers HubSpot inside its ~5s delivery budget, and a research
@@ -208,8 +240,12 @@ def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
     lands on the log streams under the gateway's run id, which is how the two
     are tied together.
     """
+    # Resolved BEFORE the guards, so an accepted run and a refused one are
+    # findable by the same key.
+    run_id = envelope.run_id() or new_run_id()
+
     if not target.objectId:
-        return _rejected(envelope, route, "payload carries no objectId")
+        return _rejected(envelope, route, "payload carries no objectId", run_id)
 
     # HubSpot names the record kind in the event. When it disagrees with the
     # route, say so HERE — the alternative is a read that fails three steps
@@ -221,9 +257,9 @@ def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
             f"bad-data: this route takes a {expects}, but the hand-off is a "
             f"HubSpot {envelope.source()['subscription_type']} — id "
             f"{target.objectId} is a {kind}. This agent researches a post's "
-            "whole industry; one lead on its own is the CLI (agent.py).")
+            "whole industry; one lead on its own is the CLI (agent.py).",
+            run_id)
 
-    run_id = envelope.run_id() or new_run_id()
     get_obs().audit.emit("http_in", route=route, status=200,
                          objectId=target.objectId, run_id=run_id,
                          **envelope.source(), **logged)
@@ -238,7 +274,7 @@ def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
 
 @app.post(SETTINGS.route_campaign_a2a)
 async def research_campaign_a2a(envelope: A2AEnvelope,
-                                background: BackgroundTasks) -> Dict[str, Any]:
+                                background: BackgroundTasks) -> Any:
     """The gateway's blog-summary hand-off — one post, the whole industry.
 
     The ONLY route the gateway drives. Its `agents_registry.yaml` has exactly

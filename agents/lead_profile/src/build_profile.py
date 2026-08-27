@@ -196,6 +196,12 @@ def build_profiles(feed: RawFeed) -> BuildResult:
                 industry=normalise_industry(clean_optional(company.get("Industry"))),
                 annual_revenue_m=clean_optional(company.get("Annual_Revenue (M)")),
                 frequency_of_purchase=clean_optional(company.get("Frequency_of_Purchase")),
+                # Optional columns added 2026-08-25 — absent in older feeds, so
+                # .get(): a feed without them still builds valid profiles.
+                company_name=clean_optional(company.get("Company_Name")),
+                industry_group=clean_optional(company.get("Industry_Group")),
+                about_us=clean_optional(company.get("About_Us")),
+                website_url=clean_optional(company.get("Website_URL")),
             )
         )
 
