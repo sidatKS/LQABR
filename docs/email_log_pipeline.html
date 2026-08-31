@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Agent Log Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --paper:   #f5f7f9;
+    --surface: #ffffff;
+    --sunk:    #eef1f5;
+    --ink:     #161a20;
+    --ink-2:   #4a5361;
+    --ink-3:   #7a8492;
+    --rule:    #dde2e8;
+    --rule-2:  #c8cfd8;
+    --normal:  #2c6491;
+    --debug:   #a56526;
+    --crit:    #a3392e;
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --measure: 66ch;
+    --pad: clamp(20px, 5vw, 56px);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:   #0f1216;
+      --surface: #161a20;
+      --sunk:    #12161b;
+      --ink:     #e5e9ef;
+      --ink-2:   #9ba5b3;
+      --ink-3:   #6a7482;
+      --rule:    #262c35;
+      --rule-2:  #333b46;
+      --normal:  #6faddf;
+      --debug:   #dda059;
+      --crit:    #de8375;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:   #0f1216;
+    --surface: #161a20;
+    --sunk:    #12161b;
+    --ink:     #e5e9ef;
+    --ink-2:   #9ba5b3;
+    --ink-3:   #6a7482;
+    --rule:    #262c35;
+    --rule-2:  #333b46;
+    --normal:  #6faddf;
+    --debug:   #dda059;
+    --crit:    #de8375;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ---------------------------------------------------------- masthead */
+  header { display: flex; flex-direction: column; gap: 14px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 5vw, 46px);
+    font-weight: 600;
+    letter-spacing: -.022em;
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  .dek {
+    margin: 0;
+    max-width: var(--measure);
+    font-size: 17px;
+    color: var(--ink-2);
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-top: 6px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 4px 9px;
+  }
+
+  /* ---------------------------------------------------------- sections */
+  section { display: flex; flex-direction: column; gap: 18px; }
+
+  h2 {
+    margin: 0;
+    font-size: 13px;
+    font-family: var(--mono);
+    font-weight: 500;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+  }
+
+  p { margin: 0; max-width: var(--measure); color: var(--ink-2); }
+  p strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  /* ---------------------------------------------------------- figures */
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 28px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-x: auto;
+  }
+
+  figure svg { display: block; width: 100%; min-width: 660px; height: auto; color: var(--ink-2); }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    max-width: 74ch;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+
+  .svg-box  { fill: var(--surface); stroke: var(--rule-2); stroke-width: 1; }
+  .svg-sunk { fill: var(--sunk); stroke: var(--rule-2); stroke-width: 1; }
+  .svg-t    { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+  .svg-t-s  { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-3); }
+  .svg-col  { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-3); letter-spacing: .14em; }
+  .svg-line { stroke: var(--ink-3); stroke-width: 1.2; fill: none; }
+  .svg-hair { stroke: var(--rule-2); stroke-width: 1; fill: none; }
+  .n-stroke { stroke: var(--normal); stroke-width: 1.6; fill: none; }
+  .d-stroke { stroke: var(--debug);  stroke-width: 1.6; fill: none; }
+  .n-box    { fill: none; stroke: var(--normal); stroke-width: 1.4; }
+  .d-box    { fill: none; stroke: var(--debug);  stroke-width: 1.4; }
+  .c-box    { fill: none; stroke: var(--crit);   stroke-width: 1.4; }
+  .n-t      { font-family: var(--mono); font-size: 11px; fill: var(--normal); }
+  .d-t      { font-family: var(--mono); font-size: 11px; fill: var(--debug); }
+  .c-t      { font-family: var(--mono); font-size: 11px; fill: var(--crit); }
+
+  /* ---------------------------------------------------------- samples */
+  .samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+
+  .sample {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sample-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sunk);
+  }
+
+  .sample-name { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+  .sample.normal .sample-name { color: var(--normal); }
+  .sample.debug  .sample-name { color: var(--debug); }
+  .sample-note { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+
+  pre {
+    margin: 0;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: var(--ink-2);
+    tab-size: 2;
+  }
+  pre .ts  { color: var(--ink-3); }
+  pre .ok  { color: var(--normal); }
+  pre .bad { color: var(--crit); }
+  pre .sub { color: var(--debug); }
+  pre .k   { color: var(--ink); }
+
+  /* ---------------------------------------------------------- table */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--sunk);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.var { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; }
+  td.val { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  td.desc { color: var(--ink-2); }
+
+  /* ---------------------------------------------------------- steps */
+  ol.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; counter-reset: s; }
+  ol.steps li {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    align-items: baseline;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+  }
+  ol.steps li::before {
+    content: counter(s, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-3);
+    letter-spacing: .06em;
+  }
+  ol.steps li.gate { border-left: 2px solid var(--crit); }
+  ol.steps li.gate::before { color: var(--crit); }
+  ol.steps .what { color: var(--ink); font-size: 15px; }
+  ol.steps .why { display: block; color: var(--ink-3); font-size: 13px; margin-top: 3px; }
+
+  footer {
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: .04em;
+  }
+
+  @media (max-width: 640px) {
+    .meta { gap: 6px; }
+    ol.steps li { grid-template-columns: 28px 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">LQABR · Email agent · Design</div>
+    <h1>Email Agent Log Pipeline</h1>
+    <p class="dek">One event source, two renderers, two destinations. The mode switch changes how much
+      each event carries — never which path it takes.</p>
+    <div class="meta">
+      <span class="chip">scope: email agent only</span>
+      <span class="chip">2026-08-26</span>
+      <span class="chip">design — not built</span>
+      <span class="chip">no code changed</span>
+    </div>
+  </header>
+
+  <!-- ===================================================== the pipeline -->
+  <section>
+    <h2>The pipeline</h2>
+    <h3>Four call sites converge on one emitter, then fan out to two sinks</h3>
+    <p>Every log line in the agent already passes through <code>_emit</code>. Keeping it that way is
+      what guarantees the terminal view and the stored file can never drift: they are the same event,
+      rendered twice.</p>
+
+    <figure>
+      <svg viewBox="0 0 1120 400" role="img"
+           aria-label="Logging pipeline: four call sites feed four log helper functions into a single _emit function, which passes a field dict to the lqabr.email logger; the logger fans out to a stdout handler rendering colored console output to the terminal, and a file handler rendering ANSI-stripped output to logs slash email slash email_process.log. The LQABR_EMAIL_LOG_MODE variable feeds field volume into _emit and log level into the logger.">
+        <defs>
+          <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="var(--ink-3)"/>
+          </marker>
+          <marker id="a-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="var(--normal)"/>
+          </marker>
+          <marker id="a-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="var(--debug)"/>
+          </marker>
+        </defs>
+
+        <!-- column labels -->
+        <text class="svg-col" x="24"  y="24">CALL SITES</text>
+        <text class="svg-col" x="316" y="24">ONE EVENT</text>
+        <text class="svg-col" x="596" y="24">LOGGER</text>
+        <text class="svg-col" x="836" y="24">HANDLER · FORMAT · OUTPUT</text>
+
+        <!-- call sites -->
+        <rect class="svg-box" x="24" y="50"  width="200" height="32" rx="2"/>
+        <text class="svg-t"   x="38" y="70">outreach.py</text>
+        <rect class="svg-box" x="24" y="90"  width="200" height="32" rx="2"/>
+        <text class="svg-t"   x="38" y="110">events.py</text>
+        <rect class="svg-box" x="24" y="130" width="200" height="32" rx="2"/>
+        <text class="svg-t"   x="38" y="150">service_app.py</text>
+        <rect class="svg-box" x="24" y="170" width="200" height="32" rx="2"/>
+        <text class="svg-t"   x="38" y="190">email_agent.py</text>
+
+        <text class="svg-t-s" x="24" y="224">log_process · log_audit</text>
+        <text class="svg-t-s" x="24" y="238">log_model · log_system</text>
+
+        <!-- fan-in -->
+        <path class="svg-hair" d="M224 66  H252"/>
+        <path class="svg-hair" d="M224 106 H252"/>
+        <path class="svg-hair" d="M224 146 H252"/>
+        <path class="svg-hair" d="M224 186 H252"/>
+        <path class="svg-hair" d="M252 66 V186"/>
+        <path class="svg-line" d="M252 126 H310" marker-end="url(#a-ink)"/>
+
+        <!-- _emit -->
+        <rect class="svg-box" x="316" y="60" width="220" height="132" rx="2"/>
+        <text class="svg-t"   x="330" y="86">_emit(stream, ctx, **f)</text>
+        <text class="svg-t-s" x="330" y="106">field dict → json.dumps</text>
+        <text class="svg-t-s" x="330" y="122">extra={ lqabr_stream }</text>
+        <path class="svg-hair" d="M330 138 H522"/>
+        <text class="svg-t-s" x="330" y="158">no concatenation —</text>
+        <text class="svg-t-s" x="330" y="174">one key per value</text>
+
+        <path class="svg-line" d="M536 126 H590" marker-end="url(#a-ink)"/>
+
+        <!-- logger -->
+        <rect class="svg-box" x="596" y="94" width="180" height="66" rx="2"/>
+        <text class="svg-t"   x="610" y="120">lqabr.email</text>
+        <text class="svg-t-s" x="610" y="140">propagate = False</text>
+
+        <!-- fan-out -->
+        <path class="n-stroke" d="M776 116 C 806 116, 806 92, 830 92" marker-end="url(#a-n)"/>
+        <path class="d-stroke" d="M776 140 C 806 140, 806 232, 830 232" marker-end="url(#a-d)"/>
+        <text class="svg-t-s" x="782" y="82">always</text>
+        <text class="svg-t-s" x="782" y="258">if LOG_DIR</text>
+
+        <!-- stdout handler -->
+        <rect class="n-box"  x="836" y="58" width="262" height="86" rx="2"/>
+        <text class="n-t"    x="850" y="82">stdout handler</text>
+        <text class="svg-t-s" x="850" y="102">ConsoleFormatter · colored</text>
+        <text class="svg-t-s" x="850" y="122">→ terminal · Cloud Logging</text>
+
+        <!-- file handler -->
+        <rect class="d-box"  x="836" y="192" width="262" height="122" rx="2"/>
+        <text class="d-t"    x="850" y="216">file handler</text>
+        <text class="svg-t-s" x="850" y="236">ConsoleFormatter · ANSI stripped</text>
+        <text class="svg-t-s" x="850" y="256">filter  stream == process_log</text>
+        <text class="svg-t-s" x="850" y="276">→ logs/email/email_process.log</text>
+        <text class="svg-t-s" x="850" y="296">rotating  10 MB × 5</text>
+
+        <!-- mode -->
+        <rect class="svg-sunk" x="316" y="248" width="220" height="112" rx="2"/>
+        <text class="svg-t"    x="330" y="272">LQABR_EMAIL_LOG_MODE</text>
+        <text class="svg-t-s"  x="330" y="296">normal → INFO · lean</text>
+        <text class="svg-t-s"  x="330" y="316">debug  → DEBUG · every</text>
+        <text class="svg-t-s"  x="330" y="332">          field, full value</text>
+
+        <path class="svg-line" d="M426 248 V198" marker-end="url(#a-ink)"/>
+        <text class="svg-t-s"  x="434" y="224">field volume</text>
+
+        <path class="svg-line" d="M536 300 H566 V150 H590" marker-end="url(#a-ink)"/>
+        <text class="svg-t-s"  x="572" y="248">level</text>
+      </svg>
+
+      <figcaption><b>The mode never changes the path.</b> Both handlers receive every event; mode
+        decides the logger's level and how many fields <code>_emit</code> attaches. The file is a
+        verbatim transcript of the terminal — nothing is file-only, and stdout is never removed, because
+        Cloud Run's filesystem is ephemeral and Cloud Logging reads stdout.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===================================================== modes -->
+  <section>
+    <h2>What the mode switch changes</h2>
+    <h3>Same events, same order — density is the only difference</h3>
+    <p>Both samples below are the same failing run on lead <code>533967041217</code>. Normal mode gives
+      you the shape of what happened; debug mode gives you every field that produced it.</p>
+
+    <div class="samples">
+      <div class="sample normal">
+        <div class="sample-head">
+          <span class="sample-name">normal</span>
+          <span class="sample-note">~8 lines / lead · no PII</span>
+        </div>
+<pre><span class="ts">13:00:12</span> <span class="ok">•</span> campaign_start  <span class="k">objectId</span>=533967041217
+                          <span class="k">run_id</span>=5d334be4 <span class="k">limit</span>=25
+<span class="ts">13:00:13</span> <span class="ok">◂ OUT</span> load_leads  <span class="k">ok</span> 1204ms
+                          <span class="k">leads_found</span>=1 <span class="k">company</span>=Brex
+                          <span class="k">industry</span>=FINANCIAL_SERVICES
+                          <span class="k">has_lead_context</span>=True
+                          <span class="k">lead_context_chars</span>=1619
+<span class="ts">13:00:13</span> ⋯ lead 1/1  533967041217 working…
+<span class="ts">13:00:55</span> <span class="bad">✗ OUT</span> construct  <span class="bad">failed</span> 43067ms
+                          <span class="k">reason</span>=model_output_unusable
+<span class="ts">13:00:56</span> <span class="ok">✓</span> batch_complete  <span class="k">sent</span>=0
+                          <span class="k">unresolved</span>=1</pre>
+      </div>
+
+      <div class="sample debug">
+        <div class="sample-head">
+          <span class="sample-name">debug</span>
+          <span class="sample-note">all 20 profile fields · full values</span>
+        </div>
+<pre><span class="ts">13:00:13</span> <span class="ok">◂ OUT</span> load_leads  <span class="k">ok</span> 1204ms <span class="k">deduped</span>=0
+<span class="ts">13:00:13</span> <span class="sub">+</span> profile  <span class="k">objectId</span>=533967041217
+      <span class="k">email_id</span>=harish@brex.com
+      <span class="k">first_name</span>=Harish  <span class="k">last_name</span>=Bandla
+      <span class="k">job_title</span>=President
+      <span class="k">company</span>=Brex  <span class="k">company_id</span>=C0009
+      <span class="k">industry</span>=FINANCIAL_SERVICES
+      <span class="k">industry_group</span>=
+      <span class="k">company_website</span>=https://www.brex.com
+      <span class="k">probability</span>=0  <span class="k">email_status</span>=PENDING
+      <span class="k">lead_context_chars</span>=1619
+      <span class="k">missing_pointers</span>=[]
+      lead_context: Brex is a rapidly scaling
+      AI-native finance platform — growing…
+<span class="ts">13:00:55</span> <span class="sub">+</span> model_response  <span class="k">duration_ms</span>=43067
+      <span class="k">output_tokens</span>=1500 <span class="k">stop_reason</span>=max_tokens
+<span class="ts">13:00:56</span> <span class="sub">←</span> hubspot PATCH /contacts/5339… 200 591ms</pre>
+      </div>
+    </div>
+
+    <p><strong>Step 5 logs nothing about the lead today.</strong> A successful load emits an id and
+      nothing else, while <code>load_leads</code> returns a 20-field <code>ValidatedProfile</code> that
+      is thrown away. In the run above, <code>stop_reason=max_tokens</code> beside
+      <code>industry_group=</code> is the pair that explains the failure — neither is visible now.</p>
+  </section>
+
+  <!-- ===================================================== blocker -->
+  <section>
+    <h2>Prerequisite</h2>
+    <h3>Three copies of <code>configure_logging</code> race on one logger</h3>
+
+    <figure>
+      <svg viewBox="0 0 830 250" role="img"
+           aria-label="Three modules — outreach.py line 78, service_app.py line 136 and email_agent.py line 96 — each define their own configure_logging and all call logging.getLogger for the same lqabr.email logger, which is one shared object guarded by if not _LOG.handlers, so the first caller wins and the other two configurations are discarded silently.">
+        <defs>
+          <marker id="b-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="var(--ink-3)"/>
+          </marker>
+          <marker id="b-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="var(--crit)"/>
+          </marker>
+        </defs>
+
+        <rect class="svg-box" x="20" y="26"  width="210" height="52" rx="2"/>
+        <text class="svg-t"   x="34" y="48">outreach.py : 78</text>
+        <text class="svg-t-s" x="34" y="66">canonical, full block</text>
+
+        <rect class="svg-box" x="20" y="98"  width="210" height="52" rx="2"/>
+        <text class="svg-t"   x="34" y="120">service_app.py : 136</text>
+        <text class="svg-t-s" x="34" y="138">runs at startup</text>
+
+        <rect class="svg-box" x="20" y="170" width="210" height="52" rx="2"/>
+        <text class="svg-t"   x="34" y="192">email_agent.py : 96</text>
+        <text class="svg-t-s" x="34" y="210">runs at import</text>
+
+        <path class="svg-line" d="M230 52  H262 V124" marker-end="url(#a-ink)"/>
+        <path class="svg-line" d="M230 124 H320" marker-end="url(#b-ink)"/>
+        <path class="svg-line" d="M230 196 H262 V128" marker-end="url(#a-ink)"/>
+
+        <rect class="svg-box" x="326" y="82" width="232" height="86" rx="2"/>
+        <text class="svg-t"   x="340" y="106">getLogger("lqabr.email")</text>
+        <text class="svg-t-s" x="340" y="126">one shared object</text>
+        <text class="svg-t-s" x="340" y="148">if not _LOG.handlers:</text>
+
+        <path class="c-stroke svg-line" d="M558 124 H616" marker-end="url(#b-c)" stroke="var(--crit)"/>
+
+        <rect class="c-box" x="622" y="94" width="188" height="62" rx="2"/>
+        <text class="c-t"    x="636" y="118">first caller wins</text>
+        <text class="svg-t-s" x="636" y="138">others discarded, silently</text>
+      </svg>
+
+      <figcaption>All three call <code>logging.getLogger("lqabr.email")</code> — the <b>same object</b> —
+        and each guards its handler setup with <code>if not _LOG.handlers</code>. Invisible today because
+        every copy configures identically. Once mode and destination differ, whichever module imports
+        first decides the configuration for the whole process. <b>Collapse to one owner before anything
+        else.</b></figcaption>
+    </figure>
+  </section>
+
+  <!-- ===================================================== config -->
+  <section>
+    <h2>Configuration</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Values</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="var">LQABR_EMAIL_LOG_MODE</td>
+            <td class="val">normal · debug<br><span style="opacity:.65">default normal</span></td>
+            <td class="desc">Logger level and field volume. Absorbs <code>LQABR_EMAIL_LOG_MODEL_CONTENT</code>, which is retired.</td>
+          </tr>
+          <tr>
+            <td class="var">LQABR_EMAIL_LOG_DIR</td>
+            <td class="val">logs/email</td>
+            <td class="desc">Created at startup. Unset means no file handler — the Cloud Run case.</td>
+          </tr>
+          <tr>
+            <td class="var">LQABR_EMAIL_LOG_FORMAT</td>
+            <td class="val">console · json<br><span style="opacity:.65">default auto</span></td>
+            <td class="desc">Auto-detects by TTY: console locally, JSON on Cloud Run. Override when <code>--reload</code> or a pipe fools the detection.</td>
+          </tr>
+          <tr>
+            <td class="var">LQABR_EMAIL_LOG_MAX_FIELD_CHARS</td>
+            <td class="val">0<br><span style="opacity:.65">0 = unlimited</span></td>
+            <td class="desc">Caps long values with a <code>(+N chars)</code> tail. Useful on a 25-lead batch.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Validate <code>MODE</code> and <code>FORMAT</code> against their tuples and raise on anything
+      else — the same shape as <code>LQABR_EMAIL_ROUTES</code>. A typo silently meaning <em>normal</em>
+      is worse than a startup failure.</p>
+  </section>
+
+  <!-- ===================================================== build order -->
+  <section>
+    <h2>Build order</h2>
+    <ol class="steps">
+      <li class="gate"><span class="what">Collapse the three <code>configure_logging</code> copies to one owner in <code>outreach.py</code>
+        <span class="why">The <code>_emit</code> and <code>log_*</code> helpers stay inlined per module — only handler setup moves.</span></span></li>
+      <li class="gate"><span class="what"><code>configure_logging</code> takes mode and dir; installs both handlers
+        <span class="why">Rotating file handler at 10 MB × 5, ANSI stripped.</span></span></li>
+      <li class="gate"><span class="what">Add <code>ConsoleFormatter</code> and the <code>extra={"lqabr_stream": …}</code> tag on <code>_emit</code>
+        <span class="why">The stream name currently lives inside an opaque JSON string where no filter can see it.</span></span></li>
+      <li><span class="what">Add <code>_span</code>, <code>_fields</code>, <code>_preview</code> and the per-lead progress counter
+        <span class="why"><code>_fields</code> walks <code>__dataclass_fields__</code>, so a profile field added later appears automatically.</span></span></li>
+      <li><span class="what">Wire spans into steps 5 through 9
+        <span class="why">Phases: load_leads, construct, send, writeback — each closing on the exception path too.</span></span></li>
+    </ol>
+    <p>The first three are the gate — nothing is testable until they land. The send path, the three
+      duplicate-send guards, and all HubSpot and Mailgun logic are untouched throughout.</p>
+  </section>
+
+  <footer>LQABR · email agent · logging design · 2026-08-26 · scope: email agent only</footer>
+
+</div>
+</body>
+</html>

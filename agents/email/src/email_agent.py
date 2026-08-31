@@ -40,73 +40,17 @@ from typing import Any, Dict
 from google.adk.agents import Agent
 
 # --------------------------------------------------------------- logging
-# One JSON line per event, stamped with objectId + run_id so a whole run
-# greps back together. Inlined per module (no shared observability file); the
-# MCP is handed `MCPObservability` because mcp/hubspot/ cannot import agent code.
-import json as _json
-import logging as _logging
-import hashlib as _hashlib
-import uuid as _uuid
-from dataclasses import dataclass as _dataclass
-from datetime import datetime as _datetime, timezone as _timezone
-
-_LOG = _logging.getLogger("lqabr.email")
-
-
-@_dataclass(frozen=True)
-class RunContext:
-    objectId: str
-    run_id: str
-
-
-def _emit(stream, ctx, **fields):
-    _LOG.info(_json.dumps(
-        {"stream": stream, "ts": _datetime.now(_timezone.utc).isoformat(),
-         "agent": "email_agent",
-         "objectId": ctx.objectId if ctx else None,
-         "run_id": ctx.run_id if ctx else None, **fields}, default=str))
-
-
-def _log_process(ctx, *, step=None, event, **f):
-    _emit("process_log", ctx, step=step, event=event, **f)
-
-
-def _log_audit(ctx, *, step=None, direction, endpoint, method="", status_code=None,
-               bearer=None, **f):
-    fp = _hashlib.sha256(bearer.encode()).hexdigest()[:12] if bearer else "none"
-    _emit("audit_log", ctx, step=step, direction=direction, endpoint=endpoint,
-          method=method, status_code=status_code, bearer_fingerprint=fp, **f)
-
-
-
-def _log_system(**f):
-    import os
-    f.setdefault("host", os.environ.get("K_REVISION") or os.environ.get("HOSTNAME", "local"))
-    _emit("system_log", None, **f)
-
-
-def _bind_run(objectId, run_id=None):
-    if not objectId:
-        raise ValueError("objectId is required — a run cannot be logged without it")
-    ctx = RunContext(str(objectId), run_id or _uuid.uuid4().hex)
-    _log_process(ctx, step=3, event="run_started")
-    return ctx
-
-
-def _configure_logging(level=_logging.INFO):
-    _LOG.setLevel(level)
-    if not _LOG.handlers:
-        h = _logging.StreamHandler(); h.setFormatter(_logging.Formatter("%(message)s"))
-        _LOG.addHandler(h)
-    _LOG.propagate = False
-
-
-class MCPObservability:
-    def __init__(self, ctx=None): self.ctx = ctx
-    def process(self, **f): _log_process(self.ctx, **f)
-    def audit(self, **f): _log_audit(self.ctx, **f)
-
+# outreach.py OWNS the logging — the four streams, both formatters and the
+# handler setup. This module imports them and NEVER installs handlers of its
+# own: a second `if not handlers` guard silently discards whichever
+# configuration loses the import race.
 import outreach
+from observability import (
+    MCPObservability,
+    bind_run as _bind_run,
+    configure_logging as _configure_logging,
+    log_system as _log_system,
+)
 
 from lqabr_core.crm import CRMError
 from lqabr_core.model import build_model
@@ -179,7 +123,7 @@ def preview_email(objectId: str, cta_url: str = "") -> Dict[str, Any]:
     except outreach.skills.SkillError as exc:
         return {"error": f"construction: {exc}", "objectId": profile.object_id,
                 "skill": outreach.skills.select_skill(profile.industry)[0].name}
-    return {"object_id": profile.object_id, "to": profile.email, "skill": skill,
+    return {"objectId": profile.object_id, "to": profile.email, "skill": skill,
             "subject": subject, "html_body": html_body}
 
 
@@ -242,7 +186,7 @@ def get_lead_status(objectId: str) -> Dict[str, Any]:
     except CRMError as exc:
         return {"error": f"crm-error: {exc}"}
     return {
-        "object_id": profile.object_id,
+        "objectId": profile.object_id,
         "email": profile.email,
         "email_status": profile.email_status,
         "probability": profile.probability,

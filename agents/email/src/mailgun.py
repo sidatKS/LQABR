@@ -1,5 +1,11 @@
 """Mailgun client — outbound email + webhook signature verification.
 
+OWNED BY THE EMAIL AGENT. Moved out of `packages/lqabr_core` on 2026-08-26:
+nothing else in the repo ever imported it, and a transport only this agent
+speaks does not belong in a package shared with research, summary, text_voice,
+lead_profile and the gateway. `get_secret` stays in lqabr_core — secret
+resolution genuinely is shared.
+
 Secrets (Secret Manager): lqabr-mailgun-api-key, lqabr-mailgun-webhook-signing-key.
 Config (env): MAILGUN_DOMAIN, MAILGUN_FROM (e.g. "LQABR <outreach@mg.example.com>").
   MAILGUN_FROM must be on MAILGUN_DOMAIN so the From aligns with DKIM/the
@@ -8,8 +14,14 @@ Config (env): MAILGUN_DOMAIN, MAILGUN_FROM (e.g. "LQABR <outreach@mg.example.com
   replies to a mailbox on any domain without breaking that alignment.
 
 Tracking: messages are sent with opens/clicks tracking enabled; Mailgun then
-POSTs `delivered` / `opened` / `clicked` events to our webhook
-(webhook_app.py), which records them on the HubSpot contact.
+POSTs `delivered` / `opened` / `clicked` events to `POST /mailgun/events` on
+this same service (service_app.py -> events.py), which records them on the
+HubSpot contact.
+
+NO RUN STATE: `send_email(variables=...)` is what carries `lqabr_object_id`
+onto the message. Mailgun echoes it back on every event it raises, which is
+how an event days later is attributed to its lead on a container that scaled
+to zero in between. Never drop that variable.
 
 Typed and mockable — inject a requests.Session in tests.
 """
@@ -48,14 +60,32 @@ class MailgunClient:
         self._reply_to = (reply_to if reply_to is not None
                           else os.environ.get("MAILGUN_REPLY_TO", "")).strip()
         self._session = session or requests.Session()
+        # NOTE: send_one() constructs this with max_retries=1 deliberately.
+        # A timeout means "no reply", not "not sent" — Mailgun may have
+        # accepted the message and answered late, so retrying that ambiguity
+        # is how one lead received the same email two or three times.
         self._max_retries = max_retries
+
+    def config(self) -> Dict[str, Any]:
+        """What __init__ actually resolved — safe to log, and worth logging:
+        the constructor reads a secret and three env vars, any of which can be
+        wrong in a way that only shows up as a failed send.
+
+        The api key is FINGERPRINTED, never returned."""
+        return {
+            "domain": self._domain,
+            "sender": self._sender,
+            "reply_to": self._reply_to or None,
+            "max_retries": self._max_retries,
+            "api_key_fingerprint": hashlib.sha256(self._api_key.encode()).hexdigest()[:12],
+        }
 
     def send_email(self, to: str, subject: str, html: str, text: Optional[str] = None,
                    tags: Optional[list[str]] = None,
                    variables: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Send one tracked email. `variables` are attached as Mailgun user
-        variables and echoed back in webhook events (we always attach
-        hubspot_contact_id so events can be tied back to the lead)."""
+        variables and echoed back in webhook events — the agent always attaches
+        `lqabr_object_id` so an event can be tied back to its lead."""
         data: Dict[str, Any] = {
             "from": self._sender,
             "to": to,
@@ -102,7 +132,12 @@ class MailgunClient:
 
 def verify_webhook_signature(timestamp: str, token: str, signature: str,
                              signing_key: Optional[str] = None) -> bool:
-    """Verify a Mailgun webhook payload (HMAC-SHA256 of timestamp+token)."""
+    """Verify a Mailgun webhook payload (HMAC-SHA256 of timestamp+token).
+
+    compare_digest, not ==, so the comparison is constant-time."""
     key = signing_key or get_secret("lqabr-mailgun-webhook-signing-key")
     expected = hmac.new(key.encode(), f"{timestamp}{token}".encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+__all__ = ["MailgunClient", "MailgunError", "verify_webhook_signature", "API_BASE"]

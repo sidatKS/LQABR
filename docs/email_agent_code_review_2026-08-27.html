@@ -1,0 +1,410 @@
+<title>Email Agent Code Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#F4F7F7; --surface:#FFFFFF; --surface-2:#EDF2F2;
+  --ink:#0F1A1E; --body:#22343A; --muted:#5C6E75; --line:#D8E2E3; --line-soft:#E7EEEE;
+  --accent:#0B6E77; --accent-soft:#E2F0F1;
+  --crit:#A8201A; --crit-bg:#FBEAE9;
+  --high:#8F5300; --high-bg:#FBF0DF;
+  --med:#3A5A6C; --med-bg:#E9F0F4;
+  --low:#6D7F86; --low-bg:#EDF1F2;
+  --ok:#1B7048; --ok-bg:#E4F2EA;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0A1215; --surface:#0F1B20; --surface-2:#152329;
+    --ink:#E4EEF0; --body:#C3D4D8; --muted:#8AA0A7; --line:#1F323A; --line-soft:#182A31;
+    --accent:#4FC9D2; --accent-soft:#102C31;
+    --crit:#FF7B70; --crit-bg:#2A1210;
+    --high:#E5A94E; --high-bg:#2A1F0C;
+    --med:#8FB4CA; --med-bg:#12242E;
+    --low:#8AA0A7; --low-bg:#16242A;
+    --ok:#5AD394; --ok-bg:#0D2619;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0A1215; --surface:#0F1B20; --surface-2:#152329;
+  --ink:#E4EEF0; --body:#C3D4D8; --muted:#8AA0A7; --line:#1F323A; --line-soft:#182A31;
+  --accent:#4FC9D2; --accent-soft:#102C31;
+  --crit:#FF7B70; --crit-bg:#2A1210;
+  --high:#E5A94E; --high-bg:#2A1F0C;
+  --med:#8FB4CA; --med-bg:#12242E;
+  --low:#8AA0A7; --low-bg:#16242A;
+  --ok:#5AD394; --ok-bg:#0D2619;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1000px; margin:0 auto; padding:0 24px 96px}
+
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+  color:var(--ink); text-wrap:balance; margin:0; letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,5vw,3.1rem); font-weight:700; line-height:1.05}
+h2{font-size:1.6rem; font-weight:700; line-height:1.15}
+h3{font-size:1.1rem; font-weight:600}
+p{margin:0}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.875em; background:var(--surface-2); padding:.1em .35em; border-radius:3px;
+  border:1px solid var(--line-soft); color:var(--ink)}
+s{color:var(--muted); text-decoration-thickness:1px}
+
+header.top{border-bottom:2px solid var(--ink); padding:56px 0 22px; margin-bottom:40px}
+.eyebrow{font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:14px}
+.meta{display:flex; flex-wrap:wrap; gap:8px 28px; margin-top:20px;
+  font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--muted)}
+.meta b{color:var(--ink); font-weight:500}
+
+section{margin-top:52px}
+.lede{font-size:1.12rem; color:var(--body); max-width:68ch; margin-top:18px}
+.lede strong{color:var(--ink); font-weight:600}
+
+.callout{background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--crit);
+  border-radius:4px; padding:24px 26px; margin-top:28px; display:flex; flex-direction:column; gap:14px}
+.callout h3{color:var(--crit)}
+.callout p{max-width:70ch}
+.callout.good{border-left-color:var(--ok)}
+.callout.good h3{color:var(--ok)}
+
+.scroll{overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--surface); margin-top:20px}
+table{border-collapse:collapse; width:100%; min-width:640px; font-size:.86rem}
+th{font-family:"IBM Plex Mono",monospace; font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--muted); text-align:left; font-weight:500; padding:12px 16px;
+  border-bottom:1px solid var(--line); background:var(--surface-2); white-space:nowrap}
+td{padding:12px 16px; border-bottom:1px solid var(--line-soft); vertical-align:top; color:var(--body)}
+tr:last-child td{border-bottom:none}
+td.mono,th.mono{font-family:"IBM Plex Mono",monospace; font-size:.8rem; white-space:nowrap}
+td b{color:var(--ink); font-weight:600}
+tr.done td{background:var(--ok-bg)}
+
+.chip{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.66rem; font-weight:600;
+  letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:3px; white-space:nowrap}
+.chip.crit{color:var(--crit); background:var(--crit-bg)}
+.chip.high{color:var(--high); background:var(--high-bg)}
+.chip.med{color:var(--med); background:var(--med-bg)}
+.chip.low{color:var(--low); background:var(--low-bg)}
+.chip.ok{color:var(--ok); background:var(--ok-bg)}
+
+.finding{background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--low);
+  border-radius:4px; padding:20px 24px; margin-top:16px; display:flex; flex-direction:column; gap:12px}
+.finding.crit{border-left-color:var(--crit)}
+.finding.high{border-left-color:var(--high)}
+.finding.med{border-left-color:var(--med)}
+.finding.done{border-left-color:var(--ok)}
+.finding.done .f-title{color:var(--muted)}
+.f-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 14px}
+.f-ref{font-family:"IBM Plex Mono",monospace; font-size:.8rem; color:var(--accent); font-weight:500}
+.f-title{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:1.12rem; font-weight:600;
+  color:var(--ink); flex-basis:100%; line-height:1.25; text-wrap:balance}
+.f-body{max-width:74ch; font-size:.95rem}
+.label{font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); display:block; margin-bottom:4px}
+
+pre{margin:0; background:var(--surface-2); border:1px solid var(--line-soft); border-radius:4px;
+  padding:14px 16px; overflow-x:auto; font-family:"IBM Plex Mono",monospace;
+  font-size:.78rem; line-height:1.6; color:var(--ink)}
+pre .dim{color:var(--muted)}
+pre .bad{color:var(--crit); font-weight:500}
+pre .good{color:var(--ok); font-weight:500}
+
+.sec-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  border-bottom:1px solid var(--line); padding-bottom:12px}
+.count{font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--muted)}
+
+ul{margin:0; padding-left:1.15em; display:flex; flex-direction:column; gap:8px}
+li{max-width:72ch}
+li::marker{color:var(--accent)}
+
+.note{border-top:1px solid var(--line); margin-top:56px; padding-top:24px;
+  font-size:.9rem; color:var(--muted); max-width:72ch}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">LQABR · Email Agent · Full review · rev 2</div>
+  <h1>The guard is one string away from working</h1>
+  <div class="meta">
+    <span><b>Scope</b> agents/email/src — 6 modules</span>
+    <span><b>Revised</b> 27 Aug, after the HubSpot property migration</span>
+    <span><b>Changes made</b> none</span>
+  </div>
+</header>
+
+<p class="lede">Re-verified against the live portal after your property changes. <strong>C2 is resolved outright</strong>, and the <code>email_id</code>&nbsp;→&nbsp;<code>email</code> rename is unblocked. C1 survives — but it is no longer blocked on the MCP owner, and it is no longer a design problem. It is one string in a file we own.</p>
+
+<!-- ══════════════════════════════════════ WHAT CHANGED -->
+<section>
+  <div class="sec-head"><h2>What your migration fixed</h2><span class="count">confirmed via get_properties</span></div>
+
+  <div class="callout good">
+    <h3>C2 resolved — engagement write-backs will now succeed</h3>
+    <p><code>email_status</code> exists as a real enumeration, <code>lqabr_email_status</code> is deleted, and the shared read path in <code>lqabr_core</code> was updated to match. Both <code>events.write_back</code> and <code>mark_sent</code> now validate <em>and</em> land.</p>
+<pre><span class="dim">get_properties(contacts, […]) →</span>
+  <span class="good">email_status</span>         enumeration  PENDING SENT DELIVERED OPENED FAILED <span class="good">BOUNCED</span>
+  <span class="good">lead_context</span>         string
+  <span class="good">last_modified_email</span>  datetime
+
+  <span class="dim">propertiesNotFound:</span> <span class="bad">lqabr_email_status  email_id  object_id
+                      email_campaign_complete  company_id</span></pre>
+    <p>Contact 533967041217 now reads <code>email_status: "DELIVERED"</code>, <code>email: "bychowdary05@gmail.com"</code>, <code>last_modified_email: 2026-08-27T15:05</code> — the migration landed and something wrote successfully today.</p>
+  </div>
+
+  <p class="lede"><strong>The <code>email_id</code> → <code>email</code> rename is done.</strong> <code>email_id</code> no longer exists, <code>email</code> is populated on the contact, and <code>ValidatedProfile</code> already uses <code>email</code>. The hold I put on that rename is lifted — there is nothing left to change.</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Writer</th><th class="mono">Property</th><th>Allowlist</th><th>In portal</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">outreach.py:181<br><span style="color:var(--muted)">_set_email_status</span></td>
+          <td class="mono">lqabr_email_status</td>
+          <td><span class="chip crit">rejects</span></td>
+          <td><span class="chip crit">deleted</span></td>
+          <td><b>Still broken — now doubly so.</b> The only writer left on the old name.</td>
+        </tr>
+        <tr class="done">
+          <td class="mono">crm.py:497 <span style="color:var(--muted)">mark_sent</span></td>
+          <td class="mono">email_status</td>
+          <td><span class="chip ok">allows</span></td>
+          <td><span class="chip ok">yes</span></td>
+          <td><span class="chip ok">fixed</span></td>
+        </tr>
+        <tr class="done">
+          <td class="mono">events.py:290 <span style="color:var(--muted)">write_back</span></td>
+          <td class="mono">email_status</td>
+          <td><span class="chip ok">allows</span></td>
+          <td><span class="chip ok">yes</span></td>
+          <td><span class="chip ok">fixed</span></td>
+        </tr>
+        <tr class="done">
+          <td class="mono">lqabr_core <span style="color:var(--muted)">_from_contact</span></td>
+          <td class="mono">email_status</td>
+          <td>—</td>
+          <td><span class="chip ok">yes</span></td>
+          <td><span class="chip ok">fixed</span> — <code>_PROPERTIES</code> updated too</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ STILL MISSING -->
+<section>
+  <div class="sec-head"><h2>Properties the code still expects that HubSpot does not have</h2><span class="count">4 confirmed absent</span></div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="mono">Property</th><th>Used by</th><th>Consequence</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">object_id</td><td><code>leads_for_trigger</code> — batch lead selection</td><td>Trigger-batch campaigns cannot select their leads. Single-contact triggers are unaffected (they resolve to themselves).</td></tr>
+        <tr><td class="mono">email_campaign_complete</td><td>step 10 hand-off</td><td>Fails silently every time. The status write is isolated in its own PATCH so nothing else breaks — but the text/voice agent is never triggered, and the endpoint still answers 200.</td></tr>
+        <tr><td class="mono">company_id</td><td>write allowlist + <code>ValidatedProfile</code></td><td>Never populated. Harmless — rev 8 stopped offering it to the model anyway.</td></tr>
+        <tr><td class="mono">location · linkedin_url<br>company_size_revenue</td><td>3 of the 9 pointers</td><td>Not in <code>_PROPERTIES</code>, so never requested from the contact. These are why those rows come out blank in the debug profile dump — not missing data, never asked for.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ TRIAGE -->
+<section>
+  <div class="sec-head"><h2>Triage</h2><span class="count">17 findings · 1 resolved · 4 critical · 6 high · 6 medium</span></div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>Severity</th><th class="mono">Location</th><th>Defect</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">C1</td><td><span class="chip crit">critical</span></td><td class="mono">outreach.py:181</td><td>SENT claim silently never written — duplicate-send guard #2 is dead. <b>One string, our file.</b></td></tr>
+        <tr class="done"><td class="mono">C2</td><td><span class="chip ok">resolved</span></td><td class="mono">events.py:290</td><td><s>Engagement write-backs 400</s> — fixed by the property migration</td></tr>
+        <tr><td class="mono">C3</td><td><span class="chip crit">critical</span></td><td class="mono">events.py:68</td><td><code>BOUNCED</code> silently aliases <code>FAILED</code>; unsubscribes become re-sendable</td></tr>
+        <tr><td class="mono">C4</td><td><span class="chip crit">critical</span></td><td class="mono">email_agent.py:130</td><td><code>send_outreach_email</code> routes around every guard</td></tr>
+        <tr><td class="mono">C5</td><td><span class="chip crit">critical</span></td><td class="mono">mailgun.py:124</td><td>HTTP 200 with a non-JSON body ⇒ email sent, lead marked FAILED, re-sent later</td></tr>
+        <tr><td class="mono">H1</td><td><span class="chip high">high</span></td><td class="mono">service_app.py:172</td><td><code>/email/campaign</code> is unauthenticated and must stay publicly reachable</td></tr>
+        <tr><td class="mono">H2</td><td><span class="chip high">high</span></td><td class="mono">mailgun.py:133</td><td>No timestamp window, no token ledger — one captured signature replays forever</td></tr>
+        <tr><td class="mono">H3</td><td><span class="chip high">high</span></td><td class="mono">events.py:224</td><td><code>lqabr_object_id</code> interpolated into the HubSpot REST path unvalidated</td></tr>
+        <tr><td class="mono">H4</td><td><span class="chip high">high</span></td><td class="mono">outreach.py:318</td><td>Only two exception types release the claim; anything else strands the lead</td></tr>
+        <tr><td class="mono">H5</td><td><span class="chip high">high</span></td><td class="mono">observability.py:440</td><td>Unwritable log dir raises out of startup — the revision never becomes healthy</td></tr>
+        <tr><td class="mono">H6</td><td><span class="chip high">high</span></td><td class="mono">mailgun.py:110</td><td>Retry loop logs nothing, and the default <code>max_retries=3</code> duplicates sends</td></tr>
+        <tr><td class="mono">M1</td><td><span class="chip med">medium</span></td><td class="mono">service_app.py:266</td><td><code>async def</code> webhook doing blocking work stalls the whole event loop</td></tr>
+        <tr><td class="mono">M2</td><td><span class="chip med">medium</span></td><td class="mono">service_app.py:213</td><td><code>limit</code> uncapped on an unauthenticated route</td></tr>
+        <tr><td class="mono">M3</td><td><span class="chip med">medium</span></td><td class="mono">service_app.py:256</td><td>Error bodies echo secret ids and raw HubSpot responses to anonymous callers</td></tr>
+        <tr><td class="mono">M4</td><td><span class="chip med">medium</span></td><td class="mono">outreach.py:531</td><td><code>parse_reply</code> turns a JSON <code>null</code> into an email whose subject is "None"</td></tr>
+        <tr><td class="mono">M5</td><td><span class="chip med">medium</span></td><td class="mono">email_agent.py:198</td><td><code>list_email_queue</code> leaks <code>employee_id</code>/<code>company_id</code> into model context</td></tr>
+        <tr><td class="mono">M6</td><td><span class="chip med">medium</span></td><td class="mono">outreach.py:563</td><td>A new <code>MailgunClient</code> per lead — one Secret Manager fetch and one leaked session each</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ CRITICAL -->
+<section>
+  <div class="sec-head"><h2>Critical</h2><span class="count">4 open · all reproduced</span></div>
+
+  <article class="finding crit">
+    <div class="f-head"><span class="chip crit">C1</span><span class="f-ref">outreach.py:181</span>
+      <span class="f-title">The SENT claim is never written, so the duplicate-send guard has never fired</span></div>
+    <div class="f-body"><span class="label">Defect</span><code>_set_email_status</code> writes <code>lqabr_email_status</code> — a name that the shared MCP's <code>validate_writeback</code> rejects before the PATCH is built, <em>and</em> that no longer exists in the portal. It catches <code>SchemaValidationError</code>, returns <code>False</code>, and the caller proceeds.</div>
+    <div class="f-body"><span class="label">Failure scenario</span>A trigger for lead T-1 arrives. <code>work_lead</code> claims SENT at step 6 — rejected — so the code logs its own warning, <em>"proceeding unguarded — a concurrent trigger could double-send"</em>, then enters a model call that runs over a minute. A second trigger 0.65&nbsp;s later reads the lead, sees <code>PENDING</code>, and drafts and sends its own email. <strong>This is the mechanism behind the two emails 19&nbsp;ms apart on 26&nbsp;August.</strong> The same rejection means no lead is ever written <code>FAILED</code> either, so lines 221, 329, 338, 581 and 589 are all dead.</div>
+    <div class="f-body"><span class="label">The fix — changed since rev 1</span>Rev 1 said this needed the MCP owner, because the allowlist and the writer disagreed and the allowlist is off-limits. <strong>That is no longer true.</strong> After your migration the allowlist, the portal, the read path and the other two writers all agree on <code>email_status</code>. <code>outreach.py:181</code> is the last file on the old name, it is ours, and the fix is one string:
+<pre><span class="bad">- props: Dict[str, Any] = {"lqabr_email_status": status}</span>
+<span class="good">+ props: Dict[str, Any] = {"email_status": status}</span></pre>
+    The docstring on line 179 names the old property too and should move with it.</div>
+  </article>
+
+  <article class="finding done">
+    <div class="f-head"><span class="chip ok">C2 · resolved</span><span class="f-ref">events.py:290 · crm.py:497</span>
+      <span class="f-title">Engagement write-backs targeted a property the portal did not have</span></div>
+    <div class="f-body">Both writers send <code>email_status</code>, which the allowlist always permitted; the portal simply had no such property, so HubSpot 400'd every delivered/opened/clicked and <code>dispatch_mailgun</code> returned 500 into a Mailgun retry loop. <strong>The property now exists</strong>, as an enumeration whose options are exactly the six values <code>HUBSPOT_EMAIL_STATUS</code> produces. No code change needed — this one closed itself when the portal changed.</div>
+  </article>
+
+  <article class="finding crit">
+    <div class="f-head"><span class="chip crit">C3</span><span class="f-ref">events.py:68</span>
+      <span class="f-title">BOUNCED is a silent alias of FAILED, and it corrupts the precedence map</span></div>
+    <div class="f-body"><span class="label">Defect</span><code>FAILED = "failed"</code> and <code>BOUNCED = "failed"</code> — identical values, so Python makes <code>BOUNCED</code> an alias, not a member. <code>_PRECEDENCE</code> is written with 8 entries but two of them are the same key, so the literal <code>FAILED: 40</code> is dead code and <code>FAILED</code> silently inherits <code>BOUNCED</code>'s rank of 80.</div>
+    <div class="f-body"><span class="label">Proof</span>
+<pre><span class="dim">&gt;&gt;&gt; MailgunEvent.BOUNCED is MailgunEvent.FAILED</span>
+<span class="bad">True</span>
+<span class="dim">&gt;&gt;&gt; {k.name: v for k, v in _PRECEDENCE.items()}</span>
+{'DELIVERED': 10, 'OPENED': 20, 'CLICKED': 30,
+ 'FAILED': <span class="bad">80</span>, 'STOPPED': 50, 'UNSUBSCRIBED': 60, 'COMPLAINED': 70}
+<span class="dim">           ↑ source says 40</span></pre></div>
+    <div class="f-body"><span class="label">Two distinct failures</span><strong>Downgrade:</strong> a lead at <code>OPENED</code> gets a transient <code>failed</code> for a retry attempt; FAILED now outranks everything, so the record is written back to FAILED and can never recover — every later <code>delivered</code>/<code>opened</code>/<code>complained</code> returns <code>superseded</code>.<br><strong>Compliance:</strong> <code>unsubscribed</code> and <code>complained</code> also collapse to <code>FAILED</code>, and <code>FAILED</code> is not in <code>ALREADY_SENT_STATUSES</code> — so a recipient who unsubscribed or marked you as spam is eligible to be emailed again on the next trigger.</div>
+    <div class="f-body"><span class="label">Now easier to fix</span>The new <code>email_status</code> enumeration includes <code>BOUNCED</code> as a valid option, so giving it a distinct wire value writes a genuinely distinct status instead of being collapsed. Restore <code>_PRECEDENCE[FAILED] = 40</code> at the same time, and widen <code>ALREADY_SENT_STATUSES</code> to cover <code>BOUNCED</code>.</div>
+  </article>
+
+  <article class="finding crit">
+    <div class="f-head"><span class="chip crit">C4</span><span class="f-ref">email_agent.py:130</span>
+      <span class="f-title">send_outreach_email routes around every duplicate-send guard</span></div>
+    <div class="f-body"><span class="label">Defect</span>It calls <code>start_run</code> → <code>get_lead_profile</code> → <code>construct_email</code> → <code>send_one</code> directly. It never consults <code>ALREADY_SENT_STATUSES</code> and never claims SENT before the model call. Line 278 actively steers the model here: <em>"When the operator names one specific lead to contact now, call send_outreach_email(objectId)."</em></div>
+    <div class="f-body"><span class="label">Proof</span>
+<pre><span class="dim">lead already at email_status="OPENED"</span>
+work_lead            → skipped-already-sent   <span class="good">mailgun sends: 0</span>
+send_outreach_email  → sent, sent, sent       <span class="bad">mailgun sends: 3</span></pre></div>
+    <div class="f-body"><span class="label">Blast radius</span>An operator asking twice, or a model retrying an ambiguous tool result, sends a second differently-worded email (temperature is 1.0). Two concurrent calls both read <code>PENDING</code> and both send. <strong>Independent of C1</strong> — this path bypasses the claim even once the claim works, so fixing C1 does not cover it.</div>
+  </article>
+
+  <article class="finding crit">
+    <div class="f-head"><span class="chip crit">C5</span><span class="f-ref">mailgun.py:124</span>
+      <span class="f-title">A 200 with an unparseable body is treated as a failed send — after the mail left</span></div>
+    <div class="f-body"><span class="label">Defect</span><code>resp.json()</code> sits in the <code>else:</code> clause, outside the <code>try</code>, so a <code>JSONDecodeError</code> escapes <code>send_email</code> as something other than <code>MailgunError</code>. <code>send_one</code>'s bare <code>except Exception</code> is the only handler that can run <em>after</em> the message was accepted, and it assumes nothing went out.</div>
+    <div class="f-body"><span class="label">Failure scenario</span>Mailgun, or an intervening proxy or WAF, answers the accepted <code>POST /messages</code> with <code>200 text/html</code>. The prospect has the email. <code>send_one</code> writes <code>FAILED</code> — explicitly commented <em>"FAILED is retryable, so a later campaign works it"</em> — and re-raises. The next campaign sends a second copy. A valid-JSON-but-not-a-dict 200 does the same thing via <code>AttributeError</code> at line 593.</div>
+    <div class="f-body"><span class="label">Note</span>This gets <em>more</em> dangerous once C1 lands: today the FAILED write is rejected anyway, so the lead stays PENDING and the outcome is the same either way. With C1 fixed, the FAILED write succeeds and actively releases a lead that was already emailed.</div>
+  </article>
+</section>
+
+<!-- ══════════════════════════════════════ HIGH -->
+<section>
+  <div class="sec-head"><h2>High</h2><span class="count">6 findings · unchanged by the migration</span></div>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H1</span><span class="f-ref">service_app.py:172</span>
+      <span class="f-title">Anyone who knows the URL can send real email to arbitrary contacts</span></div>
+    <div class="f-body"><code>POST /email/campaign</code> has no auth — the <code>X-LQABR-Gateway-Token</code> check was removed on 5 August (line 50 says so). The service <em>must</em> stay publicly reachable so Mailgun can POST to <code>/mailgun/events</code>, so this is public by construction, not by oversight. A loop over contact ids emails every lead not already in <code>ALREADY_SENT_STATUSES</code>, from your DKIM-aligned domain. The <code>LQABR_EMAIL_ROUTES=webhook</code> mode already exists — a second revision serving only the webhook, with IAM on the campaign route, closes this without new code.</div>
+  </article>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H2</span><span class="f-ref">mailgun.py:133</span>
+      <span class="f-title">One captured webhook signature authenticates forged writes forever</span></div>
+    <div class="f-body">The HMAC is correct and constant-time, and verification is genuinely unbypassable — I checked every path. The gap is what the signature <em>attests to</em>: Mailgun signs <code>timestamp+token</code> only, never <code>event-data</code>. There is no freshness window and no token ledger, so a triple dated 2017 was accepted three times in a row with entirely attacker-chosen event data. The Mailgun signing key is per-account and shared across every webhook on it. Rejecting <code>abs(now − timestamp) &gt; 900</code> is the load-bearing half and costs nothing.</div>
+  </article>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H3</span><span class="f-ref">events.py:224 · service_app.py:220</span>
+      <span class="f-title">objectId is interpolated into the HubSpot REST path with no validation</span></div>
+    <div class="f-body">It is checked only for emptiness, then handed to <code>get_lead_profile</code>/<code>patch_object</code>, which build <code>f"/crm/v3/objects/contacts/{object_id}"</code>. <code>requests</code> normalises dot segments before sending, so <code>../../../../crm/v3/objects/companies/999</code> redirects an authenticated GET and PATCH to a different object entirely. <code>validate_writeback</code> checks property names, never object identity. Chained with H2 it is remotely reachable; via H1 it needs no signature at all. The f-string is in shared code, but a <code>^[0-9]{1,20}$</code> guard in <code>handle_event</code> and <code>CampaignRequest.resolved_id</code> is entirely ours.</div>
+  </article>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H4</span><span class="f-ref">outreach.py:318</span>
+      <span class="f-title">Only two exception types release the claim; anything else strands the lead permanently</span></div>
+    <div class="f-body"><code>work_lead</code>'s try covers <code>MissingLeadContext</code> and <code>SkillError</code>. A <code>UnicodeDecodeError</code> from <code>SKILL.md</code>, an <code>OSError</code>, or anything out of <code>skills.build_context</code>/<code>lead_facts</code>/<code>log_model</code> leaves the lead holding SENT with no email sent — and <code>ALREADY_SENT_STATUSES</code> means no later campaign ever works it. Because <code>load_skills</code> is <code>lru_cache</code>d and every lead hits it, one malformed skill file strands the entire batch. <strong>Currently masked by C1 — it goes live the moment C1 is fixed, so fix the two together.</strong></div>
+  </article>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H5</span><span class="f-ref">observability.py:440</span>
+      <span class="f-title">An unwritable log directory takes down the container</span></div>
+    <div class="f-body"><code>mkdir</code> and <code>RotatingFileHandler</code> have no error handling. An explicit <code>LQABR_EMAIL_LOG_DIR</code> beats the <code>K_REVISION</code> guard, so pointing it at a read-only path on Cloud Run raises <code>OSError</code> out of the FastAPI lifespan and the revision never becomes healthy. Logging must never be able to fail a run — this is the one place in the subsystem where it can.</div>
+  </article>
+
+  <article class="finding high">
+    <div class="f-head"><span class="chip high">H6</span><span class="f-ref">mailgun.py:110</span>
+      <span class="f-title">The retry loop is silent, and its default configuration duplicates sends</span></div>
+    <div class="f-body"><code>mailgun.py</code> imports no logger at all. Nothing records that attempt 1 timed out and attempt 2 was issued — a recipient gets two or three copies and <code>send_email</code> returns success with no trace. The live path passes <code>max_retries=1</code>, which is correct, but <strong>the default is 3</strong>, so any new caller writing <code>MailgunClient()</code> gets the duplicate-generating configuration. Latent today; the default should be 1.</div>
+  </article>
+</section>
+
+<!-- ══════════════════════════════════════ MEDIUM -->
+<section>
+  <div class="sec-head"><h2>Medium</h2><span class="count">6 findings, condensed</span></div>
+
+  <article class="finding med">
+    <div class="f-head"><span class="chip med">M1</span><span class="f-ref">service_app.py:266</span>
+      <span class="f-title">The webhook is async but does blocking work</span></div>
+    <div class="f-body"><code>hubspot_campaign</code> is deliberately sync <code>def</code> so FastAPI threadpools it — line 239 explains exactly why. <code>mailgun_events</code> is <code>async def</code> and calls a Secret Manager fetch, HubSpot requests, and <em>two</em> <code>time.sleep(2.0)</code> write-verification pauses. Every event holds the entire event loop for 4+ seconds; a campaign of 200 leads produces a burst that queues the health probe behind it. <strong>More urgent now that C2 is fixed</strong> — those writes used to fail fast, and will now actually run the full verify-and-sleep path. Changing <code>async def</code> to <code>def</code> is the whole fix; passing <code>verify_after_seconds=0</code> removes the 4 seconds on top.</div>
+  </article>
+
+  <article class="finding med">
+    <div class="f-head"><span class="chip med">M2 · M3</span><span class="f-ref">service_app.py:213, 256</span>
+      <span class="f-title">Unbounded limit, and error bodies that name your secrets</span></div>
+    <div class="f-body"><code>limit</code> has no upper bound on an unauthenticated route; <code>limit=100000</code> attempts 100k leads, each a model call, inside one request. Separately, a live <code>POST /mailgun/events {}</code> returns: <em>"secret 'lqabr-mailgun-webhook-signing-key' could not be resolved: GOOGLE_CLOUD_PROJECT is unset…"</em> — the exact secret id and env var an attacker would need to name. The 502 path hands over 500 characters of HubSpot's raw response body. Log the detail; return an opaque code.</div>
+  </article>
+
+  <article class="finding med">
+    <div class="f-head"><span class="chip med">M4</span><span class="f-ref">outreach.py:531</span>
+      <span class="f-title">parse_reply can ship an email whose subject is the word "None"</span></div>
+    <div class="f-body">It coerces with <code>str()</code>, so a model returning <code>{"subject": null, "html_body": null}</code> — the shape a blanked completion takes — becomes <code>"None"</code>/<code>"None"</code>. <code>finalise</code> appends the unsubscribe footer, so the emptiness guard at line 440 passes, and a real prospect receives it. Requires <code>isinstance(..., str)</code>.</div>
+  </article>
+
+  <article class="finding med">
+    <div class="f-head"><span class="chip med">M5 · M6</span><span class="f-ref">email_agent.py:198 · outreach.py:563</span>
+      <span class="f-title">Queue listing leaks internal ids; the Mailgun client is rebuilt per lead</span></div>
+    <div class="f-body"><code>list_email_queue</code> returns raw <code>to_dict()</code>, putting <code>external_employee_id</code>, <code>external_company_id</code> and <code>phone</code> into model context — and line 283 tells the model to print every field it gets. Every other tool is careful here; <code>get_lead_profile</code> deliberately uses <code>construction_view()</code>. This does <em>not</em> reach an email body (construction is a separate prompt built from <code>as_context()</code>), but it reaches the operator transcript.<br><br>Separately, <code>send_one</code> builds a new <code>MailgunClient</code> for every lead, so a 25-lead batch makes 25 Secret Manager calls and opens 25 connection pools that are only reclaimed by GC.</div>
+  </article>
+</section>
+
+<!-- ══════════════════════════════════════ CLEARED -->
+<section>
+  <div class="sec-head"><h2>Cleared</h2><span class="count">flagged during review, disproved on inspection</span></div>
+  <ul style="margin-top:20px">
+    <li><b><code>email_id</code> → <code>email</code> rename</b> — <span class="chip ok">unblocked</span> I held this on 26 August because <code>email</code> was empty on all 27 contacts and the rename would have broken sending. <code>email_id</code> is now deleted, <code>email</code> is populated, and <code>ValidatedProfile</code> already uses <code>email</code>. Nothing left to do.</li>
+    <li><b><code>last_modified_email</code> bundled into the atomic PATCH</b> — flagged as an unconfirmed property name that could 400 the status write alongside it. <span class="chip ok">false alarm</span> It exists as a <code>datetime</code> property and holds a live timestamp. No risk.</li>
+    <li><b>Keyword-argument collisions with the log helpers</b> — checked mechanically by walking the AST of all six modules against the live signatures. <span class="chip ok">zero collisions</span> The trap remains for the future: a data field named <code>debug_only</code>, <code>step</code> or <code>glyph</code> is silently swallowed rather than logged, and a future <code>ValidatedProfile</code> field named <code>outcome</code> or <code>duration_ms</code> would raise <code>TypeError</code> out of the profile span.</li>
+    <li><b><code>MailgunClient</code> construction inside the try</b> — the fix we made earlier holds. <code>MailgunError</code> and <code>SecretNotFoundError</code> from <code>__init__</code> are both caught, and the claim is released before re-raising.</li>
+    <li><b><code>work_lead</code>'s own logic</b> — dedup, claim-before-construction and no-retry are all implemented correctly. The guards are not wrong; C1 and C4 mean they are bypassed.</li>
+    <li><b>Retry idempotency in <code>events.py</code></b> — re-delivery of an already-processed event ranks equal, returns <code>superseded</code> and does not re-score probability. <code>resolve_status</code> uses strict <code>&gt;</code> correctly. The precedence <em>map</em> is the defect (C3), not the comparison.</li>
+    <li><b>The Mailgun API key</b> — verified it cannot leak. <code>config()</code> returns only the sha256[:12] fingerprint, the key travels as an <code>Authorization</code> header (absent from <code>requests</code> exception text), no <code>__repr__</code> exposes it, and the non-retryable raise interpolates only <code>resp.text[:300]</code>.</li>
+    <li><b><code>agent.py</code></b> — no findings.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════ ORDER -->
+<section>
+  <div class="sec-head"><h2>Revised order</h2><span class="count">nothing changed in code — your call on all of it</span></div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Step</th><th>Items</th><th>Why</th><th>Owner</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">1</td><td><b>C1 + H4</b></td><td>One string turns the duplicate-send guard on. Do H4 in the same change — the claim being real is exactly what makes a stranded claim possible</td><td><b>Us.</b> No longer blocked on the MCP owner</td></tr>
+        <tr><td class="mono">2</td><td>C3, C4</td><td>Both send email to people who should not receive it. C3's fix now has a home — <code>BOUNCED</code> is a valid enum option in the portal</td><td>Us</td></tr>
+        <tr><td class="mono">3</td><td>C5</td><td>Becomes actively harmful once C1 lands: a successful FAILED write releases a lead that was already emailed</td><td>Us</td></tr>
+        <tr><td class="mono">4</td><td>H1, H2, H3</td><td>The public surface. H1 is a config change, H2 is four lines, H3 is a regex</td><td>Us + deploy</td></tr>
+        <tr><td class="mono">5</td><td>M1</td><td>Promoted — the webhook now does real work per event instead of failing fast</td><td>Us</td></tr>
+        <tr><td class="mono">6</td><td>H5, H6, M2–M6</td><td>Robustness and hygiene</td><td>Us</td></tr>
+        <tr><td class="mono">—</td><td><code>object_id</code>, <code>email_campaign_complete</code></td><td>Portal work, not code. Batch triggers and the text/voice hand-off stay broken until these exist</td><td>You, in HubSpot</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<p class="note">Six modules read in full; findings cross-checked against <code>mcp/hubspot</code> and <code>packages/lqabr_core</code> for root cause only. Nothing in any tree was modified. Live portal queries were read-only, re-run 27 August after your property changes. One data note: <code>lead_context</code> on contact 533967041217 is still the 11-character string <code>"Sample Test"</code>, so that lead's email is still being written from essentially nothing. Cloud Run <code>lqabr-dev-email-agent</code> is still serving the 3 August revision, which predates every guard discussed here.</p>
+
+</div>
