@@ -308,10 +308,14 @@ MCP_PATH=/mcp                   HUBSPOT_AUTH_MODE=private_app
 > production whether to switch to `docker build --platform linux/amd64 -f mcp/Dockerfile .`
 > Open question for the team: is the Docker Hub image built from this repo?
 
-> **Also unresolved — two competing local MCP images.** `mcp/mcp.config` runs
-> `tne736/lqabr-mcp-server:latest`, but `agents/summary/infra/docker-compose.yml` expects
-> `lqabr-hubspot-mcp:local`. Both exist in the local Docker daemon. They must converge on
-> one image before P9.
+> ### RESOLVED 2026-08-28 — two competing local MCP images
+> They have converged on `tne736/lqabr-mcp-server:latest` (promoted to
+> `lqabr-dev-mcp:0.1.0`). `mcp/Dockerfile`, `mcp/http_server.py`,
+> `mcp/requirements.txt` and `mcp/.dockerignore` — which built the rival
+> `lqabr-hubspot-mcp:local`, a DIFFERENT five-tool server with `LQABR_`-prefixed
+> env vars — have been **deleted**; nothing deployed ever used them.
+> `agents/summary/infra/docker-compose.yml` now defaults to the Artifact Registry
+> image. `mcp/hubspot/` stays: the email agent imports it in-process (P0-I7).
 
 ### 3. Validation
 
@@ -1059,6 +1063,15 @@ three of the five hops and has no dependencies of its own.
 
 ### 2. Commands
 
+> ### SUPERSEDED 2026-08-28 — do not copy the block below
+> Its `--set-secrets=HUBSPOT_PRIVATE_APP_TOKEN=...` is **not** this image's token
+> contract (see P9 failure #4 further down: the service starts clean and then dies
+> with `SecretConfigError` on the first real HubSpot write), and it omits the
+> in-memory volume at `/app/errors` the image needs at tool-call time.
+> **The MCP now has a deploy script: `infra/gcp/mcp/01_deploy.sh`**, which closes the
+> "MCP has no deploy script of its own" open item recorded in P9. The block below is
+> kept only as the record of what was actually run on 2026-08-26.
+
 **Stage 1 — deploy public-ingress but auth-required** (internet-reachable, never public):
 
 ```bash
@@ -1083,6 +1096,11 @@ gcloud run services update lqabr-dev-mcp \
 **Stage 3 — probe from inside the VPC.** A Cloud Run **job** reusing the MCP image with its
 entrypoint overridden, so no code and no extra image are needed. It runs with the same SA,
 subnet and egress setting a real agent will use.
+
+> **Now scripted: `infra/gcp/mcp/02_probe.sh` + `probe_client.py`.** The one-liner below
+> called `tools/list` cold, which is invalid before a session exists — hence its 500, and
+> hence its 120s timeout from never exiting cleanly. The script performs the full
+> `initialize` -> `notifications/initialized` -> `tools/list` handshake and exits 0.
 
 ```bash
 PROBE='import urllib.request as u

@@ -1,0 +1,14 @@
+# Build context is the REPO ROOT, not agents/gateway: the Dockerfile does
+# `COPY agents/gateway/requirements.txt ...` and `COPY agents/gateway ...`,
+# both repo-root-relative. Submitting agents/gateway fails to find its own files.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}:${_TAG}", "-t", "${_IMAGE}:latest",
+           "-f", "agents/gateway/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_IMAGE}"]
+images:
+  - "${_IMAGE}:${_TAG}"
+  - "${_IMAGE}:latest"
+options:
+  logging: CLOUD_LOGGING_ONLY

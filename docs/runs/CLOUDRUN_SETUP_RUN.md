@@ -47,6 +47,15 @@ Issues found mid-run are recorded as sub-tasks under the phase that surfaced the
 Target set is `gtwy, mcp, summary, research, email, txtv` → **missing `mcp`, `summary`,
 `research`; extra `gtwy-pub`, `ldpf`.**
 
+> ### STALE as of 2026-08-28 — the table above is a 2026-08-25 snapshot
+> `mcp`, `summary` and `research` were all deployed on 2026-08-26 and are live.
+> `lqabr-dev-mcp`, `-summary` and `-research` run `ingress=internal`,
+> `no-allow-unauthenticated`, on `lqabr-vpc`/`lqabr-run-uscentral1` with
+> `--vpc-egress=all-traffic`, as SA `lqabr-agent-dev`. The project also has a VPC
+> again (`lqabr-vpc`), so the "zero VPCs" line in the run log below is likewise
+> superseded. **`docs/CloudRun_RunBook.md` is the current authority**; this file is
+> the P0/P1 history.
+
 ### Issues (open)
 
 - **P0-I8 — LIVE RISK: gateway `maxScale=20` with an in-memory dedupe store. VERIFIED.**
@@ -203,3 +212,5 @@ egress scoped per P0-I9; `LQABR_MCP_BASE_URL` (not `LQABR_TXTV_MCP_BASE_URL`) fo
 | 2026-08-25 | P1 | `compute.googleapis.com` enabled. `default` VPC auto-created; deletion blocked by harness guard (P1-S1). |
 | 2026-08-25 | P1 | **Working mode changed:** user executes all commands, Claude analyses output and directs. No scripts/tests/validations created unless requested. |
 | 2026-08-25 | P1 | P1-S1 RESOLVED by user — 4 default firewall rules + `default` network deleted. Project now has zero VPCs. |
+| 2026-08-28 | — | MCP given its own scripts: `infra/gcp/mcp/{config,00_promote_image,01_deploy,02_probe}.sh` + `probe_client.py`. Closes the runbook's "MCP has no deploy script of its own" open item. |
+| 2026-08-28 | — | Competing MCP surface deleted (`mcp/Dockerfile`, `http_server.py`, `requirements.txt`, `.dockerignore`); `infra/{dev,prod}/deploy/deploy.sh` no longer deploy the MCP. |

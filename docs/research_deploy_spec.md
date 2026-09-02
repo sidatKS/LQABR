@@ -292,12 +292,23 @@ Observed on `summary` / `mcp` during bring-up.
 
 ## §11 · Open items
 
-- **`03_deploy_run.sh` does not exist yet** — this document is its specification.
+- ~~**`03_deploy_run.sh` does not exist yet**~~ **CLOSED 2026-08-29** — it exists and the
+  live service matches this spec exactly (verified: `ingress=internal`, on `lqabr-vpc`,
+  SA `lqabr-agent-dev`, `SECRETS_SOURCE=env`, both secrets bound, `/app/logs` mounted,
+  `DRY_RUN=0`). `01_secrets.sh` and `04_verify.sh` were added alongside it.
+- **Verification is now specified** — `docs/research_verify_spec.md`, executable as
+  `bash infra/04_verify.sh`. ⚠ Its default mode runs **no campaign**: a campaign writes
+  `lead_context` to every lead in an industry, and each write trips the gateway into the
+  Email agent.
 - **Dependencies are unpinned** (`anthropic>=0.40`, `fastapi>=0.115`, …), so two builds of
   one commit can differ. Lockfiles proposed and deferred.
 - **Competing build paths** — `infra/gcp/00-07`, `infra/dev/deploy/`,
   `infra/docker-compose.yml` and `agents/*/infra/` disagree on names. Pick one, deprecate
   the rest.
-- **MCP has no deploy script.** Its working config was applied by hand
-  (`LQABR_SECRET_PROJECT`, `LQABR_SECRET_HUBSPOT_PRIVATE_APP_TOKEN`) and will be lost on a
-  clean rebuild.
+- ~~**MCP has no deploy script.**~~ **CLOSED 2026-08-29** — `infra/gcp/mcp/`
+  (`config.sh`, `00_promote_image.sh`, `01_deploy.sh`, `02_probe.sh`) now owns the MCP's
+  promote/deploy/verify path, including `LQABR_SECRET_PROJECT` /
+  `LQABR_SECRET_HUBSPOT_PRIVATE_APP_TOKEN` and the `/app/errors` volume.
+- **Summary now has a peer spec** — `docs/summary_deploy_spec.md`. Note its §4.2 is the
+  OPPOSITE of §4.2 here: summary ships `google-cloud-secret-manager` and must use
+  `secret_manager`; research does not and must use `env`.

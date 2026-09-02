@@ -51,7 +51,9 @@ deployed: ${URL}
   Point the gateway at it (only if you route summaries through the gateway):
     export LQABR_SUMMARY_AGENT_URL=${URL}
 
-  DRY RUN is ${LQABR_SUMMARY_DRY_RUN}. Set LQABR_SUMMARY_DRY_RUN=0 and redeploy
-  once /mcp/tools shows the write tool and a dry run has produced the summary
-  you expect.
+  DRY RUN is ${LQABR_SUMMARY_DRY_RUN}  (0 = writes are LIVE, 1 = compute and log only).
+  Live is the default, in config.sh AND in summary_core/settings.py. It is passed
+  explicitly on every deploy, so it cannot silently revert the way it did on
+  2026-08-26. To suppress writes for one deploy:
+    LQABR_SUMMARY_DRY_RUN=1 bash infra/03_deploy_run.sh
 INFO
