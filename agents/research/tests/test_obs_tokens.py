@@ -16,7 +16,7 @@ import logging
 
 import pytest
 
-from research_core.obs import Observability, redact, set_mode
+from research_core.research_logging import ResearchLogging, redact, set_mode
 from research_core.search.anthropic_search import AnthropicWebSearch
 from research_core.settings import get_settings
 
@@ -50,7 +50,7 @@ def _obs(name: str):
     logger.setLevel(logging.INFO)
     sink = _Rows()
     logger.addHandler(sink)
-    return Observability(run_id="res-tokens", logger=logger), sink
+    return ResearchLogging(run_id="res-tokens", logger=logger), sink
 
 
 class _Messages:
@@ -166,7 +166,7 @@ def test_the_console_hop_line_says_what_the_call_cost(mode):
     never printed them — so the one place a human asks "what did that cost"
     was the one place the answer was missing. Terse included: terse drops the
     params, not the meter."""
-    from research_core.obs import ConsoleFormatter  # noqa: WPS433 - local on purpose
+    from research_core.research_logging import ConsoleFormatter  # noqa: WPS433 - local on purpose
 
     set_mode(mode)
     record = logging.LogRecord("x", logging.INFO, __file__, 0, "", None, None)
@@ -184,7 +184,7 @@ def test_the_console_hop_line_says_what_the_call_cost(mode):
 
 def test_a_hop_with_no_meter_prints_no_meter():
     """An MCP call has no tokens; it must not grow an empty `/ tok`."""
-    from research_core.obs import ConsoleFormatter
+    from research_core.research_logging import ConsoleFormatter
 
     set_mode("normal")
     record = logging.LogRecord("x", logging.INFO, __file__, 0, "", None, None)

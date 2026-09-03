@@ -17,7 +17,7 @@ import requests
 
 from summary_core import sources
 from summary_core.mcp.hubspot import HubSpotMCP
-from summary_core.obs import Observability, get_obs, new_run_id
+from summary_core.summary_logging import SummaryLogging, get_obs, new_run_id
 from summary_core.settings import Settings, get_settings
 from summary_core.types import SourceError, WriteResult
 
@@ -34,7 +34,7 @@ from summarizer import summarize
 
 def run_summary(request: SummaryRequest, *,
                 settings: Settings | None = None,
-                obs: Observability | None = None,
+                obs: SummaryLogging | None = None,
                 hubspot: HubSpotMCP | None = None,
                 session: Optional[requests.Session] = None,
                 completion: Optional[Callable[..., Any]] = None) -> SummaryResponse:

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..obs import Observability, get_obs
+from ..summary_logging import SummaryLogging, get_obs
 from ..settings import Settings, get_settings
 from ..types import SummaryResult, WriteResult
 from .client import MCPClient, MCPError
@@ -41,7 +41,7 @@ class HubSpotMCP:
 
     def __init__(self, client: MCPClient | None = None, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None) -> None:
+                 obs: SummaryLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._obs = obs or get_obs()
         self._client = client or MCPClient(self._settings, obs=self._obs)

@@ -1,37 +1,41 @@
-"""Observability — structured, correlated, and free of secrets.
+"""ResearchLogging — structured, correlated, and free of secrets.
 
-**This file is a deliberate copy of agents/research/packages/research_core/obs.py.**
+**agents/summary/packages/summary_core/summary_logging.py is a deliberate copy of
+this file.** Same structure, its own names: module `summary_logging.py`, class
+`SummaryLogging`, logger `lqabr.summary`, `sum-` run ids, `LQABR_SUMMARY_` env.
+When porting a fix, substitute those four and apply it there too.
 
-Do not extract it into `packages/lqabr_core`. `tests/test_standalone.py` in both
-agents exists precisely to assert that neither imports from the shared package,
-and that standalone-ness is a decision this project has already made and paid
-for. The duplication costs applying a future obs fix twice; it buys neither
-agent being able to break the other. If you are here to "clean this up", that is
-the reason not to. Keep the two in step by PORTING, not by importing.
+Do not extract the two into `packages/lqabr_core`. `tests/test_standalone.py` in
+both agents exists precisely to assert that neither imports from the shared
+package, and that standalone-ness is a decision this project has already made
+and paid for. The duplication costs applying a future logging fix twice; it buys
+neither agent being able to break the other. If you are here to "clean this up",
+that is the reason not to. Keep the two in step by PORTING, not by importing.
 
 ---
 
-Three streams, one run_id correlating them:
+Three streams, one run_id correlating them (matching the Summary Agent):
 
     process   what the agent did and why (steps, decisions, counts)
-    audit     every hop that left this process — HTTP fetch, MCP call, model
-              call — with endpoint, method, status, duration, the parameters it
-              was made with, and what it COST. Never a payload, never a
-              credential's value.
-    system    startup, config, shutdown, and coarse resource snapshots
+    audit     every hop that left this process (MCP call, model call), with
+              endpoint, method, status, duration and the PARAMETERS sent —
+              never a credential
+    system    startup/shutdown and coarse resource facts
 
-One JSON object per line, one file per stream. `redact()` runs over every field
-bag on the way out — recursively, and by NAME: a credential's value is blanked,
-a credential's NAME is printed, because "log the credential's name, never its
-value" is the rule and blanking the name is its exact inverse.
+One JSON object per line, to stdout AND (when configured) to the agent's own
+log file. `redact()` runs over every field bag on the way out — recursively, so
+a credential nested inside a call's arguments is blanked too.
 
-**Reading a run.** Every step is framed by a pair — IN with the inputs it was
-handed, OUT with what it produced and how long it took.
+**Reading a run.** Every step of the pipeline is framed by a pair:
 
-`LQABR_SUMMARY_LOG_MODE` = terse | normal | debug decides how much of a value
-reaches the log. Debug is not "more logging": every truncation happens BEFORE
-json.dumps, so a structured file has been storing damaged strings in well-formed
-fields. Debug stops the values arriving pre-mangled. It never relaxes redaction.
+    ▸ IN   <step>   the inputs that step was handed
+    ◂ OUT  <step>   what it produced, and how long it took
+
+and every outbound call carries the parameters it was made with, so "where is
+the model called and what did we send it" is answerable from the log alone.
+Text payloads (a prompt, a note) appear as a length-marked `*_preview`, never
+in full on the console — `preview()` decides how much, and
+`LQABR_RESEARCH_LOG_MODE` (terse | normal | debug) decides how much it decides.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import re
 import sys
 import textwrap
 import time
@@ -117,7 +122,7 @@ def set_detail(enabled: bool) -> None:
 
 
 def new_run_id() -> str:
-    return f"sum-{uuid.uuid4().hex[:12]}"
+    return f"res-{uuid.uuid4().hex[:12]}"
 
 
 def preview(text: Any, limit: int = _PREVIEW_CHARS) -> str:
@@ -230,13 +235,15 @@ class Step:
         self.status, self.fields = "skipped", {"reason": reason, **fields}
 
 
+
+
 @dataclass
-class Observability:
+class ResearchLogging:
     """One run's logging handle. Build one per run; pass it down."""
 
     run_id: str = field(default_factory=new_run_id)
     logger: logging.Logger = field(
-        default_factory=lambda: logging.getLogger("lqabr.summary"))
+        default_factory=lambda: logging.getLogger("lqabr.research"))
 
     def __post_init__(self) -> None:
         # One child logger per stream, so each can carry its OWN file handler
@@ -306,25 +313,12 @@ class Observability:
                         **counted)
 
 
-
-    def snapshot(self, label: str, **fields: Any) -> None:
-        try:
-            import psutil  # type: ignore
-
-            process = psutil.Process(os.getpid())
-            fields["rss_mb"] = round(process.memory_info().rss / 1_048_576, 1)
-            fields["cpu_percent"] = process.cpu_percent(interval=None)
-        except Exception:  # psutil absent or unavailable — degrade, never fail
-            fields.setdefault("psutil", "unavailable")
-        self.system.emit(label, **fields)
-
-
 #: Per-context, NOT per-process. Two campaigns in flight — a webhook and a
 #: redelivery — used to fight over one module global, and whichever started
 #: last owned it: every lazy `get_obs()` after that, including the route
 #: handlers' own audit lines, was stamped with an unrelated run's id.
-_OBS: contextvars.ContextVar["Observability | None"] = contextvars.ContextVar(
-    "lqabr_summary_obs", default=None)
+_OBS: contextvars.ContextVar["ResearchLogging | None"] = contextvars.ContextVar(
+    "lqabr_research_obs", default=None)
 
 
 # ── console rendering ───────────────────────────────────────────────────────
@@ -673,8 +667,9 @@ def _console_handler(log_format: str, stream: Any = None) -> logging.Handler:
     return handler
 
 
-#: The three streams, and the file each one lands in. These six names are OURS
-#: — a code constant, not a knob. The DIRECTORY is the knob.
+#: The three streams. The stem of each file is OURS — a code constant, not a
+#: knob. The DIRECTORY is the knob, and the DATE is the day the record was
+#: written.
 STREAMS = ("process", "audit", "system")
 
 #: Set when a sink could not be opened, so `/health` can say so.
@@ -688,13 +683,41 @@ def sink_state() -> Dict[str, Any]:
             "degraded": list(_SINK_STATE["degraded"])}
 
 
+#: One file per UTC day, with the date IN THE NAME rather than as a rename
+#: target. These files live on a Windows filesystem where the service and the
+#: CLI are both live, and renaming a file another handle holds is
+#: `PermissionError` [WinError 32] — the scar `_GuardedRotatingFileHandler`
+#: exists for. Nothing is ever renamed here: both processes append to the same
+#: day's file, and appends of a line are atomic.
+#:
+#: UTC, not local. Cloud Run runs UTC and every `ts` inside the records is UTC,
+#: so a local split would file a run under a name that disagrees with every
+#: line in it.
+_DAY_FMT = "%Y-%m-%d"
+
+#: Only OUR dated files are ever swept. A legacy `agent.log`, or anything else
+#: a person left in the directory, is not matched and not touched.
+_DAY_NAME = re.compile(r"^research_(?:" + "|".join(STREAMS) +
+                       r")_(\d{4}-\d{2}-\d{2})\.log$")
+
+
+def utc_day(when: float | None = None) -> str:
+    """The day a record belongs to. `None` means now."""
+    return time.strftime(_DAY_FMT, time.gmtime(when))
+
+
+def daily_path(log_dir: str, stream: str, day: str = "") -> str:
+    """`<log_dir>/research_process_2026-08-31.log` — the whole naming rule."""
+    return os.path.join(log_dir, f"research_{stream}_{day or utc_day()}.log")
+
+
 class _GuardedRotatingFileHandler(RotatingFileHandler):
     """A rollover that cannot take the process with it.
 
     These files live on a Windows filesystem and the service and the CLI can
     both be live at once; `doRollover()` then raises `PermissionError`
     [WinError 32] on the rename, uncaught, and every subsequent emit spams
-    stderr. Observability must never kill a run — so a failed rollover is
+    stderr. ResearchLogging must never kill a run — so a failed rollover is
     reported ONCE and the handler keeps appending to the file it has.
     """
 
@@ -711,7 +734,7 @@ class _GuardedRotatingFileHandler(RotatingFileHandler):
         except OSError as exc:
             self._rollover_failed = True
             _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:rotate")
-            logging.getLogger("lqabr.summary").warning(json.dumps(
+            logging.getLogger("lqabr.research").warning(json.dumps(
                 {"stream": "system", "event": "log_rotate_failed",
                  "sink": self._lqabr_stream, "path": self.baseFilename,
                  "reason": f"{type(exc).__name__}: {exc}",
@@ -731,7 +754,7 @@ def _file_handler(path: str, stream_name: str, max_bytes: int,
             encoding="utf-8", stream_name=stream_name)
     except OSError as exc:
         _SINK_STATE["degraded"].append(f"{stream_name}:open")
-        logging.getLogger("lqabr.summary").warning(json.dumps(
+        logging.getLogger("lqabr.research").warning(json.dumps(
             {"stream": "system", "event": "log_sink_unavailable",
              "sink": stream_name, "path": path,
              "reason": f"{type(exc).__name__}: {exc}",
@@ -742,19 +765,150 @@ def _file_handler(path: str, stream_name: str, max_bytes: int,
     return handler
 
 
+def _sweep_old_days(log_dir: str, keep_days: int) -> None:
+    """Delete dated files outside the retention window. Never raises.
+
+    Daily files are never renamed, so `backupCount` no longer bounds anything
+    — this is what stops the directory growing without limit. It runs at boot
+    and again whenever a handler turns the page, so a service that stays up for
+    a month still prunes.
+
+    `keep_days` counts the window INCLUSIVE of today: 7 keeps today and the six
+    days before it. 0 or less disables the sweep entirely.
+    """
+    if keep_days <= 0:
+        return
+    cutoff = utc_day(time.time() - (keep_days - 1) * 86_400)
+    try:
+        names = sorted(os.listdir(log_dir))
+    except OSError:
+        return                       # no directory yet, nothing to sweep or say
+    removed: List[str] = []
+    for name in names:
+        match = _DAY_NAME.match(name)
+        if not match or match.group(1) >= cutoff:
+            continue
+        try:
+            os.remove(os.path.join(log_dir, name))
+        except OSError as exc:
+            # One report, then stop trying. A locked file on Windows would
+            # otherwise produce a line per file per boot, forever.
+            if "retention:delete" not in _SINK_STATE["degraded"]:
+                _SINK_STATE["degraded"].append("retention:delete")
+                logging.getLogger("lqabr.research").warning(json.dumps(
+                    {"stream": "system", "event": "log_retention_failed",
+                     "path": os.path.join(log_dir, name),
+                     "reason": f"{type(exc).__name__}: {exc}",
+                     "detail": "the run continues; this file is left in place "
+                               "and the sweep is not retried this boot"}))
+            break
+        removed.append(name)
+    if removed:
+        logging.getLogger("lqabr.research").warning(json.dumps(
+            {"stream": "system", "event": "log_retention_swept",
+             "dir": log_dir, "keep_days": keep_days, "cutoff": cutoff,
+             "removed": removed}))
+
+
+class _DailyFileHandler(logging.FileHandler):
+    """One file per UTC day, and never a rename.
+
+    The day is re-checked on every emit rather than computed once when the
+    handler is built: the service can be started on Monday and still be up on
+    Thursday, and a name chosen at boot would put three days in Monday's file.
+
+    Turning the page opens the new file BEFORE closing the old one, so a
+    failure leaves the handler writing where it already was rather than with no
+    stream at all. That failure is reported once and not retried — the same
+    contract `_GuardedRotatingFileHandler` keeps for size rollover, for the
+    same reason: logging must never kill a run.
+    """
+
+    def __init__(self, log_dir: str, stream_name: str,
+                 keep_days: int = 0) -> None:
+        self._lqabr_dir = log_dir
+        self._lqabr_stream = stream_name
+        self._lqabr_keep = keep_days
+        self._day = utc_day()
+        self._roll_failed = False
+        super().__init__(daily_path(log_dir, stream_name, self._day),
+                         encoding="utf-8")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        day = utc_day()
+        if day != self._day and not self._roll_failed:
+            self._turn_the_page(day)
+        super().emit(record)
+
+    def _turn_the_page(self, day: str) -> None:
+        new_path = daily_path(self._lqabr_dir, self._lqabr_stream, day)
+        self.acquire()          # an RLock; emit() already holds it, so this is
+        try:                    # re-entrant rather than a deadlock
+            previous_stream = self.stream
+            previous_path, previous_day = self.baseFilename, self._day
+            self.baseFilename, self._day = new_path, day
+            try:
+                self.stream = self._open()          # the NEW file first
+            except OSError as exc:
+                self.baseFilename, self._day = previous_path, previous_day
+                self.stream = previous_stream       # keep the handle we hold
+                self._roll_failed = True
+                _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:day")
+                logging.getLogger("lqabr.research").warning(json.dumps(
+                    {"stream": "system", "event": "log_day_roll_failed",
+                     "sink": self._lqabr_stream, "path": new_path,
+                     "reason": f"{type(exc).__name__}: {exc}",
+                     "detail": f"still appending to {previous_path}; the day "
+                               "roll is not retried for this handler"}))
+                return
+            if previous_stream is not None:
+                try:
+                    previous_stream.flush()
+                    previous_stream.close()
+                except OSError:
+                    pass                    # the new file is already open
+            _SINK_STATE["files"][self._lqabr_stream] = new_path
+        finally:
+            self.release()
+        _sweep_old_days(self._lqabr_dir, self._lqabr_keep)
+
+
+def _daily_handler(log_dir: str, stream_name: str,
+                   keep_days: int) -> Optional[logging.Handler]:
+    """One stream's file for today, or None with a named reason."""
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        handler = _DailyFileHandler(log_dir, stream_name, keep_days)
+    except OSError as exc:
+        _SINK_STATE["degraded"].append(f"{stream_name}:open")
+        logging.getLogger("lqabr.research").warning(json.dumps(
+            {"stream": "system", "event": "log_sink_unavailable",
+             "sink": stream_name, "path": daily_path(log_dir, stream_name),
+             "reason": f"{type(exc).__name__}: {exc}",
+             "detail": "the run continues; this stream is console-only"}))
+        return None
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    return handler
+
+
 def configure_logging(level: str = "INFO", log_dir: str = "",
                       log_format: str = "auto", detail: bool = True,
                       max_bytes: int = 52_428_800, backups: int = 5,
                       log_file: str = "", mode: str = "",
-                      console: Any = None) -> None:
+                      console: Any = None, retention_days: int = 7) -> None:
     """Readable console on the parent, one JSON file per stream on the children.
 
-        lqabr.summary                 <- ConsoleFormatter, propagate=False
-        ├── lqabr.summary.process     -> summary_process.log
-        ├── lqabr.summary.audit       -> summary_audit.log
-        └── lqabr.summary.system      -> summary_system.log
+        lqabr.research                 <- ConsoleFormatter, propagate=False
+        ├── lqabr.research.process     -> research_process_2026-08-31.log
+        ├── lqabr.research.audit       -> research_audit_2026-08-31.log
+        └── lqabr.research.system      -> research_system_2026-08-31.log
 
-    Three files on disk, one story on screen. Idempotent across calls.
+    Three files per UTC day, one story on screen. Idempotent across calls.
+
+    The date is part of the NAME, so nothing is ever renamed and the service
+    and the CLI can both append to the same day's file. `retention_days` is
+    what bounds the directory now that no file rolls; `max_bytes` / `backups`
+    apply only to the deprecated single-file sink below.
 
     `log_file` is the deprecated single-file sink: when set, every stream goes
     to that one file and the boot says so, rather than the setting being
@@ -764,7 +918,7 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
         set_mode(mode)
     else:
         set_detail(detail)
-    root = logging.getLogger("lqabr.summary")
+    root = logging.getLogger("lqabr.research")
     if not root.handlers:
         # `console` is stderr for the CLI, whose stdout IS the result document.
         # It must be chosen HERE: the sink's own warnings (log_sink_legacy,
@@ -794,24 +948,26 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
                 _SINK_STATE["files"][stream] = log_file
         root.warning(json.dumps(
             {"stream": "system", "event": "log_sink_legacy", "path": log_file,
-             "detail": "LQABR_SUMMARY_LOG_FILE is deprecated: all three "
-                       "streams share one file. Use LQABR_SUMMARY_LOG_DIR."}))
+             "detail": "LQABR_RESEARCH_LOG_FILE is deprecated: all three "
+                       "streams share one file. Use LQABR_RESEARCH_LOG_DIR."}))
         return
 
     if not log_dir:
         return                                   # console only, deliberately
 
     for stream in STREAMS:
-        path = os.path.join(log_dir, f"summary_{stream}.log")
-        handler = _file_handler(path, stream, max_bytes, backups)
+        handler = _daily_handler(log_dir, stream, retention_days)
         if handler is not None:
             root.getChild(stream).addHandler(handler)
-            _SINK_STATE["files"][stream] = path
+            _SINK_STATE["files"][stream] = handler.baseFilename
+
+    # After the handlers, so today's files exist and the directory does too.
+    _sweep_old_days(log_dir, retention_days)
 
 
-def get_obs(run_id: str | None = None, *, refresh: bool = False) -> Observability:
+def get_obs(run_id: str | None = None, *, refresh: bool = False) -> ResearchLogging:
     current = _OBS.get()
     if current is None or refresh:
-        current = Observability(run_id=run_id or new_run_id())
+        current = ResearchLogging(run_id=run_id or new_run_id())
         _OBS.set(current)
     return current

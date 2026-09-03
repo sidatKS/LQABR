@@ -36,7 +36,7 @@ try:  # pragma: no cover - depends on the local environment
 except ImportError:
     pass
 
-from research_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
+from research_core.research_logging import configure_logging, get_obs, new_run_id  # noqa: E402
 from research_core import SERVICE_NAME  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 
@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
                       max_bytes=settings.log_max_bytes,
                       backups=settings.log_backups, log_file=settings.log_file,
                       mode="debug" if args.debug else settings.log_mode,
+                      retention_days=settings.log_retention_days,
                       # For a CLI, stdout is the RESULT DOCUMENT — the caller
                       # pipes it to jq. Everything the agent says goes to
                       # stderr, including the sink's own boot warnings.

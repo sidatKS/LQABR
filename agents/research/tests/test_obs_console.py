@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-from research_core.obs import (ConsoleFormatter, Observability, _glyphs_for,
+from research_core.research_logging import (ConsoleFormatter, ResearchLogging, _glyphs_for,
                                _GLYPHS_ASCII, _GLYPHS_UNICODE, _terminal_width,
                                configure_logging)
 
@@ -31,7 +31,7 @@ def _render(colour=False, glyphs=_GLYPHS_UNICODE, **event):
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=colour, glyphs=glyphs))
     logger.addHandler(sink)
-    obs = Observability(run_id="res-test", logger=logger)
+    obs = ResearchLogging(run_id="res-test", logger=logger)
     obs.process.emit(event.pop("event"), **{k: v for k, v in event.items()
                                             if not k.startswith("_")})
     return sink.lines[-1]
@@ -92,7 +92,7 @@ def test_an_outbound_call_reads_as_a_call():
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=False, glyphs=_GLYPHS_UNICODE))
     logger.addHandler(sink)
-    Observability(run_id="res-test", logger=logger).hop(
+    ResearchLogging(run_id="res-test", logger=logger).hop(
         service="hubspot", endpoint="/crm/v3/objects/companies/search",
         status=200, duration_ms=677.1)
     line = sink.lines[-1]
@@ -122,7 +122,7 @@ def test_the_log_file_stays_json_while_the_console_is_text(tmp_path):
     """The readable form is a console concern only — the file is still parsed."""
     logging.getLogger("lqabr.research").handlers.clear()
     configure_logging("INFO", str(tmp_path), "text")      # a DIRECTORY now
-    Observability(run_id="res-test").process.emit("context_write_ok", chars=3941)
+    ResearchLogging(run_id="res-test").process.emit("context_write_ok", chars=3941)
     logging.getLogger("lqabr.research").handlers.clear()
 
     # the assertion is unchanged; only the sink it reads moved
@@ -142,7 +142,7 @@ def _lines(events, width=165):
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=False, glyphs=_GLYPHS_UNICODE, width=width))
     logger.addHandler(sink)
-    obs = Observability(run_id="res-test", logger=logger)
+    obs = ResearchLogging(run_id="res-test", logger=logger)
     for name, fields in events:
         obs.process.emit(name, **fields)
     return sink.lines

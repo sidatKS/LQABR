@@ -39,7 +39,7 @@ agents/research/
     prompts/research.md   the model contract (a file, not a string literal)
   packages/research_core/     the agent's own library — deliberately NOT shared
     settings.py        every knob, resolved once from env > config.yaml > default
-    obs.py             three log streams + the console formatter
+    research_logging.py  three log streams + the console formatter (class ResearchLogging)
     secrets.py         env | secret_manager | auto resolution
     hubspot_direct.py  THE one direct HubSpot call (read-only, test-enforced)
     mcp/client.py      JSON-RPC over streamable HTTP

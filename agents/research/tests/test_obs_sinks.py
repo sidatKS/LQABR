@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from research_core.obs import (Observability, STREAMS, configure_logging,
+from research_core.research_logging import (ResearchLogging, STREAMS, configure_logging,
                                sink_state)
 
 FILES = ("research_process.log", "research_audit.log", "research_system.log")
@@ -32,8 +32,8 @@ def _clean_handlers():
     _fresh()
 
 
-def _one_of_each(run_id: str = "res-sink") -> Observability:
-    obs = Observability(run_id=run_id)
+def _one_of_each(run_id: str = "res-sink") -> ResearchLogging:
+    obs = ResearchLogging(run_id=run_id)
     obs.process.emit("run_start", objectId="1")
     obs.hop(service="mcp", endpoint="http://localhost:8080/mcp", status=200,
             duration_ms=7.0)
@@ -187,7 +187,7 @@ def test_every_line_of_every_file_parses_as_json(tmp_path):
 
 def test_a_small_ceiling_rolls_over_and_the_live_file_keeps_its_name(tmp_path):
     configure_logging("INFO", str(tmp_path), "json", max_bytes=400, backups=2)
-    obs = Observability(run_id="res-roll")
+    obs = ResearchLogging(run_id="res-roll")
     for n in range(12):
         obs.process.emit("run_start", objectId=str(n), filler="x" * 60)
     names = sorted(p.name for p in tmp_path.iterdir())
@@ -198,8 +198,8 @@ def test_a_small_ceiling_rolls_over_and_the_live_file_keeps_its_name(tmp_path):
 def test_a_rollover_that_raises_is_reported_once_and_writing_continues(tmp_path,
                                                                       monkeypatch):
     """WinError 32: another handle holds the file. Uncaught, this spams stderr
-    on every subsequent emit. Observability must never kill a run."""
-    import research_core.obs as obs_module
+    on every subsequent emit. ResearchLogging must never kill a run."""
+    import research_core.research_logging as obs_module
 
     def _boom(self):
         raise PermissionError(32, "used by another process")
@@ -207,7 +207,7 @@ def test_a_rollover_that_raises_is_reported_once_and_writing_continues(tmp_path,
     monkeypatch.setattr(obs_module.RotatingFileHandler, "doRollover", _boom)
     recorder = _recording()
     configure_logging("INFO", str(tmp_path), "json", max_bytes=300, backups=1)
-    obs = Observability(run_id="res-boom")
+    obs = ResearchLogging(run_id="res-boom")
     for n in range(10):
         obs.process.emit("run_start", objectId=str(n), filler="y" * 60)
 

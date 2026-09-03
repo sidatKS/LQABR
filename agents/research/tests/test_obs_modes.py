@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from research_core.obs import (ConsoleFormatter, Observability, _GLYPHS_UNICODE,
+from research_core.research_logging import (ConsoleFormatter, ResearchLogging, _GLYPHS_UNICODE,
                                current_mode, preview, redact, set_mode,
                                summarize_args)
 
@@ -49,7 +49,7 @@ def _render(width: int, **fields):
     logger.setLevel(logging.INFO)
     sink = _Sink(width)
     logger.addHandler(sink)
-    Observability(run_id="res-mode", logger=logger).process.emit("model_request", **fields)
+    ResearchLogging(run_id="res-mode", logger=logger).process.emit("model_request", **fields)
     return sink
 
 
@@ -209,7 +209,7 @@ def _obs(name: str = "payload"):
     logger.setLevel(logging.INFO)
     sink = _Rows()
     logger.addHandler(sink)
-    return Observability(run_id="res-payload", logger=logger), sink
+    return ResearchLogging(run_id="res-payload", logger=logger), sink
 
 
 def _stub_provider(obs):
@@ -296,7 +296,7 @@ def test_debug_spills_an_audit_hop_instead_of_one_giant_line():
     logger.addHandler(sink)
 
     body = "X" * 4000
-    Observability(run_id="res-hop", logger=logger).hop(
+    ResearchLogging(run_id="res-hop", logger=logger).hop(
         service="mcp", endpoint="http://localhost:8080/mcp", status=200,
         duration_ms=1.0, attempt=2,
         params={"tool": "upsert", "authorization": "Bearer NEVER", "note": body})

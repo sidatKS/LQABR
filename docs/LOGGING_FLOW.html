@@ -1,0 +1,401 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Run, Three Files</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#ffffff; --panel2:#eeede7; --ink:#252a31; --mut:#6b7280;
+  --line:#d8d6cf; --proc:#2f6fad; --aud:#a87718; --sys:#6b5ca8;
+  --ok:#3d8a46; --bad:#b8503f; --rid:#a34a77; --chipbg:#f0efe9;
+}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15181e; --panel:#1c2129; --panel2:#232936; --ink:#e6e4dc; --mut:#8b94a3;
+    --line:#333a46; --proc:#6aa7dd; --aud:#d9a441; --sys:#a292d4;
+    --ok:#68b370; --bad:#d96a5b; --rid:#cf7fa7; --chipbg:#242b38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15181e; --panel:#1c2129; --panel2:#232936; --ink:#e6e4dc; --mut:#8b94a3;
+  --line:#333a46; --proc:#6aa7dd; --aud:#d9a441; --sys:#a292d4;
+  --ok:#68b370; --bad:#d96a5b; --rid:#cf7fa7; --chipbg:#242b38;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.62 "IBM Plex Sans",system-ui,sans-serif;}
+.wrap{max-width:960px;margin:0 auto;padding:48px 28px 90px;}
+header{margin-bottom:14px}
+.kicker{font:600 12px/1 "JetBrains Mono",monospace;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--mut)}
+h1{font-size:40px;line-height:1.1;margin:10px 0 12px;font-weight:700;text-wrap:balance}
+.lede{color:var(--mut);max-width:64ch;margin:0 0 20px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 8px}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--chipbg);
+  border:1px solid var(--line);border-radius:999px;padding:4px 12px;
+  font:500 12px "JetBrains Mono",monospace}
+.dot{width:9px;height:9px;border-radius:50%}
+section{margin-top:52px}
+.stepno{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
+  padding-bottom:8px;margin-bottom:14px}
+.stepno .n{font:700 13px "JetBrains Mono",monospace;color:var(--rid);letter-spacing:.08em}
+h2{font-size:23px;margin:0;font-weight:600;text-wrap:balance}
+p{max-width:68ch}
+p code, li code{font:500 .88em "JetBrains Mono",monospace;background:var(--chipbg);
+  border:1px solid var(--line);border-radius:4px;padding:1px 5px;white-space:nowrap}
+figure{margin:22px 0 6px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:20px 16px 8px;overflow-x:auto}
+figure svg{display:block;min-width:820px;max-width:100%;height:auto;margin:0 auto}
+figcaption{font-size:13px;color:var(--mut);padding:10px 6px 8px;max-width:78ch}
+.logs{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:18px 0}
+.logs pre{margin:0;font:12.5px/1.75 "JetBrains Mono",monospace;color:var(--ink)}
+.logs .t{color:var(--mut)} .logs .p{color:var(--proc)} .logs .a{color:var(--aud)}
+.logs .s{color:var(--sys)} .logs .g{color:var(--ok)} .logs .r{color:var(--rid)}
+.logs .hd{color:var(--mut);font-weight:700;letter-spacing:.1em;font-size:11px}
+/* svg vocabulary */
+.nd{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;rx:7}
+.ndp{stroke:var(--proc);stroke-width:1.6}.nda{stroke:var(--aud);stroke-width:1.6}
+.nds{stroke:var(--sys);stroke-width:1.6}.ndr{stroke:var(--rid);stroke-width:1.8}
+.ndg{stroke:var(--ok);stroke-width:1.6}.ndb{stroke:var(--bad);stroke-width:1.6}
+.ghost{fill:none;stroke:var(--mut);stroke-dasharray:5 4;stroke-width:1.1}
+.lbl{font:500 12.5px "JetBrains Mono",monospace;fill:var(--ink)}
+.lbl2{font:600 13px "IBM Plex Sans",sans-serif;fill:var(--ink)}
+.sub{font:400 11px "JetBrains Mono",monospace;fill:var(--mut)}
+.tp{fill:var(--proc)}.ta{fill:var(--aud)}.ts{fill:var(--sys)}
+.tg{fill:var(--ok)}.tb{fill:var(--bad)}.tr{fill:var(--rid);font-weight:700}
+.edge{stroke:var(--mut);stroke-width:1.3;fill:none}
+.edgeK{stroke:var(--ink);stroke-width:1.5;fill:none}
+.edgeG{stroke:var(--ok);stroke-width:1.5;fill:none}
+.edgeB{stroke:var(--bad);stroke-width:1.5;fill:none}
+.edgeR{stroke:var(--rid);stroke-width:1.7;fill:none}
+.elbl{font:400 11px "JetBrains Mono",monospace;fill:var(--mut)}
+footer{margin-top:56px;border-top:1px solid var(--line);padding-top:14px;
+  font-size:13px;color:var(--mut)}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">LQABR · Research &amp; Summary agents · logging walkthrough</div>
+  <h1>One Run, Three Files</h1>
+  <p class="lede">How a request becomes log lines: from <code>uvicorn</code> to
+  <code>campaign_complete</code>, every hop drawn in the order it executes.
+  Color is information — each node is painted by the stream it writes to, and the
+  pink thread is the <code>run_id</code> that joins all three files.</p>
+  <div class="legend">
+    <span class="chip"><span class="dot" style="background:var(--proc)"></span>process — what the run did</span>
+    <span class="chip"><span class="dot" style="background:var(--aud)"></span>audit — what crossed the boundary &amp; cost</span>
+    <span class="chip"><span class="dot" style="background:var(--sys)"></span>system — the service itself</span>
+    <span class="chip"><span class="dot" style="background:var(--rid)"></span>run_id — the join key</span>
+  </div>
+</header>
+
+<!-- ================= STEP 1 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 1</span><h2>Boot — uvicorn to a listening agent</h2></div>
+  <p>Importing <code>service_app</code> runs the module top-to-bottom once; then uvicorn starts
+  the event loop and runs <code>lifespan</code>. Logging is configured <em>first</em>, before
+  anything can fail, so a failure always has somewhere to land. The boot gets its own
+  <code>run_id</code> — that is why startup lines carry a different id than the campaign.</p>
+  <figure><svg viewBox="0 0 880 560" role="img" aria-label="Boot sequence: uvicorn imports service_app at module level, then runs lifespan which configures logging, creates the Observability handle, and emits service_start">
+    <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker></defs>
+    <rect class="nd" x="120" y="18" width="640" height="44" rx="7"/>
+    <text class="lbl" x="440" y="45" text-anchor="middle">python3 -m uvicorn service_app:app --port 8083 --app-dir src</text>
+    <line class="edge" x1="440" y1="62" x2="440" y2="94" marker-end="url(#a1)"/>
+    <text class="elbl" x="454" y="84">imports service_app</text>
+    <rect class="nd" x="120" y="96" width="640" height="150" rx="7"/>
+    <text class="lbl2" x="140" y="120">module level — runs once</text>
+    <text class="sub" x="140" y="145">sys.path += packages/, src/          # standalone: research_core resolves un-installed</text>
+    <text class="sub" x="140" y="167">load_dotenv(.env, override=False)    # real env always beats the file</text>
+    <text class="sub" x="140" y="189">SETTINGS = get_settings()            # the ONLY read of os.environ — restart to change</text>
+    <text class="sub" x="140" y="211">app = FastAPI(lifespan=lifespan)     # registered, not yet run</text>
+    <line class="edge" x1="440" y1="246" x2="440" y2="278" marker-end="url(#a1)"/>
+    <text class="elbl" x="454" y="268">event loop starts → lifespan()</text>
+    <rect class="nd" x="120" y="280" width="640" height="196" rx="7"/>
+    <text class="lbl2" x="140" y="304">lifespan — in this order, on purpose</text>
+    <text class="sub" x="140" y="330">1  configure_logging(SETTINGS…)                  <tspan class="ts">→ builds the tree (step 2)</tspan></text>
+    <text class="sub" x="140" y="352">2  obs = get_obs(new_run_id(), refresh=True)     <tspan class="tr">→ boot's own run_id</tspan></text>
+    <text class="sub" x="140" y="374">3  obs.system.emit("service_start",</text>
+    <text class="sub" x="163" y="394">     config=SETTINGS.redacted())                 <tspan class="ts">→ research_system.log</tspan></text>
+    <text class="sub" x="140" y="416">4  _startup_mcp_check()                          <tspan class="ts">→ mcp_startup_check_* on system</tspan></text>
+    <text class="sub" x="140" y="446">   yield                                         <tspan class="tg">← serving; on Ctrl-C: service_stop</tspan></text>
+    <line class="edge" x1="440" y1="476" x2="440" y2="506" marker-end="url(#a1)"/>
+    <rect class="nd ndg" x="250" y="508" width="380" height="40" rx="7"/>
+    <text class="lbl" x="440" y="533" text-anchor="middle">/health · /mcp/tools · /research/campaign/a2a live</text>
+  </svg>
+  <figcaption>The <code>service_start</code> line carries the entire resolved config through
+  <code>redacted()</code> — what the agent actually believes, not what you think .env says.
+  It is how the stale single-file sink pin was caught.</figcaption></figure>
+</section>
+
+<!-- ================= STEP 2 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 2</span><h2>The logger tree — three files on disk, one story on screen</h2></div>
+  <p><code>configure_logging()</code> builds one parent and three children. Each child owns a
+  file; all three propagate up to the parent's single console handler. The parent's
+  <code>propagate=False</code> is the wall in both directions: library noise never reaches
+  our files, and our records never reach the root.</p>
+  <figure><svg viewBox="0 0 880 470" role="img" aria-label="Logger tree: parent lqabr.research with console handler, three children each writing one file and propagating up; root logger cut off by propagate False">
+    <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker></defs>
+    <rect class="ghost" x="330" y="14" width="220" height="40" rx="7"/>
+    <text class="sub" x="440" y="33" text-anchor="middle">root logger</text>
+    <text class="sub" x="440" y="47" text-anchor="middle">(urllib3, httpx, SDKs…)</text>
+    <line class="edge" x1="440" y1="100" x2="440" y2="58" stroke-dasharray="5 4"/>
+    <text class="lbl" x="452" y="80" fill="var(--bad)">✕</text>
+    <text class="elbl" x="466" y="82">propagate = False</text>
+    <rect class="nd" x="300" y="102" width="280" height="62" rx="7"/>
+    <text class="lbl" x="440" y="126" text-anchor="middle">lqabr.research</text>
+    <text class="sub" x="440" y="148" text-anchor="middle">StreamHandler + ConsoleFormatter</text>
+    <rect class="nd" x="40" y="102" width="180" height="62" rx="7"/>
+    <text class="lbl" x="130" y="126" text-anchor="middle">terminal</text>
+    <text class="sub" x="130" y="148" text-anchor="middle">human line (stderr)</text>
+    <line class="edge" x1="300" y1="133" x2="224" y2="133" marker-end="url(#a2)"/>
+    <rect class="nd ndp" x="40" y="248" width="240" height="58" rx="7"/>
+    <text class="lbl tp" x="160" y="271" text-anchor="middle">lqabr.research.process</text>
+    <text class="sub" x="160" y="292" text-anchor="middle">level NOTSET — parent decides</text>
+    <rect class="nd nda" x="320" y="248" width="240" height="58" rx="7"/>
+    <text class="lbl ta" x="440" y="271" text-anchor="middle">lqabr.research.audit</text>
+    <text class="sub" x="440" y="292" text-anchor="middle">level NOTSET</text>
+    <rect class="nd nds" x="600" y="248" width="240" height="58" rx="7"/>
+    <text class="lbl ts" x="720" y="271" text-anchor="middle">lqabr.research.system</text>
+    <text class="sub" x="720" y="292" text-anchor="middle">level NOTSET</text>
+    <line class="edge" x1="160" y1="248" x2="332" y2="166" marker-end="url(#a2)"/>
+    <line class="edge" x1="440" y1="248" x2="440" y2="166" marker-end="url(#a2)"/>
+    <line class="edge" x1="720" y1="248" x2="548" y2="166" marker-end="url(#a2)"/>
+    <text class="elbl" x="452" y="204">propagate ↑</text>
+    <line class="edge" x1="160" y1="306" x2="160" y2="352" marker-end="url(#a2)"/>
+    <line class="edge" x1="440" y1="306" x2="440" y2="352" marker-end="url(#a2)"/>
+    <line class="edge" x1="720" y1="306" x2="720" y2="352" marker-end="url(#a2)"/>
+    <rect class="nd ndp" x="40" y="354" width="240" height="62" rx="7"/>
+    <text class="lbl tp" x="160" y="378" text-anchor="middle">research_process.log</text>
+    <text class="sub" x="160" y="400" text-anchor="middle">GuardedRotatingFileHandler</text>
+    <rect class="nd nda" x="320" y="354" width="240" height="62" rx="7"/>
+    <text class="lbl ta" x="440" y="378" text-anchor="middle">research_audit.log</text>
+    <text class="sub" x="440" y="400" text-anchor="middle">formatter "%(message)s"</text>
+    <rect class="nd nds" x="600" y="354" width="240" height="62" rx="7"/>
+    <text class="lbl ts" x="720" y="378" text-anchor="middle">research_system.log</text>
+    <text class="sub" x="720" y="400" text-anchor="middle">50 MB × 5 backups</text>
+    <text class="sub" x="440" y="448" text-anchor="middle">a failed open or rotation degrades once, names itself in /health "degraded", and the run continues</text>
+  </svg>
+  <figcaption>The file formatter is a pass-through because the message is already JSON;
+  the console renders from the record dict riding on <code>extra</code>. One
+  <code>logger.info()</code>, two outputs.</figcaption></figure>
+</section>
+
+<!-- ================= STEP 3 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 3</span><h2>Who calls whom — one writer, two shortcuts</h2></div>
+  <p>Every line in the system goes through <code>_Stream.emit()</code>. Your code either calls
+  it directly on a stream, or uses one of exactly two helpers that call it for you:
+  <code>step()</code> (frames a stage, always process) and <code>hop()</code> (one outbound
+  call, always audit). System has no helper — its events share no shape.</p>
+  <figure><svg viewBox="0 0 880 520" role="img" aria-label="Call graph: direct emits, step and hop helpers all funnel into Stream.emit, which redacts, serialises and hands to logger.info, reaching file and console">
+    <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker></defs>
+    <rect class="nd ndp" x="30" y="20" width="256" height="76" rx="7"/>
+    <text class="lbl2" x="158" y="44" text-anchor="middle">your code, direct</text>
+    <text class="sub" x="158" y="66" text-anchor="middle">obs.process.emit("run_complete",…)</text>
+    <text class="sub" x="158" y="84" text-anchor="middle">obs.system.emit("service_start",…)</text>
+    <rect class="nd ndp" x="312" y="20" width="256" height="76" rx="7"/>
+    <text class="lbl2" x="440" y="44" text-anchor="middle">with obs.step(name, **in):</text>
+    <text class="sub" x="440" y="66" text-anchor="middle">step_in → yield → finally: step_out</text>
+    <text class="sub" x="440" y="84" text-anchor="middle">status + duration_ms, never left open</text>
+    <rect class="nd nda" x="594" y="20" width="256" height="76" rx="7"/>
+    <text class="lbl2" x="722" y="44" text-anchor="middle">obs.hop(service=…, …)</text>
+    <text class="sub" x="722" y="66" text-anchor="middle">every outbound call, success + failure</text>
+    <text class="sub" x="722" y="84" text-anchor="middle">attempt, duration, params, token counts</text>
+    <line class="edge" x1="158" y1="96" x2="360" y2="168" marker-end="url(#a3)"/>
+    <line class="edge" x1="440" y1="96" x2="440" y2="168" marker-end="url(#a3)"/>
+    <line class="edge" x1="722" y1="96" x2="520" y2="168" marker-end="url(#a3)"/>
+    <text class="elbl" x="452" y="140">emits ×2</text>
+    <text class="elbl" x="620" y="140">emit("outbound_call",…)</text>
+    <rect class="nd" x="230" y="170" width="420" height="120" rx="7"/>
+    <text class="lbl2" x="440" y="194" text-anchor="middle">_Stream.emit(event, **fields)</text>
+    <text class="sub" x="256" y="220">{"stream": …, <tspan class="tr">"run_id": from the handle</tspan>,</text>
+    <text class="sub" x="256" y="240"> "event": name, "ts": now,</text>
+    <text class="sub" x="256" y="260"> **redact(fields)}   <tspan class="tb">← names blank values;</tspan></text>
+    <text class="sub" x="256" y="278" >                      <tspan class="tb">counts &amp; names pass</tspan></text>
+    <line class="edge" x1="440" y1="290" x2="440" y2="322" marker-end="url(#a3)"/>
+    <rect class="nd" x="200" y="324" width="480" height="46" rx="7"/>
+    <text class="lbl" x="440" y="352" text-anchor="middle">logger.info(json.dumps(record), extra={"lqabr_record": record})</text>
+    <line class="edge" x1="330" y1="370" x2="240" y2="424" marker-end="url(#a3)"/>
+    <line class="edge" x1="550" y1="370" x2="640" y2="424" marker-end="url(#a3)"/>
+    <text class="elbl" x="180" y="404">child handler</text>
+    <text class="elbl" x="608" y="404">propagate ↑ parent</text>
+    <rect class="nd" x="80" y="426" width="320" height="58" rx="7"/>
+    <text class="lbl" x="240" y="450" text-anchor="middle">AGENT_&lt;stream&gt;.log</text>
+    <text class="sub" x="240" y="470" text-anchor="middle">the JSON string, verbatim</text>
+    <rect class="nd" x="480" y="426" width="320" height="58" rx="7"/>
+    <text class="lbl" x="640" y="450" text-anchor="middle">console</text>
+    <text class="sub" x="640" y="470" text-anchor="middle">rendered from the dict, width ≤ 165</text>
+  </svg>
+  <figcaption>The <code>run_id</code> comes from the handle, never per call — and an explicit
+  <code>run_id=…</code> field overrides it, which is how an inbound request logs under the
+  gateway's id before a run-scoped handle exists.</figcaption></figure>
+</section>
+
+<!-- ================= STEP 4 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 4</span><h2>A request arrives — the id is chosen before anything else</h2></div>
+  <p><code>run_id = envelope.run_id() or new_run_id()</code> resolves <em>before</em> the guards,
+  so an accepted run and a refused one are findable by the same key. A refusal is a
+  top-level JSON-RPC <code>error</code> — the gateway scores any 2xx without one as a
+  successful dispatch, which is how a refused campaign used to disappear.</p>
+  <figure><svg viewBox="0 0 880 560" role="img" aria-label="Request path: POST parsed to envelope, run id resolved, two guards can reject with an audit 400 line and JSON-RPC error, otherwise audit 200, background task scheduled, ack returned immediately">
+    <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker>
+    <marker id="a4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker>
+    <marker id="a4g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--ok)"/></marker></defs>
+    <rect class="nd" x="30" y="24" width="200" height="48" rx="7"/>
+    <text class="lbl" x="130" y="53" text-anchor="middle">gateway / curl</text>
+    <rect class="nd" x="300" y="24" width="300" height="48" rx="7"/>
+    <text class="lbl" x="450" y="53" text-anchor="middle">POST /research/campaign/a2a</text>
+    <line class="edge" x1="230" y1="48" x2="296" y2="48" marker-end="url(#a4)"/>
+    <rect class="ghost" x="650" y="24" width="200" height="48" rx="7"/>
+    <text class="sub" x="750" y="44" text-anchor="middle">malformed body → 422</text>
+    <text class="sub" x="750" y="62" text-anchor="middle">(FastAPI; logged nowhere)</text>
+    <line class="edge" x1="600" y1="48" x2="646" y2="48" stroke-dasharray="5 4"/>
+    <line class="edge" x1="450" y1="72" x2="450" y2="104" marker-end="url(#a4)"/>
+    <text class="elbl" x="462" y="94">A2AEnvelope (pydantic)</text>
+    <rect class="nd ndr" x="240" y="106" width="420" height="46" rx="7"/>
+    <text class="lbl tr" x="450" y="134" text-anchor="middle">run_id = envelope.run_id() or new_run_id()</text>
+    <line class="edge" x1="450" y1="152" x2="450" y2="184" marker-end="url(#a4)"/>
+    <text class="elbl" x="462" y="176">resolved BEFORE the guards</text>
+    <rect class="nd" x="240" y="186" width="420" height="66" rx="7"/>
+    <text class="sub" x="260" y="210">guard 1  no objectId?</text>
+    <text class="sub" x="260" y="234">guard 2  record kind ≠ post?  (a contact is refused at the door)</text>
+    <line class="edgeB" x1="660" y1="219" x2="716" y2="219" marker-end="url(#a4b)"/>
+    <rect class="nd ndb" x="600" y="272" width="250" height="104" rx="7"/>
+    <text class="lbl tb" x="725" y="296" text-anchor="middle">refused</text>
+    <text class="sub" x="725" y="318" text-anchor="middle"><tspan class="ta">audit http_in 400</tspan> + reason</text>
+    <text class="sub" x="725" y="338" text-anchor="middle">JSON-RPC error −32602</text>
+    <text class="sub" x="725" y="358" text-anchor="middle">data carries <tspan class="tr">run_id</tspan> back</text>
+    <path class="edgeB" d="M720 219 L748 219 L748 268" marker-end="url(#a4b)"/>
+    <line class="edgeG" x1="450" y1="252" x2="450" y2="284" marker-end="url(#a4g)"/>
+    <rect class="nd nda" x="240" y="286" width="330" height="62" rx="7"/>
+    <text class="lbl ta" x="405" y="310" text-anchor="middle">audit http_in 200</text>
+    <text class="sub" x="405" y="332" text-anchor="middle">objectId + envelope.source() + <tspan class="tr">run_id=…</tspan></text>
+    <line class="edge" x1="405" y1="348" x2="405" y2="380" marker-end="url(#a4)"/>
+    <rect class="nd" x="130" y="382" width="550" height="52" rx="7"/>
+    <text class="lbl" x="405" y="406" text-anchor="middle">background.add_task(_guarded(run_campaign), target, run_id=run_id)</text>
+    <text class="sub" x="405" y="426" text-anchor="middle">_guarded: BaseException → run_crashed, re-raise — a crash cannot vanish</text>
+    <line class="edge" x1="260" y1="434" x2="180" y2="474" marker-end="url(#a4)"/>
+    <line class="edgeR" x1="560" y1="434" x2="640" y2="474" marker-end="url(#a4)"/>
+    <rect class="nd ndg" x="60" y="476" width="330" height="58" rx="7"/>
+    <text class="lbl tg" x="225" y="500" text-anchor="middle">ack now, HTTP 200</text>
+    <text class="sub" x="225" y="520" text-anchor="middle">{"status":"accepted", <tspan class="tr">"run_id":"res-ce6db8…"</tspan>}</text>
+    <rect class="nd ndr" x="470" y="476" width="340" height="58" rx="7"/>
+    <text class="lbl" x="640" y="500" text-anchor="middle">the work continues → step 5</text>
+    <text class="sub" x="640" y="520" text-anchor="middle">everything after this point is logged, not returned</text>
+  </svg>
+  <figcaption>The gateway must answer HubSpot inside ~5 s; a campaign takes minutes. The ack
+  is the last thing on this thread.</figcaption></figure>
+</section>
+
+<!-- ================= STEP 5 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 5</span><h2>The campaign — frames, forks, and the loop that never stops early</h2></div>
+  <p>The background thread's first act is installing the handle:
+  <code>get_obs(run_id, refresh=True)</code> — the pink thread crossing the thread boundary.
+  From here every borrower (<code>obs or get_obs()</code>) logs under the campaign's id
+  without any threading. Note the <code>list_leads</code> fork: <code>None</code> means the
+  question could not be asked and the campaign refuses to run; <code>[]</code> means nobody
+  matched, which is a <em>success</em>.</p>
+  <figure><svg viewBox="0 0 880 760" role="img" aria-label="Campaign flow: handle installed with the routed run id, campaign_start, read_blog frame, list_leads frame with a three-way fork, per-lead loop of read_lead research write_context and run_complete, ending in campaign_complete with totals">
+    <defs><marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker>
+    <marker id="a5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker>
+    <marker id="a5g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--ok)"/></marker></defs>
+    <rect class="nd ndr" x="40" y="16" width="420" height="46" rx="7"/>
+    <text class="lbl" x="250" y="44" text-anchor="middle">obs = get_obs(<tspan class="tr">run_id</tspan>, refresh=True)  <tspan class="sub">contextvar, this thread</tspan></text>
+    <line class="edge" x1="250" y1="62" x2="250" y2="92" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="40" y="94" width="420" height="46" rx="7"/>
+    <text class="lbl tp" x="250" y="122" text-anchor="middle">campaign_start  <tspan class="sub">model · urls · limit · dry_run · lookup</tspan></text>
+    <line class="edge" x1="250" y1="140" x2="250" y2="170" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="40" y="172" width="420" height="58" rx="7"/>
+    <text class="lbl tp" x="60" y="196">▸ read_blog ◂  <tspan class="sub">step_in / step_out via MCP</tspan></text>
+    <text class="sub" x="60" y="218">ok → blog_industry, summary_preview</text>
+    <line class="edgeB" x1="460" y1="201" x2="586" y2="201" marker-end="url(#a5b)"/>
+    <text class="elbl" x="470" y="192">unreadable / unusable</text>
+    <rect class="nd ndb" x="590" y="178" width="250" height="46" rx="7"/>
+    <text class="lbl tb" x="715" y="206" text-anchor="middle">campaign_failed("read_blog")</text>
+    <line class="edge" x1="250" y1="230" x2="250" y2="260" marker-end="url(#a5)"/>
+    <text class="elbl" x="262" y="252">blog_industry empty? → campaign_failed("industry")</text>
+    <rect class="nd ndp" x="40" y="262" width="420" height="58" rx="7"/>
+    <text class="lbl tp" x="60" y="286">▸ list_leads ◂  <tspan class="sub">industry, limit — hubspot_direct</tspan></text>
+    <text class="sub" x="60" y="308">leads_found=N, first 20 ids</text>
+    <line class="edgeB" x1="460" y1="278" x2="586" y2="278" marker-end="url(#a5b)"/>
+    <text class="elbl" x="468" y="270">None — could not ask</text>
+    <rect class="nd ndb" x="590" y="252" width="250" height="58" rx="7"/>
+    <text class="lbl tb" x="715" y="275" text-anchor="middle">campaign_failed("list_leads")</text>
+    <text class="sub" x="715" y="297" text-anchor="middle">refuse — not an empty success</text>
+    <line class="edgeG" x1="460" y1="308" x2="586" y2="338" marker-end="url(#a5g)"/>
+    <text class="elbl" x="474" y="336">[] — nobody matched</text>
+    <rect class="nd ndg" x="590" y="322" width="250" height="58" rx="7"/>
+    <text class="lbl tg" x="715" y="345" text-anchor="middle">campaign_complete</text>
+    <text class="sub" x="715" y="367" text-anchor="middle">leads_found=0 — a real answer</text>
+    <line class="edge" x1="250" y1="320" x2="250" y2="352" marker-end="url(#a5)"/>
+    <text class="elbl" x="262" y="344">ids → one lead at a time</text>
+    <rect class="ghost" x="40" y="354" width="560" height="270" rx="9"/>
+    <text class="sub" x="60" y="378">for position, leadObjectId in enumerate(lead_ids):   ×N</text>
+    <rect class="nd ndp" x="60" y="392" width="240" height="40" rx="6"/>
+    <text class="lbl tp" x="180" y="417" text-anchor="middle">campaign_lead_start  <tspan class="sub">3/5</tspan></text>
+    <line class="edge" x1="180" y1="432" x2="180" y2="456" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="60" y="458" width="150" height="40" rx="6"/>
+    <text class="lbl tp" x="135" y="483" text-anchor="middle">▸ read_lead ◂</text>
+    <line class="edge" x1="210" y1="478" x2="234" y2="478" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="238" y="458" width="150" height="40" rx="6"/>
+    <text class="lbl tp" x="313" y="483" text-anchor="middle">▸ research ◂</text>
+    <line class="edge" x1="388" y1="478" x2="412" y2="478" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="416" y="458" width="164" height="40" rx="6"/>
+    <text class="lbl tp" x="498" y="483" text-anchor="middle">▸ write_context ◂</text>
+    <text class="sub" x="238" y="518">model_request → <tspan class="ta">hop 200 · 15326ms · 14772/547 tok</tspan> → model_response</text>
+    <line class="edge" x1="498" y1="498" x2="498" y2="540" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="330" y="542" width="250" height="40" rx="6"/>
+    <text class="lbl tp" x="455" y="567" text-anchor="middle">run_complete  <tspan class="sub">status follows the WRITE</tspan></text>
+    <line class="edge" x1="330" y1="562" x2="200 " y2="562" marker-end="url(#a5)"/>
+    <rect class="nd ndp" x="60" y="542" width="136" height="40" rx="6"/>
+    <text class="lbl tp" x="128" y="567" text-anchor="middle">lead_done</text>
+    <text class="sub" x="60" y="608">a failed lead becomes a recorded result — the loop continues; no lead stops the campaign</text>
+    <line class="edge" x1="320" y1="624" x2="320" y2="656" marker-end="url(#a5)"/>
+    <text class="elbl" x="332" y="648">tally: written / failed / skipped</text>
+    <rect class="nd ndp" x="120" y="658" width="420" height="72" rx="7"/>
+    <text class="lbl tp" x="330" y="684" text-anchor="middle">campaign_complete</text>
+    <text class="sub" x="330" y="708" text-anchor="middle">status completed | partial | failed · failed_leads[:20]</text>
+    <text class="sub" x="700" y="694" text-anchor="middle">nothing is returned —</text>
+    <text class="sub" x="700" y="712" text-anchor="middle">this line IS the outcome</text>
+  </svg>
+  <figcaption>Every box above logs under the same pink <code>run_id</code> — the campaign's —
+  including all N leads. One grep joins the whole story across the three files.</figcaption></figure>
+</section>
+
+<!-- ================= STEP 6 ================= -->
+<section>
+  <div class="stepno"><span class="n">STEP 6</span><h2>The same run, read back</h2></div>
+  <p>What the three files hold for the run drawn above, and the one command that
+  re-interleaves them. (<code>json.dumps</code> writes <code>"run_id": "…"</code> with a
+  space — the <code>?</code> in the grep is load-bearing.)</p>
+  <div class="logs"><pre>
+<span class="hd">RESEARCH_AUDIT.LOG</span>
+<span class="a">{"stream":"audit"</span>,<span class="r">"run_id":"res-ce6db8faeb46"</span>,"event":"http_in","status":200,…}
+<span class="a">{"stream":"audit"</span>,<span class="r">"run_id":"res-ce6db8faeb46"</span>,"event":"outbound_call","service":"anthropic",
+  "status":200,"duration_ms":15326,"attempt":1,<span class="g">"input_tokens":14772,"output_tokens":547</span>,…}
+
+<span class="hd">RESEARCH_PROCESS.LOG</span>
+<span class="p">{"stream":"process"</span>,<span class="r">"run_id":"res-ce6db8faeb46"</span>,"event":"campaign_start","dry_run":false,…}
+<span class="p">{"stream":"process"</span>,<span class="r">"run_id":"res-ce6db8faeb46"</span>,"event":"step_out","step":"write_context",
+  "status":"ok","duration_ms":3002,"write_status":"written",…}
+<span class="p">{"stream":"process"</span>,<span class="r">"run_id":"res-ce6db8faeb46"</span>,"event":"campaign_complete","written":5,"failed":0,…}
+
+<span class="hd">RESEARCH_SYSTEM.LOG</span>
+<span class="s">{"stream":"system"</span>,"run_id":"res-85f190bdae36","event":"service_start",
+  "config":{…,"mcp_auth_token":<span class="g">"&lt;redacted&gt;"</span>,"model_token_secret":<span class="g">"lqabr-anthropic-api-key"</span>}}
+
+<span class="hd">THE JOIN</span>
+<span class="t">$</span> grep -hE '"run_id": ?"res-ce6db8faeb46"' logs/research/*.log | jq -s 'sort_by(.ts)'
+</pre></div>
+  <p style="font-size:14px;color:var(--mut)">The value is blanked; the <em>name</em> prints —
+  <code>lqabr-anthropic-api-key</code> is a name, a token count is not a token. That rule
+  holds in every mode, debug included.</p>
+</section>
+
+<footer>Companion to <code>docs/LOGGING_SPEC.docx</code> · agents/research &amp; agents/summary,
+branch leadq-dev-rao · streams: process / audit / system · modes: terse / normal / debug</footer>
+</div>
+</body></html>

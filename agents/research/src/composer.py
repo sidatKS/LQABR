@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from research_core.obs import Observability, get_obs
+    from research_core.research_logging import ResearchLogging, get_obs
     from research_core.settings import Settings, get_settings
     from research_core.search.base import SearchError, SearchProvider, build_provider
     from research_core.types import BlogFacts, LeadFacts, ResearchNote
 except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
-    from ..packages.research_core.obs import Observability, get_obs  # type: ignore
+    from ..packages.research_core.research_logging import ResearchLogging, get_obs  # type: ignore
     from ..packages.research_core.settings import Settings, get_settings  # type: ignore
     from ..packages.research_core.search.base import (  # type: ignore
         SearchError, SearchProvider, build_provider)
@@ -47,6 +47,11 @@ _OPENERS = (
     r"|let me\b|now let me\b|i'?m going to\b|sure[,!.]|certainly[,!.]"
     r"|(?:an? )?(?:important|quick|brief|editorial|final|one)?[ \t]*"
     r"(?:note|flag|caveat|warning|disclaimer|heads[- ]up)\b"
+    # The model naming the PROPERTY as the heading over the real note:
+    #   "**`lead_context` note:**"        (Innovaccer, 2026-09-01)
+    # Seen after a recap whose own opener ended in a full stop, so nothing
+    # earlier in the text anchored — this line was the only marker present.
+    r"|(?:the[ \t]+)?lead_context\b"
 )
 
 #: The announcement as its own line, ending in a colon — what `strip_preamble`
@@ -57,6 +62,22 @@ _PREAMBLE = re.compile(
 
 # A markdown rule the model puts between the announcement and the note.
 _LEADING_RULE = re.compile(r"\A(?:\s*(?:-{3,}|\*{3,}|_{3,})\s*\n)+")
+
+#: The model HEADING the real note with the property's own name. Seen twice in
+#: one afternoon, punctuated differently each time, which is why this matches on
+#: the shape rather than the punctuation:
+#:
+#:   "**`lead_context` note:**"    Innovaccer, 2026-09-01 11:04   colon
+#:   "### `lead_context` note"     Accolade,   2026-09-01 16:39   no colon
+#:
+#: A SHORT standalone line naming the property is a heading, never prose — a
+#: real note discusses the company, it does not announce itself. Requiring the
+#: whole line to be little more than the property name is what keeps this from
+#: matching a sentence that merely mentions `lead_context`.
+_NOTE_HEADING = re.compile(
+    r"^[^A-Za-z0-9\n]{0,12}(?:the[ \t]+)?[`'\"*_]*lead[-_ ]?context[`'\"*_]*"
+    r"[ \t]*(?:note|entry|section|itself)?[ \t]*:?[^A-Za-z0-9\n]{0,8}$",
+    re.IGNORECASE | re.MULTILINE)
 
 #: The same announcement written INLINE, so the commentary continues on the
 #: line rather than after it. The colon is mid-line, so `_PREAMBLE` (anchored on
@@ -83,15 +104,27 @@ def strip_preamble(text: str) -> str:
     merely contains such a phrase is never truncated.
     """
     tail = text
-    matches = list(_PREAMBLE.finditer(text))
+    # Either shape counts as the announcement; the LAST one wins, so a recap
+    # and its sources are dropped even when both appear.
+    matches = list(_PREAMBLE.finditer(text)) + list(_NOTE_HEADING.finditer(text))
     if matches:
-        tail = text[matches[-1].end():]
+        tail = text[max(m.end() for m in matches):]
     tail = _LEADING_RULE.sub("", tail.lstrip("\n")).strip()
     tail = _LEADING_RULE.sub("", _drop_leading_asides(tail)).strip()
     return tail if len(tail) >= 80 else text.strip()
 
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "research.md"
+
+#: The prompt deliberately never names the CRM field the note is stored in.
+#: While it did, the model kept heading its own output with that name and the
+#: heading had to be stripped back off afterwards — twice in one afternoon,
+#: punctuated differently each time (`**...note:**` at 11:04, `### ...note` at
+#: 16:39). Telling it the storage field bought nothing: the model needs to know
+#: what the note is FOR, not where it lands. `strip_preamble` stays as the net,
+#: but this is why the net should rarely have to catch anything.
+#: If you reintroduce the field name here, expect the headings back.
+
 
 def load_system_prompt(settings: Settings) -> str:
     """The prompt file is the contract with the model — editing copy is a file
@@ -161,7 +194,7 @@ class Composer:
 
     def __init__(self, provider: Optional[SearchProvider] = None, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None) -> None:
+                 obs: ResearchLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._obs = obs or get_obs()
         self._provider = provider or build_provider(self._settings, obs=self._obs)

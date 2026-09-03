@@ -1,38 +1,37 @@
-"""Observability — structured, correlated, and free of secrets.
+"""SummaryLogging — structured, correlated, and free of secrets.
 
-**agents/summary/packages/summary_core/obs.py is a deliberate copy of this file.**
+**This file is a deliberate copy of agents/research/packages/research_core/research_logging.py.**
 
-Do not extract the two into `packages/lqabr_core`. `tests/test_standalone.py` in
-both agents exists precisely to assert that neither imports from the shared
-package, and that standalone-ness is a decision this project has already made
-and paid for. The duplication costs applying a future obs fix twice; it buys
-neither agent being able to break the other. If you are here to "clean this up",
-that is the reason not to. Keep the two in step by PORTING, not by importing.
+Do not extract it into `packages/lqabr_core`. `tests/test_standalone.py` in both
+agents exists precisely to assert that neither imports from the shared package,
+and that standalone-ness is a decision this project has already made and paid
+for. The duplication costs applying a future logging fix twice; it buys neither
+agent being able to break the other. If you are here to "clean this up", that is
+the reason not to. Keep the two in step by PORTING, not by importing.
 
 ---
 
-Three streams, one run_id correlating them (matching the Summary Agent):
+Three streams, one run_id correlating them:
 
     process   what the agent did and why (steps, decisions, counts)
-    audit     every hop that left this process (MCP call, model call), with
-              endpoint, method, status, duration and the PARAMETERS sent —
-              never a credential
-    system    startup/shutdown and coarse resource facts
+    audit     every hop that left this process — HTTP fetch, MCP call, model
+              call — with endpoint, method, status, duration, the parameters it
+              was made with, and what it COST. Never a payload, never a
+              credential's value.
+    system    startup, config, shutdown, and coarse resource snapshots
 
-One JSON object per line, to stdout AND (when configured) to the agent's own
-log file. `redact()` runs over every field bag on the way out — recursively, so
-a credential nested inside a call's arguments is blanked too.
+One JSON object per line, one file per stream. `redact()` runs over every field
+bag on the way out — recursively, and by NAME: a credential's value is blanked,
+a credential's NAME is printed, because "log the credential's name, never its
+value" is the rule and blanking the name is its exact inverse.
 
-**Reading a run.** Every step of the pipeline is framed by a pair:
+**Reading a run.** Every step is framed by a pair — IN with the inputs it was
+handed, OUT with what it produced and how long it took.
 
-    ▸ IN   <step>   the inputs that step was handed
-    ◂ OUT  <step>   what it produced, and how long it took
-
-and every outbound call carries the parameters it was made with, so "where is
-the model called and what did we send it" is answerable from the log alone.
-Text payloads (a prompt, a note) appear as a length-marked `*_preview`, never
-in full on the console — `preview()` decides how much, and
-`LQABR_RESEARCH_LOG_MODE` (terse | normal | debug) decides how much it decides.
+`LQABR_SUMMARY_LOG_MODE` = terse | normal | debug decides how much of a value
+reaches the log. Debug is not "more logging": every truncation happens BEFORE
+json.dumps, so a structured file has been storing damaged strings in well-formed
+fields. Debug stops the values arriving pre-mangled. It never relaxes redaction.
 """
 
 from __future__ import annotations
@@ -118,7 +117,7 @@ def set_detail(enabled: bool) -> None:
 
 
 def new_run_id() -> str:
-    return f"res-{uuid.uuid4().hex[:12]}"
+    return f"sum-{uuid.uuid4().hex[:12]}"
 
 
 def preview(text: Any, limit: int = _PREVIEW_CHARS) -> str:
@@ -231,32 +230,13 @@ class Step:
         self.status, self.fields = "skipped", {"reason": reason, **fields}
 
 
-class Step:
-    """What a step produced. Set it before returning; the frame reports it."""
-
-    __slots__ = ("status", "fields")
-
-    def __init__(self) -> None:
-        self.status = "ok"
-        self.fields: Dict[str, Any] = {}
-
-    def ok(self, **fields: Any) -> None:
-        self.status, self.fields = "ok", fields
-
-    def failed(self, reason: str, **fields: Any) -> None:
-        self.status, self.fields = "failed", {"reason": reason, **fields}
-
-    def skipped(self, reason: str, **fields: Any) -> None:
-        self.status, self.fields = "skipped", {"reason": reason, **fields}
-
-
 @dataclass
-class Observability:
+class SummaryLogging:
     """One run's logging handle. Build one per run; pass it down."""
 
     run_id: str = field(default_factory=new_run_id)
     logger: logging.Logger = field(
-        default_factory=lambda: logging.getLogger("lqabr.research"))
+        default_factory=lambda: logging.getLogger("lqabr.summary"))
 
     def __post_init__(self) -> None:
         # One child logger per stream, so each can carry its OWN file handler
@@ -326,12 +306,25 @@ class Observability:
                         **counted)
 
 
+
+    def snapshot(self, label: str, **fields: Any) -> None:
+        try:
+            import psutil  # type: ignore
+
+            process = psutil.Process(os.getpid())
+            fields["rss_mb"] = round(process.memory_info().rss / 1_048_576, 1)
+            fields["cpu_percent"] = process.cpu_percent(interval=None)
+        except Exception:  # psutil absent or unavailable — degrade, never fail
+            fields.setdefault("psutil", "unavailable")
+        self.system.emit(label, **fields)
+
+
 #: Per-context, NOT per-process. Two campaigns in flight — a webhook and a
 #: redelivery — used to fight over one module global, and whichever started
 #: last owned it: every lazy `get_obs()` after that, including the route
 #: handlers' own audit lines, was stamped with an unrelated run's id.
-_OBS: contextvars.ContextVar["Observability | None"] = contextvars.ContextVar(
-    "lqabr_research_obs", default=None)
+_OBS: contextvars.ContextVar["SummaryLogging | None"] = contextvars.ContextVar(
+    "lqabr_summary_obs", default=None)
 
 
 # ── console rendering ───────────────────────────────────────────────────────
@@ -701,7 +694,7 @@ class _GuardedRotatingFileHandler(RotatingFileHandler):
     These files live on a Windows filesystem and the service and the CLI can
     both be live at once; `doRollover()` then raises `PermissionError`
     [WinError 32] on the rename, uncaught, and every subsequent emit spams
-    stderr. Observability must never kill a run — so a failed rollover is
+    stderr. SummaryLogging must never kill a run — so a failed rollover is
     reported ONCE and the handler keeps appending to the file it has.
     """
 
@@ -718,7 +711,7 @@ class _GuardedRotatingFileHandler(RotatingFileHandler):
         except OSError as exc:
             self._rollover_failed = True
             _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:rotate")
-            logging.getLogger("lqabr.research").warning(json.dumps(
+            logging.getLogger("lqabr.summary").warning(json.dumps(
                 {"stream": "system", "event": "log_rotate_failed",
                  "sink": self._lqabr_stream, "path": self.baseFilename,
                  "reason": f"{type(exc).__name__}: {exc}",
@@ -738,7 +731,7 @@ def _file_handler(path: str, stream_name: str, max_bytes: int,
             encoding="utf-8", stream_name=stream_name)
     except OSError as exc:
         _SINK_STATE["degraded"].append(f"{stream_name}:open")
-        logging.getLogger("lqabr.research").warning(json.dumps(
+        logging.getLogger("lqabr.summary").warning(json.dumps(
             {"stream": "system", "event": "log_sink_unavailable",
              "sink": stream_name, "path": path,
              "reason": f"{type(exc).__name__}: {exc}",
@@ -756,10 +749,10 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
                       console: Any = None) -> None:
     """Readable console on the parent, one JSON file per stream on the children.
 
-        lqabr.research                 <- ConsoleFormatter, propagate=False
-        ├── lqabr.research.process     -> research_process.log
-        ├── lqabr.research.audit       -> research_audit.log
-        └── lqabr.research.system      -> research_system.log
+        lqabr.summary                 <- ConsoleFormatter, propagate=False
+        ├── lqabr.summary.process     -> summary_process.log
+        ├── lqabr.summary.audit       -> summary_audit.log
+        └── lqabr.summary.system      -> summary_system.log
 
     Three files on disk, one story on screen. Idempotent across calls.
 
@@ -771,7 +764,7 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
         set_mode(mode)
     else:
         set_detail(detail)
-    root = logging.getLogger("lqabr.research")
+    root = logging.getLogger("lqabr.summary")
     if not root.handlers:
         # `console` is stderr for the CLI, whose stdout IS the result document.
         # It must be chosen HERE: the sink's own warnings (log_sink_legacy,
@@ -801,24 +794,24 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
                 _SINK_STATE["files"][stream] = log_file
         root.warning(json.dumps(
             {"stream": "system", "event": "log_sink_legacy", "path": log_file,
-             "detail": "LQABR_RESEARCH_LOG_FILE is deprecated: all three "
-                       "streams share one file. Use LQABR_RESEARCH_LOG_DIR."}))
+             "detail": "LQABR_SUMMARY_LOG_FILE is deprecated: all three "
+                       "streams share one file. Use LQABR_SUMMARY_LOG_DIR."}))
         return
 
     if not log_dir:
         return                                   # console only, deliberately
 
     for stream in STREAMS:
-        path = os.path.join(log_dir, f"research_{stream}.log")
+        path = os.path.join(log_dir, f"summary_{stream}.log")
         handler = _file_handler(path, stream, max_bytes, backups)
         if handler is not None:
             root.getChild(stream).addHandler(handler)
             _SINK_STATE["files"][stream] = path
 
 
-def get_obs(run_id: str | None = None, *, refresh: bool = False) -> Observability:
+def get_obs(run_id: str | None = None, *, refresh: bool = False) -> SummaryLogging:
     current = _OBS.get()
     if current is None or refresh:
-        current = Observability(run_id=run_id or new_run_id())
+        current = SummaryLogging(run_id=run_id or new_run_id())
         _OBS.set(current)
     return current

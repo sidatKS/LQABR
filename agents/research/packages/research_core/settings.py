@@ -110,6 +110,10 @@ class Settings:
     mcp_base_url: str = "http://localhost:8091/mcp"
     mcp_timeout_seconds: int = 60
     mcp_auth_token: str = ""
+    #: Cloud Run audience for the minted ID token. Empty = derive it from
+    #: `mcp_base_url` (scheme://host, no path), which is what Cloud Run
+    #: validates against. Set it only for a custom audience.
+    mcp_audience: str = ""
     mcp_protocol_version: str = "2025-06-18"
     #: Tool names on that server. DISCOVERED via tools/list at startup and
     #: asserted; these are what we look for, not what we assume.
@@ -181,10 +185,15 @@ class Settings:
     #: Deprecated single-file sink. When set, all three streams share it and
     #: the boot emits `log_sink_legacy` — announced, never silently ignored.
     log_file: str = ""
-    #: Bytes before a stream's file rolls over; 0 = never. At ~200 KB/day in
-    #: normal mode this will almost never fire — the point is the ceiling.
+    #: Size rollover applies ONLY to the deprecated single-file sink above.
+    #: The per-stream files are split by UTC day and never renamed, so nothing
+    #: rolls them by size — `log_retention_days` is what bounds that directory.
     log_max_bytes: int = 52_428_800
     log_backups: int = 5
+    #: How many UTC days of per-stream files to keep, INCLUSIVE of today: 7
+    #: keeps today and the six days before it. 0 or less disables the sweep and
+    #: the directory then grows without limit.
+    log_retention_days: int = 7
     #: terse | normal | debug — how much of a value reaches the log. `debug`
     #: stops values arriving pre-mangled; it does NOT relax redaction.
     log_mode: str = "normal"
@@ -241,6 +250,8 @@ class Settings:
             mcp_timeout_seconds=_int("LQABR_RESEARCH_MCP_TIMEOUT_SECONDS",
                                      _cfg(cfg, "mcp", "timeout_seconds", 60)),
             mcp_auth_token=_str("LQABR_RESEARCH_MCP_AUTH_TOKEN"),
+            mcp_audience=_str("LQABR_RESEARCH_MCP_AUDIENCE",
+                              _cfg(cfg, "mcp", "audience", "")),
             mcp_protocol_version=_str("LQABR_RESEARCH_MCP_PROTOCOL_VERSION",
                                       _cfg(cfg, "mcp", "protocol_version", "2025-06-18")),
             mcp_tool_read_lead=_str("LQABR_RESEARCH_MCP_TOOL_READ_LEAD",
@@ -315,6 +326,8 @@ class Settings:
                                _cfg(cfg, "logging", "max_bytes", 52_428_800)),
             log_backups=_int("LQABR_RESEARCH_LOG_BACKUPS",
                              _cfg(cfg, "logging", "backups", 5)),
+            log_retention_days=_int("LQABR_RESEARCH_LOG_RETENTION_DAYS",
+                                    _cfg(cfg, "logging", "retention_days", 7)),
             log_format=_str("LQABR_RESEARCH_LOG_FORMAT",
                             _cfg(cfg, "logging", "format", "auto")).lower(),
             log_detail=_bool("LQABR_RESEARCH_LOG_DETAIL",

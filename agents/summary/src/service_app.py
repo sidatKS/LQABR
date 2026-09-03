@@ -62,7 +62,7 @@ from pipeline import run_summary  # noqa: E402
 from schema import HubSpotTarget, SummaryRequest, SummaryResponse  # noqa: E402
 from summary_core.mcp.client import MCPError  # noqa: E402
 from summary_core.mcp.hubspot import HubSpotMCP  # noqa: E402
-from summary_core.obs import (configure_logging, get_obs,  # noqa: E402
+from summary_core.summary_logging import (configure_logging, get_obs,  # noqa: E402
                               new_run_id, sink_state)
 from summary_core.settings import get_settings  # noqa: E402
 

@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from summary_core import sources
 from summary_core.mcp.hubspot import HubSpotMCP
-from summary_core.obs import Observability, get_obs
+from summary_core.summary_logging import SummaryLogging, get_obs
 from summary_core.settings import Settings, get_settings
 from summary_core.types import SourceError, SourceSpec, SummaryResult
 

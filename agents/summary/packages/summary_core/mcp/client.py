@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ..obs import Observability, get_obs, preview, summarize_args
+from ..summary_logging import SummaryLogging, get_obs, preview, summarize_args
 from ..settings import Settings, get_settings
 
 #: Fallback only — the live list comes from settings.mcp_retryable_statuses
@@ -114,7 +114,7 @@ class MCPClient:
 
     def __init__(self, settings: Settings | None = None, *,
                  session: Optional[requests.Session] = None,
-                 obs: Observability | None = None) -> None:
+                 obs: SummaryLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._session = session or requests.Session()
         self._obs = obs or get_obs()

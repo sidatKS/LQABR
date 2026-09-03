@@ -29,7 +29,8 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from .. import SERVICE_NAME, __version__
-from ..obs import Observability, get_obs, preview, summarize_args
+from ..research_logging import ResearchLogging, get_obs, preview, summarize_args
+from .identity import IdentityTokenSource, audience_for
 from ..settings import Settings, get_settings
 
 class MCPError(RuntimeError):
@@ -110,11 +111,18 @@ class MCPClient:
 
     def __init__(self, settings: Settings | None = None, *,
                  session: Optional[requests.Session] = None,
-                 obs: Observability | None = None) -> None:
+                 obs: ResearchLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._session = session or requests.Session()
         self._obs = obs or get_obs()
         self._mcp_session_id: str = ""
+        #: The MCP requires IAM auth, so every request carries an OIDC ID token
+        #: minted for the MCP's own URL. An explicit `mcp_auth_token` overrides
+        #: it (local runs, a stand-in server); off Cloud Run both are empty and
+        #: no Authorization header is sent.
+        self._identity = IdentityTokenSource(
+            self._settings.mcp_audience or audience_for(self._settings.mcp_base_url),
+            obs=self._obs)
         self._initialized = False
         self._tools: List[str] = []
         self._rpc_id = 0
@@ -129,8 +137,9 @@ class MCPClient:
         if self._mcp_session_id:
             headers["Mcp-Session-Id"] = self._mcp_session_id
             headers["MCP-Protocol-Version"] = self._settings.mcp_protocol_version
-        if self._settings.mcp_auth_token:
-            headers["Authorization"] = f"Bearer {self._settings.mcp_auth_token}"
+        token = self._settings.mcp_auth_token or self._identity.token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _post(self, payload: Dict[str, Any], *, label: str,

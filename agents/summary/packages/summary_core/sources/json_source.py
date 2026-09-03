@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 import requests
 
-from ..obs import Observability
+from ..summary_logging import SummaryLogging
 from ..settings import Settings
 from ..types import NormalizedDocument, SourceSpec, json_dumps
 from .base import register, select_path, truncate
@@ -40,7 +40,7 @@ def render(payload: Any) -> str:
 
 def fetch_json(spec: SourceSpec, settings: Settings, *,
                session: Optional[requests.Session] = None,
-               obs: Observability | None = None) -> NormalizedDocument:
+               obs: SummaryLogging | None = None) -> NormalizedDocument:
     selected = select_path(spec.payload, spec.select)
     text, was_truncated = truncate(render(selected), settings)
     return NormalizedDocument(

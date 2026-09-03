@@ -18,7 +18,7 @@ from conftest import FakeMCPClient, FakeSearch
 from pipeline import run_research
 from research_core.mcp.client import MCPClient
 from research_core.mcp.hubspot import HubSpotMCP
-from research_core.obs import (ConsoleFormatter, Observability, _GLYPHS_UNICODE,
+from research_core.research_logging import (ConsoleFormatter, ResearchLogging, _GLYPHS_UNICODE,
                                preview, redact, set_detail, summarize_args)
 from research_core.search.anthropic_search import AnthropicWebSearch
 from research_core.settings import get_settings
@@ -55,7 +55,7 @@ def _obs(width: int = 165, name: str = "detail"):
     logger.setLevel(logging.INFO)
     sink = _Records(width)
     logger.addHandler(sink)
-    return Observability(run_id="res-test", logger=logger), sink
+    return ResearchLogging(run_id="res-test", logger=logger), sink
 
 
 def _one(sink, event):

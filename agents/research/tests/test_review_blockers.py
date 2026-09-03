@@ -323,7 +323,7 @@ def test_a_retry_is_visible_on_the_audit_stream(monkeypatch):
     separate operations. `_post` takes the attempt now and puts it on the hop."""
     import logging, json
     import requests
-    from research_core.obs import Observability
+    from research_core.research_logging import ResearchLogging
     from research_core.mcp.client import MCPClient, MCPError
     from research_core.settings import get_settings
 
@@ -338,7 +338,7 @@ def test_a_retry_is_visible_on_the_audit_stream(monkeypatch):
 
     settings = get_settings(refresh=True)
     client = MCPClient(settings=settings,
-                       obs=Observability(run_id="res-retry", logger=logger))
+                       obs=ResearchLogging(run_id="res-retry", logger=logger))
     client._sleep = lambda attempt: None
     monkeypatch.setattr(
         client._session, "request",

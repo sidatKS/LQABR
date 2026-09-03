@@ -50,7 +50,7 @@ def _load_dotenv_if_present() -> None:
 
 _load_dotenv_if_present()
 
-from summary_core.obs import configure_logging, get_obs, new_run_id  # noqa: E402
+from summary_core.summary_logging import configure_logging, get_obs, new_run_id  # noqa: E402
 from summary_core.settings import get_settings  # noqa: E402
 from summary_core.secrets import ensure_provider_credentials  # noqa: E402
 

@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from summary_core.obs import Observability, get_obs, preview
+from summary_core.summary_logging import SummaryLogging, get_obs, preview
 from summary_core.secrets import ensure_provider_credentials
 from summary_core.settings import Settings, get_settings
 from summary_core.types import NormalizedDocument, SummaryResult
@@ -103,7 +103,7 @@ def _text_of(response: Any) -> str:
 
 def summarize(document: NormalizedDocument, *,
               settings: Settings | None = None,
-              obs: Observability | None = None,
+              obs: SummaryLogging | None = None,
               completion: Optional[Callable[..., Any]] = None) -> SummaryResult:
     """Summarise one document. Raises SummaryValidationError rather than
     returning something the CRM should not receive."""

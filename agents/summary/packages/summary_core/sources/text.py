@@ -6,7 +6,7 @@ from typing import Optional
 
 import requests
 
-from ..obs import Observability
+from ..summary_logging import SummaryLogging
 from ..settings import Settings
 from ..types import NormalizedDocument, SourceSpec
 from .base import register, truncate
@@ -14,7 +14,7 @@ from .base import register, truncate
 
 def fetch_text(spec: SourceSpec, settings: Settings, *,
                session: Optional[requests.Session] = None,
-               obs: Observability | None = None) -> NormalizedDocument:
+               obs: SummaryLogging | None = None) -> NormalizedDocument:
     text, was_truncated = truncate(str(spec.text or ""), settings)
     return NormalizedDocument(
         source_kind="text",

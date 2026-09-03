@@ -16,7 +16,7 @@ import os
 import time
 from typing import Any, List, Optional
 
-from ..obs import (Observability, debugging, get_obs, preview, redact,
+from ..research_logging import (ResearchLogging, debugging, get_obs, preview, redact,
                    summarize_args)
 from ..secrets import SecretError, resolve_secret
 from ..settings import Settings, get_settings
@@ -86,7 +86,7 @@ class AnthropicWebSearch:
     name = "anthropic"
 
     def __init__(self, settings: Settings | None = None, *,
-                 client: Any = None, obs: Observability | None = None,
+                 client: Any = None, obs: ResearchLogging | None = None,
                  api_key: Optional[str] = None,
                  tool_type: str = DEFAULT_TOOL_TYPE) -> None:
         self._settings = settings or get_settings()
