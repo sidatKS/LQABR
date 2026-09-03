@@ -22,7 +22,7 @@ spans. What it cannot produce is **why this agent and not another one**. That is
 what this module writes, and why the process stream always carries
 ``property_name`` and ``property_value`` next to the chosen agent.
 
-``GatewayAudit`` is a façade over ``lib/soloai/audit_hooks``: the business logic
+``GatewayAudit`` is a façade over ``lib/soloai/obs``: the business logic
 calls intention-named methods, the hooks own the four streams and the
 profile-data guard.
 """
@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from router import DiscardedEvent, RoutingDecision, RoutingError, RoutingResult
 
-from soloai.audit_hooks import AuditHooks, ProfileFieldLeak, Stream, new_run_id
+from soloai.obs import Observability, ProfileFieldLeak, Stream, new_run_id
 
 
 @dataclass
@@ -96,15 +96,15 @@ class HandoffMetrics:
 class GatewayAudit:
     """Step 3's write path, and the gateway's whole observability surface."""
 
-    def __init__(self, hooks: AuditHooks, verbose_discards: Optional[bool] = None) -> None:
+    def __init__(self, hooks: Observability, verbose_discards: Optional[bool] = None) -> None:
         self._hooks = hooks
         self.metrics = HandoffMetrics()
-        # At standard level, discards are summarised by reason; at verbose,
+        # At normal mode, discards are summarised by reason; at debug,
         # every discarded event gets its own process record. A subscription
         # that fires on every value produces a lot of legitimate discards, so
         # per-event logging is opt-in rather than the default.
         self._verbose_discards = (
-            hooks.level == "verbose" if verbose_discards is None else verbose_discards
+            hooks.mode == "debug" if verbose_discards is None else verbose_discards
         )
 
     # ------------------------------------------------------------- lifecycle
@@ -127,7 +127,7 @@ class GatewayAudit:
             concurrency_limit=concurrency_limit,
             chunk_size_hint=chunk_size_hint,
             agents=registry_health,
-            audit_level=self._hooks.level,
+            audit_mode=self._hooks.mode,
             streams=self._hooks.streams,
         )
         self._hooks.token_model_exclusion()
@@ -517,7 +517,7 @@ class GatewayAudit:
 
     # ------------------------------------------------------------ passthrough
     @property
-    def hooks(self) -> AuditHooks:
+    def hooks(self) -> Observability:
         return self._hooks
 
     def emit(self, stream: Stream, event: str, **fields: Any) -> Optional[Dict[str, Any]]:

@@ -427,3 +427,89 @@ INFO:     172.17.0.1:33578 - "POST /mcp HTTP/1.1" 200 OK
 {"ts": "2026-08-25T17:18:56.685+00:00", "log": "process", "run_id": "934e13e3-1527-4bef-ab4c-3f3f47d5a500", "agent": "mcp_client", "event": "contact_upserted", "lead_ref_id": "lead-7c619589-7687-48c8-98ec-4d95dd1a6b47", "action": "update", "contact_hs_id": "533967041217", "employee_id": "E00021"}
 {"ts": "2026-08-25T17:18:57.421+00:00", "log": "audit", "run_id": "934e13e3-1527-4bef-ab4c-3f3f47d5a500", "agent": "mcp_client", "event": "hubspot_associate", "lead_ref_id": "lead-7c619589-7687-48c8-98ec-4d95dd1a6b47", "endpoint": "/crm/v4/objects/contacts/533967041217/associations/default/companies/339372046064", "method": "PUT", "attempt": 1, "status": 200, "duration_ms": 735.86, "outcome": "ok"}
 {"ts": "2026-08-25T17:18:57.423+00:00", "log": "process", "run_id": "934e13e3-1527-4bef-ab4c-3f3f47d5a500", "agent": "mcp_client", "event": "contact_company_associated", "lead_ref_id": "lead-7c619589-7687-48c8-98ec-4d95dd1a6b47", "contact_hs_id": "533967041217", "company_hs_id": "339372046064"}
+Starting HubSpot MCP server on 0.0.0.0:8080/mcp
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.4.7                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      lqabr-hubspot, 0.1.0                        │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[08/26/26 12:25:51] INFO     Starting MCP server                transport.py:361
+                             'lqabr-hubspot' with transport                     
+                             'streamable-http' on                               
+                             http://0.0.0.0:8080/mcp                            
+INFO:     Started server process [8]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     172.17.0.1:37520 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:37520 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:37520 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:44402 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:44402 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:44402 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:49840 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:49840 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:49840 - "POST /mcp HTTP/1.1" 200 OK
+{"ts": "2026-08-26T12:31:26.649+00:00", "log": "process", "run_id": "57ba78f7-5758-454b-816f-71dff2436baa", "agent": "mcp_client", "event": "blog_validate_pass", "summary_ref_id": "summary-f596b9df-38a6-469a-a38a-d20bf81e4b9e", "blog_industry": "FINANCIAL_SERVICES", "blog_published_at": "2026-08-25T11:00:00.000Z"}
+{"ts": "2026-08-26T12:32:16.018+00:00", "log": "audit", "run_id": "57ba78f7-5758-454b-816f-71dff2436baa", "agent": "mcp_client", "event": "secret_manager_access", "endpoint": "projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest", "method": "AccessSecretVersion", "outcome": "error", "duration_ms": 50974.25, "error": "SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+{"ts": "2026-08-26T12:32:16.019+00:00", "log": "process", "run_id": "57ba78f7-5758-454b-816f-71dff2436baa", "agent": "mcp_client", "event": "mcp_systemic_failure", "summary_ref_id": "summary-f596b9df-38a6-469a-a38a-d20bf81e4b9e", "reason": "AuthConfigError: SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+INFO:     172.17.0.1:36832 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:36832 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:36832 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:38316 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:38316 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:38316 - "POST /mcp HTTP/1.1" 200 OK
+{"ts": "2026-08-26T12:35:27.403+00:00", "log": "process", "run_id": "3f410c82-a692-45f3-bf4e-13383ec90121", "agent": "mcp_client", "event": "blog_validate_pass", "summary_ref_id": "summary-2d65a010-6242-433d-8fa7-3d0d948a00e9", "blog_industry": "FINANCIAL_SERVICES", "blog_published_at": "2026-08-25T11:00:00.000Z"}
+{"ts": "2026-08-26T12:36:16.549+00:00", "log": "audit", "run_id": "3f410c82-a692-45f3-bf4e-13383ec90121", "agent": "mcp_client", "event": "secret_manager_access", "endpoint": "projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest", "method": "AccessSecretVersion", "outcome": "error", "duration_ms": 50801.18, "error": "SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+{"ts": "2026-08-26T12:36:16.549+00:00", "log": "process", "run_id": "3f410c82-a692-45f3-bf4e-13383ec90121", "agent": "mcp_client", "event": "mcp_systemic_failure", "summary_ref_id": "summary-2d65a010-6242-433d-8fa7-3d0d948a00e9", "reason": "AuthConfigError: SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+Starting HubSpot MCP server on 0.0.0.0:8080/mcp
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.4.7                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      lqabr-hubspot, 0.1.0                        │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[08/26/26 12:37:56] INFO     Starting MCP server                transport.py:361
+                             'lqabr-hubspot' with transport                     
+                             'streamable-http' on                               
+                             http://0.0.0.0:8080/mcp                            
+INFO:     Started server process [7]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:47776 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     172.17.0.1:47776 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     172.17.0.1:47776 - "POST /mcp HTTP/1.1" 200 OK
+{"ts": "2026-08-26T12:38:47.861+00:00", "log": "process", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "blog_validate_pass", "summary_ref_id": "summary-5cac4e1f-d2fb-42b5-806f-ce2e5323300e", "blog_industry": "FINANCIAL_SERVICES", "blog_published_at": "2026-08-25T11:00:00.000Z"}
+{"ts": "2026-08-26T12:39:17.225+00:00", "log": "audit", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "secret_manager_access", "endpoint": "projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest", "method": "AccessSecretVersion", "outcome": "error", "duration_ms": 30236.45, "error": "SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+{"ts": "2026-08-26T12:39:17.225+00:00", "log": "process", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "mcp_systemic_failure", "summary_ref_id": "summary-5cac4e1f-d2fb-42b5-806f-ce2e5323300e", "reason": "AuthConfigError: SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}

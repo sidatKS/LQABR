@@ -35,12 +35,12 @@ Run locally:  uvicorn server:app --port 8080   (from agents/gateway/src)
 """
 
 from __future__ import annotations
-
 import asyncio
 import json
 import os
 import sys
 import time
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -71,7 +71,8 @@ from fastapi.concurrency import run_in_threadpool  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 
 from soloai import RUNTIME, load_config, load_registry_document  # noqa: E402
-from soloai.audit_hooks import AuditHooks, ProfileFieldLeak  # noqa: E402
+from soloai.obs import (Observability, ProfileFieldLeak,  # noqa: E402
+                        configure_logging, reset_logging)
 from soloai.protocols import mcp as mcp_protocol  # noqa: E402
 from soloai.protocols.http import (  # noqa: E402
     ConcurrencyGuard,
@@ -88,7 +89,6 @@ from call_report import CallReportRelay, ReportRelayError, extract_correlation  
 from dispatch import Dispatcher  # noqa: E402
 from router import AgentRegistry, DedupeStore, Router  # noqa: E402
 
-
 def create_app(
     config: Any = None,
     registry: Optional[AgentRegistry] = None,
@@ -104,7 +104,7 @@ def create_app(
     """
     config = config if config is not None else load_config()
 
-    hooks = audit.hooks if audit is not None else AuditHooks.from_config(
+    hooks = audit.hooks if audit is not None else Observability.from_config(
         config, keep_records=keep_records)
     gateway_audit = audit or GatewayAudit(hooks)
 
@@ -192,6 +192,11 @@ def create_app(
     # ------------------------------------------------------------- lifecycle
     @asynccontextmanager
     async def _lifespan(_: FastAPI):
+        # Configure logging FIRST, before the first emit -- exactly research's
+        # lifespan order. Test-injected handles keep their own records, so this
+        # only matters for a real boot.
+        if audit is None:
+            configure_logging(config)
         for key, problem in _config_problems().items():
             gateway_audit.record_config_error(f"{key}: {problem}")
         gateway_audit.record_startup(
@@ -202,11 +207,11 @@ def create_app(
             chunk_size_hint=(mcp_endpoint.chunk_size_hint if mcp_endpoint else None),
         )
         yield
-        # The file sink and the pooled HTTP session both hold OS resources.
-        try:
-            hooks.close()
-        except Exception:  # noqa: BLE001 - shutdown must not raise
-            pass
+        if audit is None:
+            try:
+                reset_logging()   # research's service-stop cleanup
+            except Exception:  # noqa: BLE001 - shutdown must not raise
+                pass
 
     app = FastAPI(
         lifespan=_lifespan,
