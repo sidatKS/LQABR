@@ -56,9 +56,20 @@ def _list(name: str, default: Tuple[str, ...] = ()) -> List[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-#: settings.py -> research_core -> packages -> research -> agents -> REPO ROOT
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_AGENT_ROOT = Path(__file__).resolve().parents[2]
+#: Repo layout:  <repo>/agents/research/packages/research_core/settings.py
+#:               -> parents[4] is the repo root, parents[2] the agent root.
+#: Image layout: /app/packages/research_core/settings.py
+#:               -> the Dockerfile flattens agents/research to /app, so `agents/` and the
+#:               agent dir do not exist and parents[4] raises IndexError. Because this is a
+#:               MODULE-LEVEL statement it would fire on import and kill the container
+#:               before it binds the port, surfacing only as Cloud Run's generic "failed to
+#:               start and listen on PORT=8080". (Verified on summary, which has the same
+#:               pattern and failed exactly this way on 2026-08-26.)
+#: In the image the agent root IS /app, so both roots collapse to it.
+_HERE = Path(__file__).resolve()
+_UP = _HERE.parents
+_REPO_ROOT = _UP[4] if len(_UP) > 4 and _UP[3].name == "agents" else _UP[2]
+_AGENT_ROOT = _UP[2]
 
 
 def _load_config_map() -> Dict[str, object]:

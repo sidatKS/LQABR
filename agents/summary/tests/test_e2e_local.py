@@ -147,7 +147,7 @@ def test_text_to_hubspot_over_the_wire(client):
     assert written["objectId"] == "ticket-777"
     assert "Spring Boot 4" in written["properties"]["blog_summary"]
     assert "virtual threads" in written["properties"]["blog_summary"]
-    assert written["properties"]["blog_industry"] == "Software"
+    assert written["properties"]["blog_industry"] == "SOFTWARE"   # normalised to the portal enum form
 
 
 def test_a2a_envelope_over_the_wire(client):
@@ -166,7 +166,7 @@ def test_json_source_end_to_end(client):
                    "select": "$.report.body"},
         "hubspot": {"object_id": "ticket-999", "industry": "Fintech"}})
     assert response.json()["status"] == "completed"
-    assert WRITES[-1]["properties"]["blog_industry"] == "Fintech", "the caller's industry wins"
+    assert WRITES[-1]["properties"]["blog_industry"] == "FINTECH", "the caller's industry wins (normalised)"
 
 
 def test_dry_run_reaches_the_server_for_discovery_but_never_writes(client, monkeypatch):

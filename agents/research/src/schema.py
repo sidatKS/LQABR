@@ -148,7 +148,6 @@ class A2AEnvelope(BaseModel):
     #: `jsonrpc == "2.0"` branches in `_accept`/`_rejected` are unreachable
     #: today — they are kept symmetric so the two paths cannot drift, but
     #: turning them on is a change to the ACK shape, not a tidy-up.
-
     jsonrpc: str = "2.0"
     id: Optional[Any] = None
     method: str = ""
