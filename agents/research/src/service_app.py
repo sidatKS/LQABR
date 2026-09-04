@@ -49,6 +49,7 @@ from fastapi import BackgroundTasks, FastAPI  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
+from research_core import SERVICE_NAME, __version__  # noqa: E402
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
 from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
 from research_core.research_logging_otel import (configure_logging,  # noqa: E402

@@ -68,7 +68,7 @@ binds:
 # ---------------------------------------------------------------------
 # Telemetry. Rev 3 FR-7: audit, process and system streams collected to the
 # runtime's own logging standard. The sidecar covers the network view; the
-# gateway's own JSONL records (lib/soloai/audit_hooks.py) carry the decision
+# gateway's own JSONL records (lib/soloai/obs.py) carry the decision
 # view, which is the half no proxy can produce.
 #
 # token/model: not applicable. The gateway makes no model calls — recorded as

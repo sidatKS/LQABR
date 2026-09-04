@@ -29,6 +29,11 @@
 # --- local Python environments and artefacts --------------------------
 .venv
 venv
+# Nested virtualenvs too: a bare `.venv` matches only the repo root, so
+# agents/gateway/src/.venv was still being sent -- and its broken `lib64`
+# symlink fails the build outright ("error from sender: ... cannot be accessed").
+**/.venv
+**/venv
 **/__pycache__
 **/*.py[cod]
 **/*.egg-info
