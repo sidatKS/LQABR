@@ -36,7 +36,8 @@ try:  # pragma: no cover - depends on the local environment
 except ImportError:
     pass
 
-from research_core.research_logging import configure_logging, get_obs, new_run_id  # noqa: E402
+from research_core.research_logging_otel import (configure_logging,  # noqa: E402
+                                                 get_obs, new_run_id)
 from research_core import SERVICE_NAME  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 

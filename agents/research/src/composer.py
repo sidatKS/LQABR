@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from research_core.research_logging import ResearchLogging, get_obs
+    from research_core.research_logging_otel import ResearchLoggingOtel, get_obs
     from research_core.settings import Settings, get_settings
     from research_core.search.base import SearchError, SearchProvider, build_provider
     from research_core.types import BlogFacts, LeadFacts, ResearchNote
 except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
-    from ..packages.research_core.research_logging import ResearchLogging, get_obs  # type: ignore
+    from ..packages.research_core.research_logging_otel import (  # type: ignore
+        ResearchLoggingOtel, get_obs)
     from ..packages.research_core.settings import Settings, get_settings  # type: ignore
     from ..packages.research_core.search.base import (  # type: ignore
         SearchError, SearchProvider, build_provider)
@@ -194,7 +195,7 @@ class Composer:
 
     def __init__(self, provider: Optional[SearchProvider] = None, *,
                  settings: Settings | None = None,
-                 obs: ResearchLogging | None = None) -> None:
+                 obs: ResearchLoggingOtel | None = None) -> None:
         self._settings = settings or get_settings()
         self._obs = obs or get_obs()
         self._provider = provider or build_provider(self._settings, obs=self._obs)

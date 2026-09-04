@@ -39,4 +39,4 @@ EXPOSE 8080
 
 # Cloud Run health checks hit /health; the app answers as soon as the
 # process binds, without waiting for the MCP container to wake up.
-CMD exec uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/src
+CMD exec opentelemetry-instrument uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/src

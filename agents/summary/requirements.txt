@@ -26,3 +26,12 @@ ag-ui-protocol>=0.1.19
 # Optional, degrades gracefully when absent:
 google-cloud-secret-manager>=2.30.0   # prod secret backend; local dev uses env
 psutil>=6.0.0                         # richer system snapshots in obs
+
+# OpenTelemetry — traces + metrics through the collector sidecar.
+# No source changes: opentelemetry-instrument wraps uvicorn in the Dockerfile
+# and hooks FastAPI, requests and httpx at import time.
+opentelemetry-distro
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-requests
+opentelemetry-instrumentation-httpx    # litellm / google-adk reach models over httpx

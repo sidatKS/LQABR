@@ -20,13 +20,14 @@ from typing import List, Optional
 
 try:
     from research_core.mcp.hubspot import HubSpotMCP
-    from research_core.research_logging import ResearchLogging, get_obs, new_run_id, preview
+    from research_core.research_logging_otel import (ResearchLoggingOtel, get_obs,
+                                                      new_run_id, preview)
     from research_core.settings import Settings, get_settings
     from research_core.types import BlogFacts, ResearchNote
 except ImportError:  # pragma: no cover
     from ..packages.research_core.mcp.hubspot import HubSpotMCP  # type: ignore
-    from ..packages.research_core.research_logging import (  # type: ignore
-        ResearchLogging, get_obs, new_run_id, preview)
+    from ..packages.research_core.research_logging_otel import (  # type: ignore
+        ResearchLoggingOtel, get_obs, new_run_id, preview)
     from ..packages.research_core.settings import Settings, get_settings  # type: ignore
     from ..packages.research_core.types import BlogFacts, ResearchNote  # type: ignore
 
@@ -48,7 +49,7 @@ def _crm_error(hubspot: HubSpotMCP, absent: str, refused: str) -> str:
 
 def run_research(target: ResearchTarget, *,
                  settings: Settings | None = None,
-                 obs: ResearchLogging | None = None,
+                 obs: ResearchLoggingOtel | None = None,
                  hubspot: Optional[HubSpotMCP] = None,
                  composer: Optional[Composer] = None,
                  blog: Optional[BlogFacts] = None,
@@ -205,7 +206,7 @@ def run_research(target: ResearchTarget, *,
 
 def run_campaign(target: CampaignTarget, *,
                  settings: Settings | None = None,
-                 obs: ResearchLogging | None = None,
+                 obs: ResearchLoggingOtel | None = None,
                  hubspot: Optional[HubSpotMCP] = None,
                  composer: Optional[Composer] = None,
                  run_id: str = "") -> CampaignResponse:

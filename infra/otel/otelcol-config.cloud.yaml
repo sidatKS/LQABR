@@ -1,0 +1,97 @@
+# LQABR collector — CLOUD config (Cloud Run sidecar).
+#
+# Local counterpart: otelcol-config.yaml (file exporters, no auth).
+# This one exports for real and must satisfy Cloud Run's probes.
+#
+# Deployed by:
+#   gcloud secrets versions add lqabr-otel-collector-config \
+#     --data-file=infra/otel/otelcol-config.cloud.yaml
+#
+# DELIBERATELY ABSENT - both of these killed revision lqabr-dev-summary-00009-svl:
+#   * resource/gcp_project_id  - its ${VAR} resolved empty, so the collector
+#     died with "failed to build pipelines" and the app, gated on it by
+#     container-dependencies, never bound PORT=8080. The failure surfaced as
+#     an APP error and cost an afternoon.
+#   * service.telemetry        - loops the collector's own metrics back into
+#     its own receiver, which does not exist yet at startup. Dials
+#     127.0.0.1:4317, fails, adds noise on every boot.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        # A sidecar shares one network namespace with the app, so localhost
+        # is the whole surface. Nothing outside the instance can reach this.
+        endpoint: localhost:4317
+      http:
+        endpoint: localhost:4318
+
+processors:
+  # First in every pipeline. This container shares the instance's memory with
+  # the agent; without a limiter a telemetry burst OOMs BOTH.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 65
+    spike_limit_percentage: 20
+
+  # Fills service.name, revision and region from the Cloud Run metadata
+  # server. Without it every record arrives anonymous and you cannot tell
+  # which revision produced it.
+  resourcedetection:
+    detectors: [gcp]
+    timeout: 10s
+
+  # Same masking proven locally: first 4 of an email, last 4 of a phone.
+  # `$${1}` not `$$1` - Go reads `$1XXXX` as a group NAMED "1XXXX", which is
+  # undefined, so the kept characters silently vanish.
+  transform:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+          - replace_all_patterns(attributes, "value", "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+          - replace_pattern(body, "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+          - replace_pattern(body, "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 200
+    timeout: 5s
+
+extensions:
+  # MANDATORY on Cloud Run. Both probes in service.yaml hit :13133. With no
+  # health_check the collector never reports healthy, container-dependencies
+  # never releases the app, and the deploy fails looking like an app bug.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Authenticates as the runtime service account (lqabr-agent-dev). No keys,
+  # no headers, nothing secret in this file.
+  googleclientauth:
+
+exporters:
+  otlp:
+    endpoint: telemetry.googleapis.com:443
+    auth:
+      authenticator: googleclientauth
+    retry_on_failure: {enabled: true, initial_interval: 5s, max_elapsed_time: 300s}
+    sending_queue: {enabled: true, queue_size: 1000}
+
+service:
+  extensions: [health_check, googleclientauth]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, transform, batch]
+      exporters: [otlp]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlp]

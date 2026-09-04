@@ -1,0 +1,23 @@
+# agents/research — OTLP log export (research_logging_otel.py).
+#
+# Optional, and deliberately NOT in requirements.txt: the agent runs and tests
+# clean without these, and research_logging_otel.py degrades to console-only
+# with a named reason when they are absent. Install these only in an image
+# that actually exports to a collector.
+-r requirements.txt
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp-proto-grpc>=1.27.0   # LQABR_RESEARCH_OTLP_PROTOCOL=grpc (default, :4317)
+opentelemetry-exporter-otlp-proto-http>=1.27.0   # LQABR_RESEARCH_OTLP_PROTOCOL=http (:4318)
+
+# Traces + metrics. Auto-instrumentation: no code changes and no call-site
+# edits - these hook FastAPI and requests at import, which is why the
+# Dockerfile CMD runs under `opentelemetry-instrument`.
+# REQUIRED for traces/metrics. opentelemetry-instrument loads the
+# instrumentors, but the CONFIGURATOR that reads OTEL_TRACES_EXPORTER and
+# builds the Tracer/MeterProvider ships here. Without it spans are created
+# against the no-op provider and dropped silently - no error, no export.
+opentelemetry-distro>=0.48b0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation-requests>=0.48b0
+opentelemetry-instrumentation-logging>=0.48b0   # LoggingHandler's preferred home; without it the SDK's deprecated one is used

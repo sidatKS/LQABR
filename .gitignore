@@ -116,3 +116,6 @@ ngrok/.env
 # Hand-made archives — a zip of the tree is never the source of truth.
 *.zip
 *.tar.gz
+
+# Collector file-exporter output (local inspection only)
+logs/otel/
