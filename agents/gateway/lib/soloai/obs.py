@@ -861,6 +861,36 @@ class _Stream:
     __call__ = emit
 
 
+#: HubSpot's webhook JSON is camelCase; the gateway's internal code and its
+#: ``.records`` test tap are snake_case. At Saroja's instruction, the LOG
+#: OUTPUT re-spells these nine webhook-sourced fields back to HubSpot's exact
+#: names, so the logs read with the same field names HubSpot sends. Only the
+#: emitted record is aliased -- internal attributes, the HTTP response, the
+#: agent payload, and the in-memory ``.records`` list are untouched. Gateway's
+#: OWN fields (run_id, trigger_id, stream, event, agent, endpoint, ...) are not
+#: HubSpot fields and keep their names.
+_HUBSPOT_LOG_ALIASES = {
+    "object_id": "objectId",
+    "property_name": "propertyName",
+    "property_value": "propertyValue",
+    "subscription_type": "subscriptionType",
+    "portal_id": "portalId",
+    "event_id": "eventId",
+    "occurred_at": "occurredAt",
+    "attempt_number": "attemptNumber",
+    "change_source": "changeSource",
+}
+
+
+def _hubspot_aliased(record: Dict[str, Any]) -> Dict[str, Any]:
+    """A copy of ``record`` with the nine HubSpot fields spelled as HubSpot
+    spells them. Returns the same object untouched when none are present, so
+    non-routing records pay nothing."""
+    if not any(k in record for k in _HUBSPOT_LOG_ALIASES):
+        return record
+    return {_HUBSPOT_LOG_ALIASES.get(k, k): v for k, v in record.items()}
+
+
 @dataclass
 class Observability:
     """Structured writer for the four streams -- the gateway's ``obs.py``,
@@ -1030,11 +1060,12 @@ class Observability:
         if not force and not self._enabled(stream_name):
             return None
 
-        line = json.dumps(record, default=str, separators=(",", ":"))
+        log_record = _hubspot_aliased(record)
+        line = json.dumps(log_record, default=str, separators=(",", ":"))
         with self._lock:
-            logger.info(line, extra={"lqabr_record": record})
+            logger.info(line, extra={"lqabr_record": log_record})
             if self.keep_records:
-                self.records.append(record)
+                self.records.append(record)  # snake-case tap; logs show HubSpot names
         return record
 
     def token_model_exclusion(self, run_id: Optional[str] = None) -> Dict[str, Any]:
