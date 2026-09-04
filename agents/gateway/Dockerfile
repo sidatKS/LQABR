@@ -19,6 +19,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Non-root runtime user, uid 1001 / `agent` — same identity as every other
+# LQABR image. This image previously declared no USER at all and therefore ran
+# as root inside the container.
+RUN useradd --create-home --uid 1001 agent
+
 # --- Python deps first, so a code change doesn't reinstall the world -----
 COPY agents/gateway/requirements.txt /app/agents/gateway/requirements.txt
 RUN pip install --no-cache-dir -r /app/agents/gateway/requirements.txt
@@ -38,6 +43,15 @@ COPY agents/gateway /app/agents/gateway
 
 # lib/ holds the co-located runtime adapter (import soloai)
 ENV PYTHONPATH=/app/agents/gateway/lib:/app/agents/gateway/src
+
+# Everything COPYed/installed above is root-owned; hand the app tree to the
+# runtime user. The agentgateway binary installed above stays root-owned and
+# world-executable on PATH; if the installer placed it under root's HOME it is
+# simply not found and docker-entrypoint.sh degrades to direct dispatch, which
+# is its existing designed behaviour (see start_sidecar()).
+RUN chown -R agent:agent /app
+
+USER agent
 
 EXPOSE 8080
 # Liveness only — /readyz additionally checks that every agent endpoint

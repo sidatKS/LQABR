@@ -39,11 +39,15 @@ deploy_svc() {  # <service> <exposure: public|internal> [extra gcloud flags...]
 
 MCP="$(svc hubspot_mcp)"; LDPF="$(svc lead_profile)"; EMAIL="$(svc email)"; VOICE="$(svc voice)"; GTWY="$(svc gateway)"
 
-# 1) Shared HubSpot MCP — internal; single read/write path to HubSpot.
-deploy_svc "${MCP}" internal \
-  --set-secrets "LQABR_HUBSPOT_ACCESS_TOKEN=lqabr-hubspot-access-token:latest" \
-  --set-env-vars "${COMMON_ENV},LQABR_MCP_STATELESS=1"
+# 1) Shared HubSpot MCP — NOT deployed here. Use infra/gcp/mcp/01_deploy.sh.
+#    The block that used to live here was wrong in two ways that only surface at
+#    runtime: --set-secrets LQABR_HUBSPOT_ACCESS_TOKEN is not this image's token
+#    contract (it resolves lazily via its own LQABR_SECRET_* layer, so the service
+#    starts clean and fails on the first HubSpot write), and it omitted the
+#    in-memory volume at /app/errors the image needs at tool-call time.
+#    See docs/CloudRun_RunBook.md P8a/P9. Deploy the MCP first, then run this.
 MCP_URL="$(url_of "${MCP}")"
+[[ -n "${MCP_URL}" ]] || { echo "MCP ${MCP} is not deployed - run infra/gcp/mcp/01_deploy.sh first" >&2; exit 1; }
 
 # 2) Internal agents — OIDC only; reach HubSpot ONLY via the MCP URL.
 deploy_svc "${LDPF}" internal \

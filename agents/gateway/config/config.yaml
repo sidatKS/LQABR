@@ -37,7 +37,13 @@ gateway:
     # anyone who learns the URL can inject routing triggers.
     # Secret: HUBSPOT_APP_SECRET (private-app client secret).
     signature:
-      enabled: false   # LOCAL DEV (session 2026-08-21): no HUBSPOT_APP_SECRET yet.
+      # MUST stay true. This is the ONLY thing defending a public ingress that
+      # can start outreach (gateway_deploy_spec 4.2). Was false for local dev
+      # 2026-08-21; deploying that value leaves the door open. It cannot be an
+      # env flag: every boolean here is read with bool(), and env interpolation
+      # yields strings, so ${VAR:-false} evaluates TRUE (gateway_deploy_spec 5).
+      # For local dev without a secret, edit this to false and do not commit.
+      enabled: true
                        # Re-enable with the private-app client secret before prod.
       header: X-HubSpot-Signature-v3
       timestamp_header: X-HubSpot-Request-Timestamp
@@ -101,8 +107,12 @@ protocols:
 # Rev 3 FR-7. Four streams, collected to the runtime's own logging standard.
 audit:
   level: standard                 # minimal | standard | verbose
-  sink: file                      # LOCAL DEV: native file log under logs/gateway/
-  file_path: ./logs/gateway/gateway.jsonl # relative to CWD -> run uvicorn from repo root
+  # stdout on Cloud Run: the entrypoint runs uvicorn from src/, so a relative
+  # file path lands at /app/agents/gateway/src/logs/... inside the container and
+  # NEVER reaches Cloud Logging. Read with str(), so unlike the booleans above
+  # this one is safe to parameterise. Set LQABR_AUDIT_SINK=file locally.
+  sink: ${LQABR_AUDIT_SINK:-stdout}
+  file_path: ${LQABR_AUDIT_FILE:-./logs/gateway/gateway.jsonl}
   streams:
     audit: true                   # network activity: where from, when, which endpoint
     process: true                 # the routing decision + property/value behind it

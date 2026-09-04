@@ -33,6 +33,7 @@ import requests
 
 from ..summary_logging import SummaryLogging, get_obs, preview, summarize_args
 from ..settings import Settings, get_settings
+from ..gcp_id_token import auth_header
 
 #: Fallback only — the live list comes from settings.mcp_retryable_statuses
 #: (agent config map). Kept so a bare import still has a sane default.
@@ -134,6 +135,9 @@ class MCPClient:
             "Content-Type": "application/json",
             # Both, because the server chooses which transport to answer with.
             "Accept": "application/json, text/event-stream",
+            # Google-signed ID token when the MCP is a private Cloud Run
+            # service; nothing for loopback, so local dev is unchanged.
+            **auth_header(self._settings.mcp_base_url),
         }
         if self._mcp_session_id:
             headers["Mcp-Session-Id"] = self._mcp_session_id

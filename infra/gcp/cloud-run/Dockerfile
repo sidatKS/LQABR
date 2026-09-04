@@ -28,6 +28,12 @@ ENV AGENT_DIR=${AGENT_DIR} \
 
 WORKDIR /app
 
+# Non-root runtime user. uid 1001 / name `agent` deliberately matches
+# agents/summary/Dockerfile so EVERY LQABR image runs under one identity —
+# previously this image used `nobody` (65534) while summary used `agent`
+# (1001), which meant the same chown recipe did not work across images.
+RUN useradd --create-home --uid 1001 agent
+
 # Shared core first (better layer caching), then the agent.
 COPY packages/lqabr_core packages/lqabr_core
 # [gcp] pulls google-cloud-secret-manager. WITHOUT IT the Secret Manager code
@@ -50,7 +56,7 @@ COPY agents/${AGENT_DIR} agents/${AGENT_DIR}
 RUN pip install --no-cache-dir -r agents/${AGENT_DIR}/requirements.txt
 
 # Run state must be writable by the runtime user. The container runs as
-# `nobody`, and everything COPYed above is root-owned 755 — so the code-tree
+# `agent`, and everything COPYed above is root-owned 755 — so the code-tree
 # default (agents/email/.runstate) is NOT writable and every campaign would
 # fail at step 3 with a 503 before a single email went out. Verified against
 # the real image layout, not assumed.
@@ -64,7 +70,7 @@ RUN pip install --no-cache-dir -r agents/${AGENT_DIR}/requirements.txt
 # run state (Firestore/GCS) remains open — this only makes the container
 # able to run at all.
 RUN mkdir -p /var/lib/lqabr/email/runstate \
-    && chown -R nobody /var/lib/lqabr \
+    && chown -R agent:agent /var/lib/lqabr \
     && chmod -R u=rwX /var/lib/lqabr
 
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
@@ -74,9 +80,9 @@ COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 # 'exec /entrypoint.sh: no such file or directory'. Belt and braces
 # alongside .gitattributes.
 # ADK writes per-agent session/artifact storage under the agent dir at runtime.
-# The process runs as nobody (65534); make that path writable.
+# The process runs as agent (1001); make that path writable.
 RUN mkdir -p "agents/${AGENT_DIR}/src/.adk" \
- && chown -R 65534:65534 "agents/${AGENT_DIR}"
+ && chown -R agent:agent "agents/${AGENT_DIR}"
 
 # lead_profile reads its 3 CSVs from LQABR_INCOMING_DIR (default: data/incoming).
 # Bake the synthetic seed set in so the container has input data at runtime.
@@ -89,5 +95,5 @@ COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 # so the `#!/bin/sh` shebang resolves, then make the script executable.
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-USER nobody
+USER agent
 ENTRYPOINT ["/entrypoint.sh"]

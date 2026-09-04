@@ -1,0 +1,4 @@
+# Local run logs — never committed.
+*
+!.gitignore
+!.gitkeep

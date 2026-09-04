@@ -28,6 +28,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from research_core.gcp_id_token import auth_header
+
 from .. import SERVICE_NAME, __version__
 from ..research_logging import ResearchLogging, get_obs, preview, summarize_args
 from .identity import IdentityTokenSource, audience_for
@@ -133,6 +135,9 @@ class MCPClient:
             "Content-Type": "application/json",
             # Both, because the server chooses which transport to answer with.
             "Accept": "application/json, text/event-stream",
+            # Google-signed ID token when the MCP is a private Cloud Run
+            # service; nothing for loopback, so local dev is unchanged.
+            **auth_header(self._settings.mcp_base_url),
         }
         if self._mcp_session_id:
             headers["Mcp-Session-Id"] = self._mcp_session_id

@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 import requests
 
 from lqabr_core import observability as obs
+from lqabr_core.gcp_id_token import auth_header
 from lqabr_core.crm.base import CRMError
 from lqabr_core.probability import SCHEDULING_THRESHOLD, apply_event
 from lqabr_core.types import EventType, VoiceLead
@@ -125,6 +126,9 @@ class StepFiveMCPClient:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            # Google-signed ID token when the MCP is a private Cloud Run
+            # service; nothing for loopback, so local dev is unchanged.
+            **auth_header(self._base_url),
         }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id

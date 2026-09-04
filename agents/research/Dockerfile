@@ -34,8 +34,11 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app/agents/research
 
 # Dependencies first, so a code change does not reinstall the world.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-otel.txt ./
+# requirements-otel.txt pins `-r requirements.txt`, so this installs both.
+# It is NOT optional in the image: the CMD runs under opentelemetry-instrument,
+# which ships in these packages. Tests still use plain requirements.txt.
+RUN pip install --no-cache-dir -r requirements-otel.txt
 
 COPY packages ./packages
 COPY src ./src
@@ -51,4 +54,4 @@ EXPOSE 8080
 
 # Cloud Run health checks hit /health; the app answers as soon as the
 # process binds, without waiting for the MCP service to wake up.
-CMD ["sh", "-c", "exec uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/agents/research/src"]
+CMD ["sh", "-c", "exec opentelemetry-instrument uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/agents/research/src"]

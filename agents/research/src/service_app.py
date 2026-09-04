@@ -51,8 +51,8 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
 from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
-from research_core.research_logging import (configure_logging, get_obs,  # noqa: E402
-                                new_run_id, sink_state)
+from research_core.research_logging_otel import (configure_logging,  # noqa: E402
+                                                 get_obs, new_run_id, sink_state)
 from research_core import SERVICE_NAME, __version__  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 

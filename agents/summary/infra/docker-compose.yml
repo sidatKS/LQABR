@@ -8,7 +8,7 @@
 # between the two.
 services:
   hubspot-mcp:
-    image: ${HUBSPOT_MCP_IMAGE:-lqabr-hubspot-mcp:local}
+    image: ${HUBSPOT_MCP_IMAGE:-us-central1-docker.pkg.dev/ldqfingsrv-dev/lqabr/lqabr-dev-mcp:0.1.0}
     container_name: hubspot-mcp
     environment:
       - HUBSPOT_ACCESS_TOKEN=${HUBSPOT_ACCESS_TOKEN:-}
