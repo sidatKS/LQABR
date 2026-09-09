@@ -1,0 +1,47 @@
+# LOCAL TESTING ONLY — never uploaded to Secret Manager, never deployed.
+#
+# Two deliberate differences from config.yaml:
+#
+#   1. Binds 0.0.0.0, not localhost. On Cloud Run the agent and the collector
+#      share an instance so localhost is right; in Docker with -p mapping,
+#      localhost inside the container refuses connections from the host.
+#
+#   2. Exports to `debug`, not to Google. No credentials, no network, no
+#      project. Spans, metrics and logs print to the container's stdout, which
+#      is exactly what you want when the question is "is the agent emitting".
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    # 1s so output appears while you are still looking at it.
+    timeout: 1s
+
+exporters:
+  debug:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

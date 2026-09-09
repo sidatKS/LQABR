@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from lqabr_core.crm import CRMError
 from lqabr_core.model import ensure_provider_credentials
 
-# Mailgun is OURS — moved out of lqabr_core 2026-08-26, nothing else used it.
+# Mailgun is moved out of lqabr_core to agents/email/src, nothing else used it.
 from mailgun import MailgunClient, MailgunError
 
 # The MCP lives at the project root, not under this agent.

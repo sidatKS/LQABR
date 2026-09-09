@@ -26,3 +26,12 @@ ag-ui-protocol>=0.1.19
 # Optional, degrades gracefully when absent:
 google-cloud-secret-manager>=2.30.0   # prod secret backend; local dev uses env
 psutil>=6.0.0                         # richer system snapshots in obs
+
+# OpenTelemetry export to the sidecar collector on localhost:4317. Optional at
+# runtime: the export block in summary_core/obs.py is a no-op unless
+# OTEL_EXPORTER_OTLP_ENDPOINT is set, so local runs and the tests are
+# unchanged. The logs SDK ships inside opentelemetry-sdk.
+opentelemetry-sdk>=1.29.0
+opentelemetry-exporter-otlp-proto-grpc>=1.29.0
+opentelemetry-instrumentation-fastapi>=0.50b0
+opentelemetry-instrumentation-requests>=0.50b0

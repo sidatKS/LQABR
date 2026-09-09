@@ -20,7 +20,7 @@ polling and the keep-alive that were wrong. So:
     POST /email/campaign       STEP 2 — the gateway's entry point
     POST /mailgun/events       STEP 8 — Mailgun's inbound event call lands here
 
-CONTAINER LIFECYCLE (Swaroop, 8:09 / 21:29)
+CONTAINER LIFECYCLE 
 -------------------------------------------
 Zero instances at rest. A trigger reaches the gateway, the sandbox spins an
 instance (~32s cold start today), this app binds 0.0.0.0:$PORT — 8080 on
@@ -104,7 +104,7 @@ from observability import (
 from lqabr_core.crm import CRMError
 from lqabr_core.secrets import SecretNotFoundError
 
-# Mailgun is OURS — moved out of lqabr_core 2026-08-26, nothing else used it.
+# Mailgun is moved out from lqabr-core to agents/email/src, nothing else used it.
 from mailgun import verify_webhook_signature
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]

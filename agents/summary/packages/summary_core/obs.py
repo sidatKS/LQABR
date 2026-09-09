@@ -49,6 +49,232 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+# ── OTLP export ────────────────────────────────────────────────────────────
+# Traces, metrics and logs to the sidecar collector on localhost:4317.
+#
+# Every entry point below is a no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set
+# AND the opentelemetry packages import, so the CLI, local runs and the whole
+# test suite behave exactly as they did before. The providers are MODULE-LEVEL
+# singletons: Cloud Run runs up to 80 concurrent requests per instance and a
+# per-request provider cross-contaminates traces between them.
+#
+# stdout is NOT replaced. The JSON-per-line console handler stays attached and
+# both paths run during cutover.
+
+_OTEL_ON = False
+_OTEL_WHY = ""
+_OTEL_TRACER: Any = None
+_OTEL_LOGS: Any = None
+_OTEL_METERS: Dict[str, Any] = {}
+_OTEL_PROJECT = ""
+
+
+def _otel_setup() -> None:
+    """Build the three providers once. Safe to call again; the second returns."""
+    global _OTEL_ON, _OTEL_WHY, _OTEL_TRACER, _OTEL_LOGS, _OTEL_PROJECT
+
+    if _OTEL_ON:
+        return
+    if not os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        _OTEL_WHY = "OTEL_EXPORTER_OTLP_ENDPOINT unset"
+        return
+    try:
+        from opentelemetry import metrics, trace
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk._logs import LoggerProvider
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    except Exception as exc:  # noqa: BLE001 - absence is a supported state
+        _OTEL_WHY = f"opentelemetry unavailable: {type(exc).__name__}"
+        return
+
+    try:
+        resource = Resource.create({"service.name": os.getenv(
+            "OTEL_SERVICE_NAME", "lqabr-summary-agent")})
+        _OTEL_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        trace.set_tracer_provider(provider)
+        _OTEL_TRACER = trace.get_tracer("lqabr.summary")
+
+        metrics.set_meter_provider(MeterProvider(
+            resource=resource,
+            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())]))
+        meter = metrics.get_meter("lqabr.summary")
+        # Labels stay bounded on purpose — agent, model, step, status. run_id
+        # and objectId are unbounded, and one unbounded label on one metric can
+        # generate more chargeable time series than every other metric combined.
+        _OTEL_METERS.update({
+            "llm_calls": meter.create_counter(
+                "lqabr.llm.calls", unit="1", description="Model calls"),
+            "llm_in": meter.create_histogram(
+                "lqabr.llm.input_tokens", unit="1", description="Prompt tokens"),
+            "llm_out": meter.create_histogram(
+                "lqabr.llm.output_tokens", unit="1", description="Completion tokens"),
+            "llm_ms": meter.create_histogram(
+                "lqabr.llm.duration", unit="ms", description="Model call latency"),
+            "tool_calls": meter.create_counter(
+                "lqabr.tool.calls", unit="1", description="Tool and MCP call outcomes"),
+            "saas_errors": meter.create_counter(
+                "lqabr.saas.errors", unit="1", description="Outbound failures"),
+        })
+
+        _OTEL_LOGS = LoggerProvider(resource=resource)
+        _OTEL_LOGS.add_log_record_processor(
+            BatchLogRecordProcessor(OTLPLogExporter()))
+        set_logger_provider(_OTEL_LOGS)
+    except Exception as exc:  # noqa: BLE001 - export is never load-bearing
+        _OTEL_WHY = f"otel setup failed: {type(exc).__name__}: {exc}"
+        return
+
+    _OTEL_ON = True
+
+
+def otel_status() -> Dict[str, Any]:
+    """What the boot line reports, so a silent no-export is visible."""
+    return {"otel": "on" if _OTEL_ON else "off",
+            **({"reason": _OTEL_WHY} if _OTEL_WHY else {})}
+
+
+def _otel_trace_fields() -> Dict[str, Any]:
+    """Trace context for a log line, so Logs and Trace Explorer join up.
+
+    `logging.googleapis.com/trace` is a key Cloud Logging extracts from the
+    body by name. It needs the 32-hex W3C trace id, which is why it comes from
+    the active span — `run_id` is `sum-` + 12 hex and is not a valid trace id.
+    """
+    if not _OTEL_ON:
+        return {}
+    try:
+        from opentelemetry import trace
+
+        context = trace.get_current_span().get_span_context()
+        if not context.is_valid:
+            return {}
+        trace_id = format(context.trace_id, "032x")
+        fields = {"trace_id": trace_id, "span_id": format(context.span_id, "016x")}
+        if _OTEL_PROJECT:
+            fields["logging.googleapis.com/trace"] = (
+                f"projects/{_OTEL_PROJECT}/traces/{trace_id}")
+            fields["logging.googleapis.com/spanId"] = fields["span_id"]
+        return fields
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@contextmanager
+def _otel_span(name: str, attributes: Dict[str, Any]):
+    """One step, as a span. A no-op context when export is off.
+
+    OpenTelemetry's context is a contextvar, so nesting follows asyncio tasks
+    the same way `_OBS` does. It does NOT follow a ThreadPoolExecutor worker —
+    a step run in one starts a fresh trace.
+    """
+    if not _OTEL_ON or _OTEL_TRACER is None:
+        yield None
+        return
+    with _OTEL_TRACER.start_as_current_span(name) as active:
+        for key, value in attributes.items():
+            if isinstance(value, (str, bool, int, float)):
+                active.set_attribute(key, value)
+        yield active
+
+
+def _otel_close_span(active: Any, status: str, reason: str) -> None:
+    """Record the outcome. A failed step is an ERROR span, not a silent one."""
+    if not _OTEL_ON or active is None:
+        return
+    try:
+        from opentelemetry.trace import Status, StatusCode
+
+        active.set_attribute("lqabr.status", status)
+        if status == "failed":
+            active.set_status(Status(StatusCode.ERROR, reason or "step failed"))
+            active.record_exception(RuntimeError(reason or "step failed"))
+        elif status == "ok":
+            active.set_status(Status(StatusCode.OK))
+    except Exception:  # noqa: BLE001 - never fail a step over telemetry
+        pass
+
+
+def _otel_record_hop(service: str, status: Optional[int],
+                     duration_ms: Optional[float], error: str,
+                     usage: Dict[str, Any]) -> None:
+    """Metrics for one outbound call, from the same hop that writes the audit
+    line. `service="model"` is Summary's spelling for a metered model call."""
+    if not _OTEL_ON or not _OTEL_METERS:
+        return
+    try:
+        failed = bool(error) or (status or 0) >= 400
+        labels = {"agent": "summary", "service": service,
+                  "status": str(status) if status is not None else "none"}
+        _OTEL_METERS["tool_calls"].add(1, labels)
+        if failed:
+            _OTEL_METERS["saas_errors"].add(1, labels)
+        if service == "model":
+            _OTEL_METERS["llm_calls"].add(1, labels)
+            if duration_ms is not None:
+                _OTEL_METERS["llm_ms"].record(duration_ms, labels)
+            for key, name in (("input_tokens", "llm_in"), ("output_tokens", "llm_out")):
+                value = usage.get(key)
+                if isinstance(value, (int, float)):
+                    _OTEL_METERS[name].record(value, labels)
+    except Exception:  # noqa: BLE001 - never fail a hop over telemetry
+        pass
+
+
+#: LogRecord's own attribute names. A field of ours that collides with one of
+#: these cannot be passed through `extra` — logging raises rather than shadow it.
+_LOGRECORD_RESERVED = frozenset(
+    ("args", "asctime", "created", "exc_info", "exc_text", "filename",
+     "funcName", "levelname", "levelno", "lineno", "message", "module",
+     "msecs", "msg", "name", "pathname", "process", "processName",
+     "relativeCreated", "stack_info", "taskName", "thread", "threadName"))
+
+
+def _otel_attach(logger: logging.Logger) -> None:
+    """Send this logger's records over OTLP, alongside its existing handlers.
+
+    Attaches to `lqabr.summary` — the logger that carries propagate=False. The
+    three stream children propagate UP to it, so one handler here sees all
+    three. A handler on Python's ROOT logger would receive nothing, silently,
+    and stdout would keep working so nothing would look wrong.
+    """
+    if not _OTEL_ON or _OTEL_LOGS is None:
+        return
+    if any(type(h).__name__ == "LoggingHandler" for h in logger.handlers):
+        return
+    try:
+        from opentelemetry.sdk._logs import LoggingHandler
+
+        logger.addHandler(LoggingHandler(level=logging.NOTSET,
+                                         logger_provider=_OTEL_LOGS))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def otel_shutdown() -> None:
+    """Flush on the way out. Cloud Run throttles CPU after the response, so an
+    unflushed batch is a dropped batch."""
+    if not _OTEL_ON:
+        return
+    for close in (lambda: _OTEL_LOGS.shutdown(),
+                  lambda: __import__("opentelemetry.trace", fromlist=["trace"])
+                  .get_tracer_provider().shutdown()):
+        try:
+            close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 #: Names that hold a credential VALUE.
 _SECRET_VALUE_HINTS = ("token", "secret", "password", "api_key", "apikey",
                        "authorization", "auth", "bearer", "credential")
@@ -199,16 +425,34 @@ class _Stream:
     def emit(self, event: str, **fields: Any) -> None:
         record = {
             "stream": self._name,
+            # Which agent wrote this. Cloud Run's service_name label answers it
+            # for stdout lines; carried in the body it survives OTLP too.
+            "agent": "summary",
             "run_id": self._run_id,
             "event": event,
             "ts": time.time(),
+            # trace_id / span_id while a step is open, plus the key Cloud
+            # Logging extracts by name to link this line to its trace. Empty
+            # when export is off or no span is active.
+            **_otel_trace_fields(),
             **redact(fields),
         }
         # The JSON string IS the message, so the file handler needs no work.
         # The record rides along on `extra` so the console formatter can render
         # it without parsing its own output back.
+        #
+        # The scalars are ALSO passed individually, because that is what OTel's
+        # LoggingHandler turns into log-record ATTRIBUTES. Without this the
+        # whole line arrives over OTLP as one opaque body string and none of
+        # `stream`, `agent`, `run_id`, `step` or `duration_ms` is queryable.
+        extra = {"lqabr_record": record}
+        for key, value in record.items():
+            if key in _LOGRECORD_RESERVED or key in extra:
+                continue
+            if isinstance(value, (str, bool, int, float)) or value is None:
+                extra[key] = value
         self._logger.info(json.dumps(record, default=repr, ensure_ascii=False),
-                          extra={"lqabr_record": record})
+                          extra=extra)
 
 
 class Step:
@@ -263,18 +507,23 @@ class Observability:
         before it propagates). A step that opens can therefore never be left
         open, which is the one bug a caller-threaded start/stop pair invites.
         """
-        self.process.emit("step_in", step=name, **inputs)
-        outcome = Step()
-        started = time.monotonic()
-        try:
-            yield outcome
-        except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised
-            outcome.failed(f"{type(exc).__name__}: {exc}")
-            raise
-        finally:
-            self.process.emit("step_out", step=name, status=outcome.status,
-                              duration_ms=round((time.monotonic() - started) * 1000, 1),
-                              **outcome.fields)
+        # The span opens BEFORE step_in so that line carries trace context too,
+        # and closes inside the same `finally` the frame already guarantees.
+        with _otel_span(name, {"lqabr.step": name, "agent": "summary"}) as active:
+            self.process.emit("step_in", step=name, **inputs)
+            outcome = Step()
+            started = time.monotonic()
+            try:
+                yield outcome
+            except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised
+                outcome.failed(f"{type(exc).__name__}: {exc}")
+                raise
+            finally:
+                _otel_close_span(active, outcome.status,
+                                 str(outcome.fields.get("reason", "")))
+                self.process.emit("step_out", step=name, status=outcome.status,
+                                  duration_ms=round((time.monotonic() - started) * 1000, 1),
+                                  **outcome.fields)
 
     # ---------------------------------------------------------------- hops
     def hop(self, *, service: str, endpoint: str, method: str = "POST",
@@ -304,6 +553,9 @@ class Observability:
                         attempt=attempt, error=error,
                         params=(params or {}) if _MODE != "terse" else {},
                         **counted)
+        # The same call, counted. Labels stay bounded — agent, service, status —
+        # so the time-series count cannot grow with the number of runs.
+        _otel_record_hop(service, status, duration_ms, error, counted)
 
 
 
@@ -335,7 +587,8 @@ _STREAM_COLOUR = {"process": "\033[36m", "audit": "\033[2m", "system": "\033[35m
 _RED, _YELLOW, _GREEN = "\033[31m", "\033[33m", "\033[32m"
 _BLUE = "\033[34m"
 
-_SKIP = ("stream", "run_id", "event", "ts")
+_SKIP = ("stream", "agent", "run_id", "event", "ts", "trace_id", "span_id",
+         "logging.googleapis.com/trace", "logging.googleapis.com/spanId")
 #: Rendered by the step branch itself, ahead of the ordinary fields.
 _STEP_SKIP = _SKIP + ("step", "status", "duration_ms")
 #: Nothing may wrap. A wrapped line redraws over its neighbour and the log
@@ -774,6 +1027,13 @@ def configure_logging(level: str = "INFO", log_dir: str = "",
         root.addHandler(_console_handler(log_format, console))
         root.propagate = False
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # OTLP export, when configured. The handler attaches to THIS logger:
+    # `lqabr.summary` carries propagate=False and the three stream children
+    # propagate up to it, so one handler here sees all three. A handler on
+    # Python's root logger would see nothing and would not say so.
+    _otel_setup()
+    _otel_attach(root)
 
     _SINK_STATE["dir"] = log_dir
     _SINK_STATE["files"] = {}

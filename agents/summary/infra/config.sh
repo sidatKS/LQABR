@@ -11,7 +11,9 @@
 export PROJECT_ID="${PROJECT_ID:-ldqfingsrv-dev}"
 export REGION="${REGION:-us-central1}"
 
-export SERVICE_NAME="lqabr-summary-agent"
+# The service as it exists in Cloud Run. IMAGE is derived from it, so this
+# one name also points the build at the right Artifact Registry repo.
+export SERVICE_NAME="lqabr-dev-summary"
 export AR_REPO="${AR_REPO:-lqabr}"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}"
 export IMAGE_TAG="${IMAGE_TAG:-$(cat "$(dirname "${BASH_SOURCE[0]}")/../VERSION" 2>/dev/null || echo latest)}"
@@ -36,5 +38,20 @@ export LQABR_SUMMARY_ROUTES="${LQABR_SUMMARY_ROUTES:-all}"
 # nothing is written to the CRM until you flip this to 0.
 export LQABR_SUMMARY_DRY_RUN="${LQABR_SUMMARY_DRY_RUN:-1}"
 export LQABR_SUMMARY_MCP_STARTUP_CHECK="${LQABR_SUMMARY_MCP_STARTUP_CHECK:-warn}"
+
+# ── OpenTelemetry sidecar ───────────────────────────────────────────────────
+# The collector runs as a second container in this same service and forwards
+# traces, metrics and logs to Google. The agent exports to it on localhost.
+#
+# GOOGLE_CLOUD_PROJECT is separate from LQABR_SUMMARY_GCP_PROJECT above and
+# both are needed: the collector config interpolates GOOGLE_CLOUD_PROJECT, and
+# obs.py reads it to build the logging.googleapis.com/trace field.
+export OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-us-docker.pkg.dev/cloud-ops-agents-artifacts/google-cloud-opentelemetry-collector/otelcol-google:0.159.0}"
+export OTEL_CONFIG_SECRET="${OTEL_CONFIG_SECRET:-lqabr-otel-collector-config}"
+export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-lqabr-summary-agent}"
+
+# The collector shares the instance's allocation, so this is up from 1/1Gi.
+export CPU="${CPU:-2}"
+export MEMORY="${MEMORY:-2Gi}"
 
 echo "summary-agent config: project=${PROJECT_ID} region=${REGION} service=${SERVICE_NAME} tag=${IMAGE_TAG}"
