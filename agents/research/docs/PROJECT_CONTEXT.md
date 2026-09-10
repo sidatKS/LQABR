@@ -166,7 +166,7 @@ the property, and every argument, with the note as `[N chars] head…`).
 
 Text payloads appear as length-marked `*_preview` fields — enough to see what
 was asked and what came back, never a 4,000-character block in the middle of a
-run. `LQABR_RESEARCH_LOG_DETAIL=0` drops previews and parameter bags.
+run. `LQABR_RESEARCH_LOG_MODE=terse` drops previews and parameter bags.
 
 `LQABR_RESEARCH_LOG_FORMAT` = `auto` (default) / `text` / `json`. **auto** means
 readable text when stdout is a terminal, JSON when it is not — so Cloud Run

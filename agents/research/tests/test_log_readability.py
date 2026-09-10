@@ -19,7 +19,7 @@ from pipeline import run_research
 from research_core.mcp.client import MCPClient
 from research_core.mcp.hubspot import HubSpotMCP
 from research_core.research_logging import (ConsoleFormatter, ResearchLogging, _GLYPHS_UNICODE,
-                               preview, redact, set_detail, summarize_args)
+                               preview, redact, set_mode, summarize_args)
 from research_core.search.anthropic_search import AnthropicWebSearch
 from research_core.settings import get_settings
 from schema import ResearchTarget
@@ -48,7 +48,7 @@ class _Records(logging.Handler):
         self.lines.append(self._fmt.format(record))
 
 
-def _obs(width: int = 165, name: str = "detail"):
+def _run_log(width: int = 165, name: str = "detail"):
     logger = logging.getLogger(f"lqabr.test.{name}")
     logger.handlers.clear()
     logger.propagate = False
@@ -67,8 +67,8 @@ def _one(sink, event):
 # --- the step frame: what went in, what came out --------------------------
 
 def test_a_step_pair_names_its_inputs_and_its_outputs():
-    obs, sink = _obs()
-    with obs.step("read_blog", objectId="330008697562",
+    run_log, sink = _run_log()
+    with run_log.step("read_blog", objectId="330008697562",
                   tool="get_blog_summary") as step:
         step.ok(blog_industry="FINANCIAL_SERVICES", summary_chars=1261)
 
@@ -82,8 +82,8 @@ def test_a_step_pair_names_its_inputs_and_its_outputs():
 
 
 def test_a_failed_step_is_marked_and_keeps_its_reason():
-    obs, sink = _obs(name="failstep")
-    with obs.step("write_context") as step:
+    run_log, sink = _run_log(name="failstep")
+    with run_log.step("write_context") as step:
         step.failed("crm-error: the MCP rejected the write")
     line = sink.lines[-1]
     assert _GLYPHS_UNICODE["bad"] in line
@@ -92,9 +92,9 @@ def test_a_failed_step_is_marked_and_keeps_its_reason():
 
 def test_a_step_left_by_an_exception_still_closes_and_names_it():
     """The frame is the point: a step that opens can never be left open."""
-    obs, sink = _obs(name="boom")
+    run_log, sink = _run_log(name="boom")
     with pytest.raises(ValueError):
-        with obs.step("research", objectId="1"):
+        with run_log.step("research", objectId="1"):
             raise ValueError("the provider exploded")
 
     closed = _one(sink, "step_out")
@@ -105,14 +105,14 @@ def test_a_step_left_by_an_exception_still_closes_and_names_it():
 
 def test_every_step_of_a_run_is_framed_in_order():
     """The whole point: read the log top to bottom and you have the run."""
-    obs, sink = _obs(name="pipeline")
+    run_log, sink = _run_log(name="pipeline")
     settings = get_settings(refresh=True)
     hubspot = HubSpotMCP(client=FakeMCPClient(
         {"get_lead_profile": LEAD, "get_blog_summary": BLOG,
-         "upsert_lead_profile": {"status": "updated"}}), settings=settings, obs=obs)
-    composer = Composer(provider=FakeSearch(), settings=settings, obs=obs)
+         "upsert_lead_profile": {"status": "updated"}}), settings=settings, run_log=run_log)
+    composer = Composer(provider=FakeSearch(), settings=settings, run_log=run_log)
 
-    run_research(TARGET, settings=settings, obs=obs, hubspot=hubspot, composer=composer)
+    run_research(TARGET, settings=settings, run_log=run_log, hubspot=hubspot, composer=composer)
 
     opened = [r["step"] for r in sink.records if r["event"] == "step_in"]
     assert opened == ["read_lead", "read_blog", "research", "write_context"]
@@ -124,13 +124,13 @@ def test_every_step_of_a_run_is_framed_in_order():
 
 
 def test_a_step_that_fails_closes_with_the_reason_not_silence():
-    obs, sink = _obs(name="pipefail")
+    run_log, sink = _run_log(name="pipefail")
     settings = get_settings(refresh=True)
     hubspot = HubSpotMCP(client=FakeMCPClient({"get_lead_profile": {"found": False}}),
-                         settings=settings, obs=obs)
-    composer = Composer(provider=FakeSearch(), settings=settings, obs=obs)
+                         settings=settings, run_log=run_log)
+    composer = Composer(provider=FakeSearch(), settings=settings, run_log=run_log)
 
-    run_research(TARGET, settings=settings, obs=obs, hubspot=hubspot, composer=composer)
+    run_research(TARGET, settings=settings, run_log=run_log, hubspot=hubspot, composer=composer)
 
     closed = _one(sink, "step_out")
     assert closed["step"] == "read_lead" and closed["status"] == "failed"
@@ -155,9 +155,9 @@ class _FakeAnthropic:
 
 
 def test_the_model_call_says_where_it_goes_and_what_it_sends():
-    obs, sink = _obs(name="model")
+    run_log, sink = _run_log(name="model")
     settings = get_settings(refresh=True)
-    provider = AnthropicWebSearch(settings=settings, obs=obs,
+    provider = AnthropicWebSearch(settings=settings, run_log=run_log,
                                   client=_FakeAnthropic(), api_key="test-only")
 
     provider.research("research Axiom Law", system="you are a research assistant")
@@ -184,14 +184,14 @@ def test_the_model_call_says_where_it_goes_and_what_it_sends():
 
 
 def test_the_write_says_exactly_what_it_is_about_to_send():
-    obs, sink = _obs(name="write")
+    run_log, sink = _run_log(name="write")
     settings = get_settings(refresh=True)
     client = FakeMCPClient({"get_lead_profile": LEAD, "get_blog_summary": BLOG,
                             "upsert_lead_profile": {"status": "updated"}})
-    hubspot = HubSpotMCP(client=client, settings=settings, obs=obs)
-    composer = Composer(provider=FakeSearch(text="A" * 900), settings=settings, obs=obs)
+    hubspot = HubSpotMCP(client=client, settings=settings, run_log=run_log)
+    composer = Composer(provider=FakeSearch(text="A" * 900), settings=settings, run_log=run_log)
 
-    run_research(TARGET, settings=settings, obs=obs, hubspot=hubspot, composer=composer)
+    run_research(TARGET, settings=settings, run_log=run_log, hubspot=hubspot, composer=composer)
 
     opened = [r for r in sink.records
               if r["event"] == "step_in" and r["step"] == "write_context"][-1]
@@ -228,9 +228,9 @@ class _Session:
 
 def test_the_write_call_carries_the_note_as_a_summarised_argument():
     """The one call whose arguments matter most — logged before it is made."""
-    obs, sink = _obs(name="mcpargs")
+    run_log, sink = _run_log(name="mcpargs")
     settings = get_settings(refresh=True)
-    client = MCPClient(settings, session=_Session({"status": "updated"}), obs=obs)
+    client = MCPClient(settings, session=_Session({"status": "updated"}), run_log=run_log)
 
     client.call_tool(settings.mcp_tool_write,
                      {"employee_id": "E1", "company_id": "C1",
@@ -283,8 +283,8 @@ def test_the_boot_config_shows_which_credentials_it_will_use():
 
 
 def test_an_outbound_call_renders_what_it_sent():
-    obs, sink = _obs(name="hop")
-    obs.hop(service="mcp", endpoint="http://localhost:8091/mcp", status=200,
+    run_log, sink = _run_log(name="hop")
+    run_log.outbound_call(service="mcp", endpoint="http://localhost:8091/mcp", status=200,
             duration_ms=412.0, params={"tool": "get_lead_profile",
                                        "objectId": "533970643697"})
     line = sink.lines[-1]
@@ -305,24 +305,24 @@ def test_a_preview_is_marked_when_it_is_cut():
     assert preview("") == ""
 
 
-def test_detail_off_gives_back_the_terser_shape():
-    """LQABR_RESEARCH_LOG_DETAIL=0 — no previews, no parameter bags."""
+def test_terse_mode_gives_back_the_terser_shape():
+    """mode=terse — no previews, no parameter bags."""
     try:
-        set_detail(False)
-        obs, sink = _obs(name="terse")
-        obs.hop(service="anthropic", endpoint="messages.create", status=200,
+        set_mode("terse")
+        run_log, sink = _run_log(name="terse")
+        run_log.outbound_call(service="anthropic", endpoint="messages.create", status=200,
                 params={"model": "claude-sonnet-4-6"})
         assert preview("a much longer piece of prose") == ""
         assert _one(sink, "outbound_call")["params"] == {}
         assert summarize_args({"lead_context": "N" * 4000}) == {"keys": ["lead_context"]}
     finally:
-        set_detail(True)
+        set_mode("normal")
 
 
 def test_a_preview_still_arrives_on_a_line_that_is_already_full():
     """A payload preview sorts last; a long row of fields must not eat it."""
-    obs, sink = _obs(width=90, name="fullline")
-    obs.process.emit("model_request", model="claude-sonnet-4-6", max_tokens=2000,
+    run_log, sink = _run_log(width=90, name="fullline")
+    run_log.process.emit("model_request", model="claude-sonnet-4-6", max_tokens=2000,
                      search_tool="web_search_20250305", search_max_uses=5,
                      timeout_s=90, prompt_chars=1069, system_chars=1841,
                      endpoint="anthropic.messages.create",
@@ -334,13 +334,13 @@ def test_a_preview_still_arrives_on_a_line_that_is_already_full():
 
 def test_no_line_exceeds_the_width_once_previews_are_on():
     for width in (90, 120, 165):
-        obs, sink = _obs(width=width, name=f"width{width}")
-        with obs.step("research", objectId="533970643697", company="Brex",
+        run_log, sink = _run_log(width=width, name=f"width{width}")
+        with run_log.step("research", objectId="533970643697", company="Brex",
                       industry="FINANCIAL_SERVICES", max_tokens=2000,
                       model="anthropic/claude-sonnet-4-6",
                       search_max_uses=5, target_words=160) as step:
             step.ok(chars=3557, words=420, sources=25, note_preview="B" * 900)
-        obs.hop(service="anthropic", endpoint="messages.create", status=200,
+        run_log.outbound_call(service="anthropic", endpoint="messages.create", status=200,
                 duration_ms=20738.0,
                 params={"model": "claude-sonnet-4-6", "max_tokens": 2000,
                         "tool": "web_search_20250305", "max_uses": 5,
@@ -359,10 +359,10 @@ LONG_TRANSPORT_ERROR = (
 def test_a_transport_error_on_a_call_does_not_run_off_the_edge():
     """Found by running it: the error was appended without measuring the line."""
     for width in (90, 140, 165):
-        obs, sink = _obs(width=width, name=f"hoperr{width}")
-        obs.hop(service="mcp", endpoint="http://localhost:8091/mcp",
+        run_log, sink = _run_log(width=width, name=f"hoperr{width}")
+        run_log.outbound_call(service="mcp", endpoint="http://localhost:8091/mcp",
                 error=LONG_TRANSPORT_ERROR, params={"method": "initialize"})
-        obs.process.emit("campaign_lead_done", objectId="533970643697",
+        run_log.process.emit("campaign_lead_done", objectId="533970643697",
                          position=4, of=5, status="failed", chars=0,
                          error=LONG_TRANSPORT_ERROR)
         for rendered in sink.lines:
@@ -372,9 +372,9 @@ def test_a_transport_error_on_a_call_does_not_run_off_the_edge():
 
 def test_a_finished_lead_is_followed_by_a_gap_on_the_console_only():
     """Five leads run as one wall of text; the eye needs a seam between them."""
-    obs, sink = _obs(name="gap")
-    obs.process.emit("campaign_lead_start", objectId="1", position=2, of=5)
-    obs.process.emit("campaign_lead_done", objectId="1", position=2, of=5,
+    run_log, sink = _run_log(name="gap")
+    run_log.process.emit("campaign_lead_start", objectId="1", position=2, of=5)
+    run_log.process.emit("campaign_lead_done", objectId="1", position=2, of=5,
                      status="completed", chars=3557)
     start, done = sink.lines
     assert not start.endswith("\n"), "the gap belongs after the lead, not before"
@@ -386,8 +386,8 @@ def test_a_finished_lead_is_followed_by_a_gap_on_the_console_only():
 def test_the_system_prompt_is_previewed_once_not_once_per_lead():
     """It is a FILE — byte-identical every time. Three lines per lead of the
     same text is repetition, not observability."""
-    obs, sink = _obs(name="sysonce")
-    provider = AnthropicWebSearch(settings=get_settings(refresh=True), obs=obs,
+    run_log, sink = _run_log(name="sysonce")
+    provider = AnthropicWebSearch(settings=get_settings(refresh=True), run_log=run_log,
                                   client=_FakeAnthropic(), api_key="test-only")
 
     provider.research("lead one", system="the same system prompt")

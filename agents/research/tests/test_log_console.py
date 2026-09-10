@@ -31,8 +31,8 @@ def _render(colour=False, glyphs=_GLYPHS_UNICODE, **event):
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=colour, glyphs=glyphs))
     logger.addHandler(sink)
-    obs = ResearchLogging(run_id="res-test", logger=logger)
-    obs.process.emit(event.pop("event"), **{k: v for k, v in event.items()
+    run_log = ResearchLogging(run_id="res-test", logger=logger)
+    run_log.process.emit(event.pop("event"), **{k: v for k, v in event.items()
                                             if not k.startswith("_")})
     return sink.lines[-1]
 
@@ -86,13 +86,13 @@ def test_a_credentials_NAME_is_printed_not_hidden():
 
 
 def test_an_outbound_call_reads_as_a_call():
-    logger = logging.getLogger("lqabr.test.hop")
+    logger = logging.getLogger("lqabr.test.outbound_call")
     logger.handlers.clear()
     logger.propagate = False
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=False, glyphs=_GLYPHS_UNICODE))
     logger.addHandler(sink)
-    ResearchLogging(run_id="res-test", logger=logger).hop(
+    ResearchLogging(run_id="res-test", logger=logger).outbound_call(
         service="hubspot", endpoint="/crm/v3/objects/companies/search",
         status=200, duration_ms=677.1)
     line = sink.lines[-1]
@@ -142,9 +142,9 @@ def _lines(events, width=165):
     logger.setLevel(logging.INFO)
     sink = _Sink(ConsoleFormatter(colour=False, glyphs=_GLYPHS_UNICODE, width=width))
     logger.addHandler(sink)
-    obs = ResearchLogging(run_id="res-test", logger=logger)
+    run_log = ResearchLogging(run_id="res-test", logger=logger)
     for name, fields in events:
-        obs.process.emit(name, **fields)
+        run_log.process.emit(name, **fields)
     return sink.lines
 
 

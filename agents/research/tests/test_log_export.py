@@ -1,6 +1,6 @@
 """The OTLP sink — what replaced the three log files.
 
-`research_logging_otel.py` is `research_logging.py` with the file handlers
+`research_logging.py` is `research_logging.py` with the file handlers
 taken out and one OTLP handler put in. These tests pin the four things that
 can silently break that swap:
 
@@ -25,8 +25,8 @@ import logging
 
 import pytest
 
-from research_core import research_logging_otel as otel
-from research_core.research_logging_otel import (STREAMS, ResearchLoggingOtel,
+from research_core import research_logging as otel
+from research_core.research_logging import (STREAMS, ResearchLogging,
                                                  configure_logging,
                                                  otel_attributes, sink_state)
 
@@ -131,7 +131,7 @@ def test_no_sdk_installed_falls_back_to_console(monkeypatch, capsys):
     reported = capsys.readouterr().err
     assert "log_sink_unavailable" in reported         # named, not swallowed
 
-    ResearchLoggingOtel(run_id="res-x").process.emit("still_running")   # no raise
+    ResearchLogging(run_id="res-x").process.emit("still_running")   # no raise
 
 
 def test_files_are_an_addon_not_a_replacement(monkeypatch, tmp_path):
@@ -140,7 +140,7 @@ def test_files_are_an_addon_not_a_replacement(monkeypatch, tmp_path):
     stream — with or without OTLP available."""
     monkeypatch.setattr(otel, "OTEL_MISSING", "opentelemetry-sdk: absent")  # OTLP off
     configure_logging("INFO", log_dir=str(tmp_path))
-    ResearchLoggingOtel(run_id="res-file").process.emit("lead_read", company="Axiom")
+    ResearchLogging(run_id="res-file").process.emit("lead_read", company="Axiom")
 
     files = sink_state()["files"]
     assert set(files) == {"process", "audit", "system"}
@@ -150,21 +150,6 @@ def test_files_are_an_addon_not_a_replacement(monkeypatch, tmp_path):
     assert len(list(tmp_path.iterdir())) == 3
 
 
-def test_log_file_legacy_knob_still_works(monkeypatch, capsys, tmp_path):
-    """The deprecated single-file sink is untouched by adding OTLP."""
-    monkeypatch.setattr(otel, "OTEL_MISSING", "opentelemetry-sdk: absent")
-    target = tmp_path / "combined.log"
-    configure_logging("INFO", log_file=str(target))
-    ResearchLoggingOtel(run_id="res-legacy").audit.emit("outbound_call", service="x")
-
-    seen = capsys.readouterr()
-    assert "log_sink_legacy" in (seen.out + seen.err)
-    assert target.exists()
-    assert '"service": "x"' in target.read_text(encoding="utf-8")
-    assert sink_state()["files"] == {"process": str(target), "audit": str(target),
-                                     "system": str(target)}
-
-
 def test_files_and_otlp_both_receive_the_same_record(monkeypatch, tmp_path):
     """The scenario the add-on exists for: one emit, every sink gets it."""
     pytest.importorskip("opentelemetry.sdk._logs")
@@ -172,7 +157,7 @@ def test_files_and_otlp_both_receive_the_same_record(monkeypatch, tmp_path):
     monkeypatch.setattr(otel, "_otlp_handler", lambda **kw: _built(provider))
     configure_logging("INFO", log_dir=str(tmp_path))
 
-    ResearchLoggingOtel(run_id="res-both").process.emit("lead_read", company="Axiom")
+    ResearchLogging(run_id="res-both").process.emit("lead_read", company="Axiom")
 
     on_disk = (tmp_path / sink_state()["files"]["process"].split("/")[-1]).read_text()
     assert '"company": "Axiom"' in on_disk
@@ -197,18 +182,17 @@ def test_a_stale_dated_file_from_the_old_scheme_is_left_alone(tmp_path):
     from a previous build must not be touched, let alone deleted."""
     stale = tmp_path / "research_process_2020-01-01.log"
     stale.write_text("old", encoding="utf-8")
-    configure_logging("INFO", log_dir=str(tmp_path), retention_days=1)
+    configure_logging("INFO", log_dir=str(tmp_path))
     assert stale.exists() and stale.read_text() == "old"
 
 
 def test_file_grows_uncapped_no_rotation(tmp_path):
-    """No file cap: the fixed-name file just grows. `max_bytes`/`backups`
-    are accepted (for signature parity with the file-sink module) but do
-    nothing — there is no rollover file to look for."""
-    configure_logging("INFO", log_dir=str(tmp_path), max_bytes=200, backups=1)
-    obs = ResearchLoggingOtel(run_id="res-grow")
+    """No file cap: the fixed-name file just grows. There is no rollover
+    parameter and no rollover file to look for."""
+    configure_logging("INFO", log_dir=str(tmp_path))
+    run_log = ResearchLogging(run_id="res-grow")
     for _ in range(30):
-        obs.process.emit("lead_read", note="x" * 40)
+        run_log.process.emit("lead_read", note="x" * 40)
     names = sorted(p.name for p in tmp_path.iterdir())
     assert names == ["research_audit.log", "research_process.log",
                      "research_system.log"]  # no "research_process.log.1" etc.
@@ -240,7 +224,7 @@ def test_a_foreign_handler_does_not_cost_us_the_console(monkeypatch, capsys):
 
     assert sum(getattr(h, "_lqabr_console", False) for h in root.handlers) == 1
     assert root.propagate is False
-    ResearchLoggingOtel(run_id="res-1").process.emit("lead_read")
+    ResearchLogging(run_id="res-1").process.emit("lead_read")
     assert "lead_read" in capsys.readouterr().out
 
 
@@ -364,7 +348,7 @@ def test_configure_twice_exports_once(monkeypatch):
     root = logging.getLogger("lqabr.research")
     assert sum(getattr(h, "_lqabr_otlp", False) for h in root.handlers) == 1
 
-    ResearchLoggingOtel(run_id="res-1").process.emit("once")
+    ResearchLogging(run_id="res-1").process.emit("once")
     assert _events(exporter).count("once") == 1
 
 
@@ -376,10 +360,10 @@ def test_every_stream_reaches_the_exporter(monkeypatch):
     monkeypatch.setattr(otel, "_otlp_handler", lambda **kw: _built(provider))
     configure_logging("INFO")
 
-    obs = ResearchLoggingOtel(run_id="res-abc")
-    obs.process.emit("lead_read", objectId="533963448020")
-    obs.audit.emit("outbound_call", service="hubspot", status=200)
-    obs.system.emit("service_start", version="1.2.3")
+    run_log = ResearchLogging(run_id="res-abc")
+    run_log.process.emit("lead_read", objectId="533963448020")
+    run_log.audit.emit("outbound_call", service="hubspot", status=200)
+    run_log.system.emit("service_start", version="1.2.3")
 
     mine = _mine(exporter, "res-abc")
     assert sorted(a["log_group"] for a in mine) == ["audit", "process", "system"]
@@ -392,7 +376,7 @@ def test_a_hop_exports_its_params_and_its_cost(monkeypatch):
     monkeypatch.setattr(otel, "_otlp_handler", lambda **kw: _built(provider))
     configure_logging("INFO")
 
-    ResearchLoggingOtel(run_id="res-abc").hop(
+    ResearchLogging(run_id="res-abc").outbound_call(
         service="anthropic", endpoint="/v1/messages", status=200,
         duration_ms=812.0, params={"model": "sonnet", "api_key": "sk-live-xyz"},
         usage={"input_tokens": 1200, "output_tokens": 300})
@@ -412,7 +396,7 @@ def test_the_console_still_renders_the_same_record(monkeypatch, capsys):
     monkeypatch.setattr(otel, "_otlp_handler", lambda **kw: _built(provider))
     configure_logging("INFO", log_format="json")
 
-    ResearchLoggingOtel(run_id="res-abc").process.emit("lead_read", company="Axiom")
+    ResearchLogging(run_id="res-abc").process.emit("lead_read", company="Axiom")
 
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()
              if line.startswith("{")]
@@ -432,7 +416,7 @@ def test_a_broken_exporter_does_not_stop_the_run(monkeypatch, capsys):
     monkeypatch.setattr(type(handler).__mro__[1], "emit",
                         lambda self, record: (_ for _ in ()).throw(RuntimeError("gone")))
 
-    ResearchLoggingOtel(run_id="res-abc").process.emit("lead_read")   # no raise
+    ResearchLogging(run_id="res-abc").process.emit("lead_read")   # no raise
     assert "otlp:emit" in sink_state()["degraded"]
     assert "log_export_failed" in capsys.readouterr().err
 
@@ -476,17 +460,23 @@ def test_endpoint_and_protocol_come_from_env(monkeypatch):
 
 
 def test_configure_logging_takes_no_otlp_specific_parameters():
-    """The signature must stay IDENTICAL to the file-sink module's — no
-    otlp_endpoint / otlp_protocol / service_name / etc. Every real call site
-    (agent.py, service_app.py) calls this with the same plain arguments it
-    passes to research_logging.configure_logging; a Python-level override
-    parameter that no caller ever populates is dead code, so all OTLP config
-    is env-only."""
+    """All OTLP config is env-only. A Python-level override parameter that no
+    caller ever populates is dead code, so the signature carries none: no
+    endpoint, no protocol, no service name, no headers, no insecure flag.
+
+    This used to assert the signature was byte-identical to the file-sink
+    module\'s, which made a dead module\'s shape a constraint on this one and
+    kept three no-op rotation parameters alive. It now states the actual rule.
+    """
     import inspect
-    from research_core import research_logging as file_sink
-    file_params = list(inspect.signature(file_sink.configure_logging).parameters)
-    otel_params = list(inspect.signature(configure_logging).parameters)
-    assert otel_params == file_params
+    params = set(inspect.signature(configure_logging).parameters)
+    forbidden = {"otlp_endpoint", "endpoint", "otlp_protocol", "protocol",
+                 "service_name", "insecure", "headers", "headers_env",
+                 "otlp_enabled", "exporter"}
+    assert not (params & forbidden), (
+        f"OTLP config must stay env-only; found {sorted(params & forbidden)}")
+    # And the no-op rotation knobs must not come back: the files are uncapped.
+    assert not (params & {"max_bytes", "backups", "retention_days"})
 
 
 def test_standard_otel_env_is_honoured_as_a_fallback(monkeypatch):
@@ -517,7 +507,6 @@ def test_no_span_in_flight_means_no_ids_and_no_exception():
 
 def test_a_span_in_flight_supplies_both_ids_correctly_formatted():
     pytest.importorskip("opentelemetry.sdk.trace")
-    from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
 
     tracer = TracerProvider().get_tracer(__name__)
@@ -537,7 +526,6 @@ def test_a_span_in_flight_supplies_both_ids_correctly_formatted():
 def test_the_ids_reach_the_record_the_handler_exports():
     """The seam that matters: emit() must stamp them on the copy it exports."""
     pytest.importorskip("opentelemetry.sdk.trace")
-    from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
 
     seen = {}
@@ -577,3 +565,159 @@ def test_a_broken_trace_api_is_silent_not_fatal(monkeypatch):
 def test_no_sdk_installed_is_also_silent(monkeypatch):
     monkeypatch.setattr(otel, "_otel_trace", None)
     assert otel.current_trace_context() == {}
+
+
+# ── OTLP/HTTP endpoint normalisation ────────────────────────────────────────
+#
+# The SDK appends the signal path only when it reads the endpoint from the
+# environment itself. This module passes it EXPLICITLY (it may come from
+# LQABR_RESEARCH_OTLP_ENDPOINT), so a bare host POSTs to "/" and every request
+# is a 404 - retried forever, reported nowhere. Traces and metrics keep working
+# because auto-instrumentation configures them from the environment and does
+# get the path appended, so the agent looks half-healthy.
+#
+# Found 2026-09-08 on the first local run over http/protobuf. gRPC had hidden
+# it for the entire project: it addresses a service, not a URL.
+
+
+@pytest.mark.parametrize("given,want", [
+    ("http://localhost:4318",           "http://localhost:4318/v1/logs"),
+    ("http://localhost:4318/",          "http://localhost:4318/v1/logs"),
+    ("https://lqabr-otel.run.app",      "https://lqabr-otel.run.app/v1/logs"),
+    ("localhost:4318",                  "localhost:4318/v1/logs"),   # no scheme
+])
+def test_a_bare_http_endpoint_gains_the_signal_path(given, want):
+    assert otel.http_logs_endpoint(given) == want
+
+
+@pytest.mark.parametrize("given", [
+    "http://localhost:4318/v1/logs",
+    "https://collector.internal/custom/ingest",
+])
+def test_an_endpoint_that_already_has_a_path_is_left_alone(given):
+    """Never double-append, and never override a deliberate path."""
+    assert otel.http_logs_endpoint(given) == given
+
+
+def test_empty_stays_empty():
+    assert otel.http_logs_endpoint("") == ""
+    assert otel.http_logs_endpoint(None) == ""
+
+
+def test_grpc_endpoints_are_not_touched(monkeypatch):
+    """gRPC addresses a service, not a URL - appending a path breaks it."""
+    seen = {}
+
+    class _Exporter:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+    monkeypatch.setattr(otel, "EXPORTERS", {"grpc": _Exporter, "http": _Exporter})
+    monkeypatch.setenv("LQABR_RESEARCH_OTLP_PROTOCOL", "grpc")
+    monkeypatch.setenv("LQABR_RESEARCH_OTLP_ENDPOINT", "localhost:4317")
+    pytest.importorskip("opentelemetry.sdk._logs")
+    configure_logging("INFO")
+
+    assert seen.get("endpoint") == "localhost:4317"
+
+
+def test_the_http_exporter_receives_the_normalised_endpoint(monkeypatch):
+    """The seam that matters: what actually reaches the exporter."""
+    seen = {}
+
+    class _Exporter:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+    monkeypatch.setattr(otel, "EXPORTERS", {"grpc": _Exporter, "http": _Exporter})
+    monkeypatch.setenv("LQABR_RESEARCH_OTLP_PROTOCOL", "http/protobuf")
+    monkeypatch.setenv("LQABR_RESEARCH_OTLP_ENDPOINT", "http://localhost:4318")
+    pytest.importorskip("opentelemetry.sdk._logs")
+    configure_logging("INFO")
+
+    assert seen.get("endpoint") == "http://localhost:4318/v1/logs"
+    # `insecure` is a gRPC channel option; the HTTP exporter has no such
+    # parameter and raises on an unexpected kwarg.
+    assert "insecure" not in seen
+
+
+# ── step spans: the trace -> log hop ────────────────────────────────────────
+# A step used to be log-only, so a trace showed `POST`/`GET` and nothing about
+# which stage produced them, and a log record emitted outside a request had no
+# span to take a trace id from. `step()` now opens its own span carrying the
+# two ids a person actually searches by.
+
+def _capture_spans(monkeypatch):
+    """A real TracerProvider whose spans land in a list."""
+    trace = pytest.importorskip("opentelemetry.trace")
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    export = pytest.importorskip("opentelemetry.sdk.trace.export")
+    seen = []
+
+    class _Cap(export.SpanExporter):
+        def export(self, spans):
+            seen.extend(spans)
+            return export.SpanExportResult.SUCCESS
+
+    provider = sdk.TracerProvider()
+    provider.add_span_processor(export.SimpleSpanProcessor(_Cap()))
+    monkeypatch.setattr(trace, "get_tracer_provider", lambda: provider)
+    return seen
+
+
+def test_a_step_opens_a_span_named_for_the_step(monkeypatch):
+    seen = _capture_spans(monkeypatch)
+    with ResearchLogging(run_id="res-span").step("read_lead", objectId="1"):
+        pass
+    assert [s.name for s in seen] == ["read_lead"]
+
+
+def test_the_span_carries_the_ids_a_person_searches_by(monkeypatch):
+    """`run_id` finds the campaign, `objectId` finds the lead someone
+    reported. A trace id is generated for us and is no use to a human."""
+    seen = _capture_spans(monkeypatch)
+    with ResearchLogging(run_id="res-span").step(
+            "read_lead", objectId="533963448020", tool="get_lead_profile"):
+        pass
+    attrs = dict(seen[0].attributes)
+    assert attrs["lqabr.run_id"] == "res-span"
+    assert attrs["lqabr.objectId"] == "533963448020"
+    assert attrs["lqabr.tool"] == "get_lead_profile"
+
+
+def test_a_step_that_fails_without_raising_still_marks_the_span(monkeypatch):
+    """`step.failed(reason)` then return is the common path in this pipeline —
+    it never raises, so the SDK would leave the span UNSET on its own."""
+    seen = _capture_spans(monkeypatch)
+    with ResearchLogging(run_id="res-span").step("compose_note") as step:
+        step.failed("bad-data: no industry on the post")
+    assert seen[0].status.status_code.name == "ERROR"
+
+
+def test_a_raising_step_records_the_exception_exactly_once(monkeypatch):
+    """`start_as_current_span` records it already; recording it again in the
+    except block produced two identical `exception` events per failure."""
+    seen = _capture_spans(monkeypatch)
+    with pytest.raises(RuntimeError):
+        with ResearchLogging(run_id="res-span").step("write_context"):
+            raise RuntimeError("crm refused")
+    assert [e.name for e in seen[0].events] == ["exception"]
+    assert seen[0].status.status_code.name == "ERROR"
+
+
+def test_a_log_record_inside_a_step_can_reach_its_span(monkeypatch):
+    """The trace -> log hop: what current_trace_context() stamps on a record."""
+    _capture_spans(monkeypatch)
+    with ResearchLogging(run_id="res-span").step("read_lead"):
+        ids = otel.current_trace_context()
+    assert set(ids) == {"otelTraceID", "otelSpanID"}
+    assert len(ids["otelTraceID"]) == 32 and int(ids["otelTraceID"], 16)
+
+
+def test_steps_still_run_with_no_tracing_sdk(monkeypatch):
+    """Tracing is optional exactly as export is. No SDK must not change what a
+    step does — the run continues and the log records are unaffected."""
+    monkeypatch.setattr(otel, "_otel_trace", None)
+    with ResearchLogging(run_id="res-span").step("read_lead") as step:
+        step.ok(company="Axiom Law")
+    assert step.status == "ok"

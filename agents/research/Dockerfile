@@ -34,11 +34,11 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app/agents/research
 
 # Dependencies first, so a code change does not reinstall the world.
-COPY requirements.txt requirements-otel.txt ./
-# requirements-otel.txt pins `-r requirements.txt`, so this installs both.
-# It is NOT optional in the image: the CMD runs under opentelemetry-instrument,
-# which ships in these packages. Tests still use plain requirements.txt.
-RUN pip install --no-cache-dir -r requirements-otel.txt
+COPY requirements.txt ./
+# One file: runtime + OpenTelemetry + test tools (merged 2026-09-09). OTel is
+# NOT optional in the image - the CMD runs under opentelemetry-instrument,
+# which ships in those packages.
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY packages ./packages
 COPY src ./src

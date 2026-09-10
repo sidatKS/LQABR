@@ -139,7 +139,7 @@ def test_the_token_value_is_never_logged():
 
     token = _jwt(time.time() + 3600)
     source = IdentityTokenSource("https://mcp.example",
-                                 session=_Metadata(_Response(token)), obs=_Obs())
+                                 session=_Metadata(_Response(token)), run_log=_Obs())
     source.token()
 
     assert emitted, "minting a credential is worth one line"

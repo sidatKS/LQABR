@@ -36,8 +36,8 @@ try:  # pragma: no cover - depends on the local environment
 except ImportError:
     pass
 
-from research_core.research_logging_otel import (configure_logging,  # noqa: E402
-                                                 get_obs, new_run_id)
+from research_core.research_logging import (configure_logging,  # noqa: E402
+                                                 get_run_log, new_run_id)
 from research_core import SERVICE_NAME  # noqa: E402
 from research_core.settings import get_settings  # noqa: E402
 
@@ -65,16 +65,13 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_dir, settings.log_format,
-                      max_bytes=settings.log_max_bytes,
-                      backups=settings.log_backups, log_file=settings.log_file,
                       mode="debug" if args.debug else settings.log_mode,
-                      retention_days=settings.log_retention_days,
                       # For a CLI, stdout is the RESULT DOCUMENT — the caller
                       # pipes it to jq. Everything the agent says goes to
                       # stderr, including the sink's own boot warnings.
                       console=sys.stderr)
 
-    get_obs(new_run_id(), refresh=True)
+    get_run_log(new_run_id(), refresh=True)
 
     if args.dry_run:
         import os

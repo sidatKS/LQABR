@@ -1,0 +1,99 @@
+# LQABR collector — STANDALONE Cloud Run service (the chosen path).
+#
+# Runbook: claude/OTEL_CLOUD_STANDALONE_RUNBOOK.md
+# Sibling: otelcol-config.yaml   local only - file exporters, no auth
+#
+# Deployed by:
+#   gcloud secrets versions add lqabr-otel-collector-config \
+#     --data-file=infra/otel/otelcol-config.standalone.yaml
+#
+# Three things differ from a SIDECAR config, and the third silently corrupts
+# the data if it is dropped:
+#
+#   1. the receiver binds ${env:PORT} - Cloud Run exposes exactly ONE port, so
+#      this is HTTP only. The agents speak http/protobuf, not grpc.
+#   2. no health_check extension - it could only listen on a second port,
+#      which is not exposed. Cloud Run TCP-probes $PORT instead, satisfied as
+#      soon as the OTLP receiver binds.
+#   3. resourcedetection has override:false - see the comment on it below.
+#
+# DELIBERATELY ABSENT - both killed revision lqabr-dev-summary-00009-svl on
+# 2026-09-02 and would break this collector identically:
+#   * resource/gcp_project_id   its ${VAR} resolved empty -> failed to build
+#                               pipelines -> the whole collector died
+#   * service.telemetry         loops its own metrics into its own receiver
+#                               before that receiver exists
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:${env:PORT}
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 65
+    spike_limit_percentage: 20
+
+  resourcedetection:
+    detectors: [gcp]
+    timeout: 10s
+    # CRITICAL. In a sidecar the detector shares an instance with the app, so
+    # detecting Cloud Run identity is correct. Standing alone it would stamp
+    # every record as coming from lqabr-dev-otel and lose which agent produced
+    # it. override:false keeps the service.name the agent already set via
+    # OTEL_SERVICE_NAME.
+    override: false
+
+  # Verified on live campaign traffic 2026-09-04. `$${1}` not `$$1`: Go reads
+  # `$1XXXX` as a group NAMED "1XXXX", which is undefined, so the characters
+  # you meant to keep vanish silently.
+  # Each rule runs on `body` AND across every value in `attributes`, because
+  # the agent's data rides in attributes as lqabr.* - the body rules alone
+  # protect nothing.
+  transform:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+          - replace_all_patterns(attributes, "value", "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+          - replace_pattern(body, "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+          - replace_pattern(body, "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+
+  batch:
+    send_batch_size: 200
+    send_batch_max_size: 200
+    timeout: 5s
+
+extensions:
+  # Authenticates as the collector's own service account (lqabr-otel).
+  # No keys, no headers, nothing secret in this file.
+  googleclientauth:
+
+exporters:
+  otlp:
+    endpoint: telemetry.googleapis.com:443
+    auth:
+      authenticator: googleclientauth
+    retry_on_failure: {enabled: true, initial_interval: 5s, max_elapsed_time: 300s}
+    sending_queue: {enabled: true, queue_size: 1000}
+
+service:
+  extensions: [googleclientauth]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, transform, batch]
+      exporters: [otlp]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlp]

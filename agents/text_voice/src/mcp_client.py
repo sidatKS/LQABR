@@ -3,26 +3,24 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
 import requests
 
-from lqabr_core import observability as obs
-from lqabr_core.gcp_id_token import auth_header
-from lqabr_core.crm.base import CRMError
-from lqabr_core.probability import SCHEDULING_THRESHOLD, apply_event
-from lqabr_core.types import EventType, VoiceLead
+from text_voice_core import observability as obs, settings
+from text_voice_core.gcp_id_token import auth_header
+from text_voice_core.types import CRMError, EventType, VoiceLead
+from text_voice_core.probability import SCHEDULING_THRESHOLD, apply_event
 
 try:
     from .tools import retrying_call
 except ImportError:  # pragma: no cover - uvicorn/pytest put src/ on sys.path
     from tools import retrying_call  # type: ignore
 
-MCP_BASE_URL = os.environ.get("LQABR_MCP_BASE_URL", "http://localhost:8080/mcp")
-MCP_TIMEOUT_SECONDS = int(os.environ.get("LQABR_MCP_TIMEOUT_SECONDS", "30"))
+MCP_BASE_URL = settings.MCP_BASE_URL
+MCP_TIMEOUT_SECONDS = settings.MCP_TIMEOUT_SECONDS
 
 _PROTOCOL_VERSION = "2025-06-18"
 
@@ -270,30 +268,66 @@ class StepFiveMCPClient:
             "lead_context": str(flat.get("lead_context") or ""),
         }
 
-    def _push_properties(self, contact_id: str,
-                         properties: Dict[str, Any]) -> Dict[str, Any]:
-        """One upsert_lead_profile call — the only write path; stamps last_modfied_voice."""
-        properties = dict(properties)
-        properties["last_modfied_voice"] = str(int(time.time() * 1000))
-        result = self._call_tool("upsert_lead_profile",
-                                 {"objectId": str(contact_id),
-                                  "properties": properties})
+    def _identity(self, object_id: str,
+                  lead: Optional[VoiceLead]) -> Dict[str, Any]:
+        """employee_id / company_id / decision_maker_flag — required on every
+        write, and the pair the server dedups on, so they identify the record.
+
+        Absent, not falsy: decision_maker is a HubSpot bool, so a legitimate
+        False would otherwise read as "missing" and block every write for a
+        contact who simply is not the decision maker.
+        """
+        if lead is None:
+            lead = self.get_lead(object_id)
+        if lead is None:
+            raise CRMError(f"cannot write for {object_id!r}: no such lead, so "
+                           f"the required identity fields are unknown")
+        identity = {"employee_id": lead.employee_id,
+                    "company_id": lead.company_id,
+                    "decision_maker_flag": lead.decision_maker}
+        missing = [k for k, v in identity.items() if v in (None, "")]
+        if missing:
+            raise CRMError(f"cannot write for {object_id!r}: {missing} "
+                           f"unknown/blank on the current record")
+        return identity
+
+    def _push_properties(self, object_id: str, properties: Dict[str, Any],
+                         lead: Optional[VoiceLead] = None) -> Dict[str, Any]:
+        """One upsert_lead_profile call — the only write path.
+
+        The tool takes FLAT keyword arguments: the identity fields and the
+        properties side by side at the top level. It does NOT take an
+        objectId/properties wrapper — that shape is rejected with five
+        validation errors (objectId and properties unexpected, the three
+        identity fields missing-required). Confirmed against the live server
+        2026-08-21, and again 2026-09-08 against the research agent's
+        working call.
+
+        `last_modfied_voice` keeps HubSpot's typo: that is the real property
+        name (verified live — last_modified_voice does not exist).
+        """
+        arguments = dict(self._identity(object_id, lead))
+        arguments.update(properties)
+        arguments["last_modfied_voice"] = str(int(time.time() * 1000))
+        result = self._call_tool("upsert_lead_profile", arguments)
         if isinstance(result, dict) and str(result.get("status", "")).lower() in (
                 "halted", "failed", "error"):
             raise CRMError(f"MCP upsert_lead_profile rejected the write: "
                            f"{json.dumps(result)[:300]}")
-        return {"status": "updated", "contact_id": contact_id,
-                "properties": properties}
+        return {"status": "updated", "object_id": object_id, **properties}
 
-    def upsert_lead(self, contact_id: str, voice_status: str) -> Dict[str, Any]:
+    def upsert_lead(self, object_id: str, voice_status: str,
+                    lead: Optional[VoiceLead] = None) -> Dict[str, Any]:
+        """Write one voice_status transition; the value is checked against the enum."""
         if voice_status not in _VOICE_STATUS_VALUES:
             raise CRMError(f"voice_status {voice_status!r} is not one of "
                            f"the voice_status values "
                            f"{_VOICE_STATUS_VALUES}")
         return self._push_properties(
-            contact_id, {"voice_status": voice_status})
+            object_id, {"voice_status": voice_status}, lead=lead)
 
-    def record_call_outcome(self, contact_id: str, outcome: str) -> Dict[str, Any]:
+    def record_call_outcome(self, object_id: str, outcome: str,
+                            lead: Optional[VoiceLead] = None) -> Dict[str, Any]:
         """Rev 5 Step 8: read probability, apply the outcome's event increments, one write."""
         events = _EVENTS_FOR_OUTCOME.get(outcome)
         if events is None:
@@ -303,7 +337,7 @@ class StepFiveMCPClient:
         result: Dict[str, Any] = {"object_id": object_id, "outcome": outcome,
                                   "events": [], "failures": []}
         try:
-            current = self.get_lead(contact_id)
+            current = lead if lead is not None else self.get_lead(object_id)
         except CRMError as exc:
             result["failures"].append(f"crm-error: pre-write read: {exc}")
             result["status"] = "partial"
@@ -318,7 +352,8 @@ class StepFiveMCPClient:
         properties = {"probability": str(probability),
                       "voice_status": _VOICE_STATUS_FOR_OUTCOME[outcome]}
         try:
-            result["upsert"] = self._push_properties(contact_id, properties)
+            result["upsert"] = self._push_properties(object_id, properties,
+                                                     lead=current)
         except CRMError as exc:
             result["failures"].append(f"crm-error: upsert_lead_profile: {exc}")
 

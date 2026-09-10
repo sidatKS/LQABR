@@ -43,7 +43,7 @@ class _Rows(logging.Handler):
         return found[-1]
 
 
-def _obs(name: str):
+def _run_log(name: str):
     logger = logging.getLogger(f"lqabr.test.tokens.{name}")
     logger.handlers.clear()
     logger.propagate = False
@@ -73,8 +73,8 @@ class _Fake:
 
 
 def _research(name: str, usage):
-    obs, sink = _obs(name)
-    provider = AnthropicWebSearch(settings=get_settings(refresh=True), obs=obs,
+    run_log, sink = _run_log(name)
+    provider = AnthropicWebSearch(settings=get_settings(refresh=True), run_log=run_log,
                                   client=_Fake(usage), api_key="test-only")
     return provider, sink
 

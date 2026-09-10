@@ -338,7 +338,7 @@ def test_a_retry_is_visible_on_the_audit_stream(monkeypatch):
 
     settings = get_settings(refresh=True)
     client = MCPClient(settings=settings,
-                       obs=ResearchLogging(run_id="res-retry", logger=logger))
+                       run_log=ResearchLogging(run_id="res-retry", logger=logger))
     client._sleep = lambda attempt: None
     monkeypatch.setattr(
         client._session, "request",

@@ -1,7 +1,19 @@
-"""ResearchLogging — structured, correlated, and free of secrets.
+"""ResearchLogging — files, console, and OTLP, all three, one call: structured, correlated, secret-free.
+
+**Everything above the `the OpenTelemetry OTLP sink` banner is byte-for-byte
+`research_logging.py`** — the redaction rules, the three streams, the step
+frame, the hop, the console renderer — so a fix ported into one reads
+straight across into the other. Below the banner is this module's own thing:
+OTLP export was added ON TOP of a working file sink, not instead of it, so
+`configure_logging()` here builds files (one fixed name per stream — see
+`stream_path`, no day-split naming), the console, AND the OTLP exporter,
+every call. `configure_logging()` keeps its exact signature so this drops in
+as
+
+    from research_core import research_logging as research_logging
 
 **agents/summary/packages/summary_core/summary_logging.py is a deliberate copy of
-this file.** Same structure, its own names: module `summary_logging.py`, class
+the file-sink version of this module.** Same structure, its own names: module `summary_logging.py`, class
 `SummaryLogging`, logger `lqabr.summary`, `sum-` run ids, `LQABR_SUMMARY_` env.
 When porting a fix, substitute those four and apply it there too.
 
@@ -22,9 +34,33 @@ Three streams, one run_id correlating them (matching the Summary Agent):
               never a credential
     system    startup/shutdown and coarse resource facts
 
-One JSON object per line, to stdout AND (when configured) to the agent's own
-log file. `redact()` runs over every field bag on the way out — recursively, so
-a credential nested inside a call's arguments is blanked too.
+OTLP export is an ADD-ON to this module's existing behaviour, not a
+replacement for it: console, the fixed per-stream files, and the OTLP export
+all run at once from one `configure_logging()` call. Nothing that worked
+before this module gained an exporter stops working now. The files are
+plain and uncapped (one fixed name per stream, no rotation), told
+apart by three filenames, the same way they always were; the exported records
+are additionally told apart by a `log_group` attribute (`process` | `audit` |
+`system`), because a collector backend has no filesystem to put three files
+in. Every redacted field rides along as an OTel attribute under `lqabr.`, with
+`run_id` unprefixed because it is the correlation key a person actually types
+into a search box. `redact()` still runs over every field bag on the way out —
+recursively, so a credential nested inside a call's arguments is blanked too,
+in the console line, in the file, and in the exported attributes alike.
+
+The exporter is attached to the `lqabr.research` logger, **not** to the Python
+root logger: this logger sets `propagate = False`, so the usual OpenTelemetry
+recipe of adding a handler to the root would export exactly nothing while
+looking perfectly healthy.
+
+Every OpenTelemetry import in this module is at the top of this file, in one
+guarded block — the SDK is an optional dependency, so a missing piece becomes
+`None` and a named reason rather than an ImportError at agent startup. An
+export that cannot be built — no `opentelemetry` installed, no collector
+listening — is reported once and the run continues console-only. A batching
+exporter also means an exiting process must flush: `shutdown_logging()` is
+registered with `atexit`, and `flush_logging()` is there for a CLI or a Job
+that wants to be sure before it returns.
 
 **Reading a run.** Every step of the pipeline is framed by a pair:
 
@@ -40,19 +76,101 @@ in full on the console — `preview()` decides how much, and
 
 from __future__ import annotations
 
+import atexit
 import contextvars
+import copy
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
-import re
 import sys
 import textwrap
 import time
 import uuid
-from contextlib import contextmanager
+import warnings
+from contextlib import contextmanager, nullcontext
+from urllib.parse import urlsplit
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+# ── OpenTelemetry: every import in this module, in one place ────────────────
+#
+# Guarded, because this module is imported by the agent at startup and the SDK
+# ships in `requirements.txt` but is still imported defensively here.
+# A bare import here would make "no OpenTelemetry installed" mean "no agent",
+# and PROJECT_CONTEXT's rule is that observability never kills a run. Missing
+# pieces become `None`, `configure_logging()` says so by name, and the agent
+# runs console-only.
+#
+# The handler is mid-move between two packages and the obvious import line is
+# the one that does not work. Verified against opentelemetry-sdk 1.44.0 and
+# opentelemetry-instrumentation-logging 0.65b0:
+#
+#   * `from opentelemetry.instrumentation.logging import LoggingHandler` —
+#     what the SDK's own deprecation notice tells you to write — raises
+#     ImportError. That package's `__init__` exports `LoggingInstrumentor`,
+#     which injects trace ids into a log FORMAT string, and does not
+#     re-export the handler.
+#   * `opentelemetry.instrumentation.logging.handler.LoggingHandler`, the
+#     SUBMODULE, is the real current handler. This is what runs today.
+#   * `opentelemetry.sdk._logs.LoggingHandler` still works and warns. It is a
+#     different class from the one above.
+#
+# So: the re-export first (a future release is then picked up with no edit),
+# the submodule that ships it today, then the deprecated one. All three take
+# the same `(level=, logger_provider=)` constructor, which is what makes the
+# fallback chain safe.
+
+OTEL_MISSING = ""                    #: why the SDK is unusable, or "" if it is
+
+try:                                 # tracing only - never sets OTEL_MISSING
+    from opentelemetry import trace as _otel_trace
+except ImportError:
+    _otel_trace = None                               # type: ignore[assignment]
+
+try:
+    from opentelemetry._logs import set_logger_provider
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+    from opentelemetry.sdk.resources import Resource
+except ImportError as _exc:          # noqa: N816 - module-level sentinel
+    set_logger_provider = LoggerProvider = None      # type: ignore[assignment]
+    BatchLogRecordProcessor = Resource = None        # type: ignore[assignment]
+    OTEL_MISSING = f"opentelemetry-sdk: {_exc}"
+
+try:
+    from opentelemetry.instrumentation.logging import (  # type: ignore
+        LoggingHandler)                                  # a future re-export
+except ImportError:
+    try:
+        from opentelemetry.instrumentation.logging.handler import (
+            LoggingHandler)                              # where it lives today
+    except ImportError:
+        try:
+            with warnings.catch_warnings():              # the deprecated one
+                warnings.simplefilter("ignore", DeprecationWarning)
+                from opentelemetry.sdk._logs import LoggingHandler
+        except ImportError as _exc:
+            LoggingHandler = None                        # type: ignore[assignment]
+            OTEL_MISSING = OTEL_MISSING or f"no LoggingHandler: {_exc}"
+
+# One exporter per protocol, and they are separate installable packages — so
+# they are imported separately and the missing one is only an error if it is
+# the one `LQABR_RESEARCH_OTLP_PROTOCOL` actually asks for.
+try:
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+        OTLPLogExporter as OTLPGrpcLogExporter)
+except ImportError:
+    OTLPGrpcLogExporter = None                           # type: ignore[assignment]
+
+try:
+    from opentelemetry.exporter.otlp.proto.http._log_exporter import (
+        OTLPLogExporter as OTLPHttpLogExporter)
+except ImportError:
+    OTLPHttpLogExporter = None                           # type: ignore[assignment]
+
+#: The exporter for a protocol, or None when that package is not installed.
+EXPORTERS = {"grpc": OTLPGrpcLogExporter, "http": OTLPHttpLogExporter}
+
 
 #: Names that hold a credential VALUE.
 _SECRET_VALUE_HINTS = ("token", "secret", "password", "api_key", "apikey",
@@ -114,11 +232,6 @@ def current_mode() -> str:
 
 def debugging() -> bool:
     return _MODE == "debug"
-
-
-def set_detail(enabled: bool) -> None:
-    """Deprecated alias for the old boolean: 0 -> terse, 1 -> normal."""
-    set_mode("normal" if enabled else "terse")
 
 
 def new_run_id() -> str:
@@ -258,7 +371,7 @@ class ResearchLogging:
     def step(self, name: str, **inputs: Any):
         """Frame one step: its inputs, its outputs, its duration.
 
-            with obs.step("read_lead", objectId=oid, tool=tool) as step:
+            with run_log.step("read_lead", objectId=oid, tool=tool) as step:
                 lead = hubspot.read_lead(oid)
                 if lead is None:
                     step.failed(reason)
@@ -273,18 +386,39 @@ class ResearchLogging:
         self.process.emit("step_in", step=name, **inputs)
         outcome = Step()
         started = time.monotonic()
-        try:
-            yield outcome
-        except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised
-            outcome.failed(f"{type(exc).__name__}: {exc}")
-            raise
-        finally:
-            self.process.emit("step_out", step=name, status=outcome.status,
-                              duration_ms=round((time.monotonic() - started) * 1000, 1),
-                              **outcome.fields)
+        with _step_span(name) as span:
+            # The two ids a person actually searches by. `run_id` finds the
+            # whole campaign; `objectId` finds the one lead someone reported.
+            # A trace id is generated for us and is no use to a human.
+            if span is not None and getattr(span, "is_recording", lambda: False)():
+                span.set_attribute("lqabr.run_id", self.run_id)
+                for key in ("objectId", "step", "tool"):
+                    if inputs.get(key):
+                        span.set_attribute(f"lqabr.{key}", str(inputs[key]))
+            try:
+                yield outcome
+            except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised
+                outcome.failed(f"{type(exc).__name__}: {exc}")
+                # No `span.record_exception(exc)` here: `start_as_current_span`
+                # already records it and sets ERROR as the exception leaves the
+                # block. Doing it again produced two identical `exception`
+                # events on every failing step.
+                raise
+            finally:
+                if (span is not None and outcome.status == "failed"
+                        and getattr(span, "set_status", None)):
+                    try:
+                        span.set_status(_otel_trace.Status(
+                            _otel_trace.StatusCode.ERROR,
+                            str(outcome.fields.get("reason", ""))[:300]))
+                    except Exception:      # noqa: BLE001
+                        pass
+                self.process.emit("step_out", step=name, status=outcome.status,
+                                  duration_ms=round((time.monotonic() - started) * 1000, 1),
+                                  **outcome.fields)
 
     # ---------------------------------------------------------------- hops
-    def hop(self, *, service: str, endpoint: str, method: str = "POST",
+    def outbound_call(self, *, service: str, endpoint: str, method: str = "POST",
             status: Optional[int] = None, duration_ms: Optional[float] = None,
             attempt: int = 1, error: str = "",
             params: Optional[Dict[str, Any]] = None,
@@ -315,9 +449,9 @@ class ResearchLogging:
 
 #: Per-context, NOT per-process. Two campaigns in flight — a webhook and a
 #: redelivery — used to fight over one module global, and whichever started
-#: last owned it: every lazy `get_obs()` after that, including the route
+#: last owned it: every lazy `get_run_log()` after that, including the route
 #: handlers' own audit lines, was stamped with an unrelated run's id.
-_OBS: contextvars.ContextVar["ResearchLogging | None"] = contextvars.ContextVar(
+_RUN_LOG: contextvars.ContextVar["ResearchLogging | None"] = contextvars.ContextVar(
     "lqabr_research_obs", default=None)
 
 
@@ -379,12 +513,12 @@ _SPILL_SUFFIXES = ("_preview",)
 _FIELD_CHARS = 90
 
 
-def _spills(key: str) -> bool:
+def _needs_own_line(key: str) -> bool:
     """True for a field that must never be truncated away."""
     return key in _DIAGNOSTIC or str(key).endswith(_SPILL_SUFFIXES)
 
 
-def _value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
+def _render_value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
     """One field, short enough to sit on a terminal line.
 
     In debug nothing is cut here: every field is routed to the continuation
@@ -394,7 +528,7 @@ def _value(value: Any, cap: int = _FIELD_CHARS, cut: str = "...") -> str:
     if _MODE == "debug":
         return str(value)
     if isinstance(value, dict):
-        inner = ", ".join(f"{k}={_value(v, 48, cut)}" for k, v in list(value.items())[:6])
+        inner = ", ".join(f"{k}={_render_value(v, 48, cut)}" for k, v in list(value.items())[:6])
         extra = len(value) - 6
         return "{" + inner + (f", +{extra}" if extra > 0 else "") + "}"
     if isinstance(value, (list, tuple)):
@@ -455,12 +589,12 @@ class ConsoleFormatter(logging.Formatter):
         budget = max(20, self._width - len(plain_head))
         # A diagnosis or a payload preview reads LAST and keeps whatever room is
         # left, so it is never cut in favour of a short bookkeeping field.
-        pairs.sort(key=lambda kv: _spills(kv[0]))
+        pairs.sort(key=lambda kv: _needs_own_line(kv[0]))
         rendered: List[str] = []
         spill: List[Tuple[str, str]] = []
         full = False
         for key, value in pairs:
-            if _spills(key):
+            if _needs_own_line(key):
                 text = str(value).replace("\n", " ").strip()
                 room = budget - used - len(key) - 2
                 if not full and len(text) <= room:
@@ -476,7 +610,7 @@ class ConsoleFormatter(logging.Formatter):
                 # loop does NOT: a diagnosis or a payload preview sorts last and
                 # must still reach the continuation lines below.
                 continue
-            piece = f"{key}={_value(value, _FIELD_CHARS, self._cut)}"
+            piece = f"{key}={_render_value(value, _FIELD_CHARS, self._cut)}"
             if used + len(piece) + 1 > budget:
                 # The marker itself costs width. Print it only if it fits —
                 # otherwise it is the one character that wraps the line.
@@ -486,11 +620,11 @@ class ConsoleFormatter(logging.Formatter):
                 full = True
                 continue
             rendered.append(f"{self._paint(key, _DIM)}="
-                            f"{_value(value, _FIELD_CHARS, self._cut)}")
+                            f"{_render_value(value, _FIELD_CHARS, self._cut)}")
             used += len(piece) + 1
         return rendered, spill
 
-    def _continue(self, line: str, spill: List[Tuple[str, str]], colour: str) -> str:
+    def _continuation_line(self, line: str, spill: List[Tuple[str, str]], colour: str) -> str:
         for key, text in spill:
             indent = " " * 11
             # `break_on_hyphens=False`: the default splits `UNIQUE-TAIL-MARKER`
@@ -561,22 +695,22 @@ class ConsoleFormatter(logging.Formatter):
                             spill.append((key, str(value)))
                 if data.get("error"):
                     spill.append(("error", str(data["error"])))
-                return self._continue(f"{self._paint(clock, _DIM)} {body}",
+                return self._continuation_line(f"{self._paint(clock, _DIM)} {body}",
                                       spill, _BLUE)
 
             # WHAT we sent — the tool and its arguments, the model and its knobs.
             if isinstance(sent, dict) and sent:
-                text = " ".join(f"{k}={_value(v, 48, self._cut)}" for k, v in sent.items())
+                text = " ".join(f"{k}={_render_value(v, 48, self._cut)}" for k, v in sent.items())
                 room = self._width - plain_len - 1
                 if room > 12:
-                    text = _value(text, room, self._cut)
+                    text = _render_value(text, room, self._cut)
                     body += " " + self._paint(text, _BLUE)
                     plain_len += 1 + len(text)
             if data.get("error"):
                 room = min(90, self._width - plain_len - 1)
                 if room > 12:
                     body += " " + self._paint(
-                        _value(str(data["error"]), room, self._cut), _RED)
+                        _render_value(str(data["error"]), room, self._cut), _RED)
             return f"{self._paint(clock, _DIM)} {body}"
 
         # A step frame: what went IN, what came OUT, how long it took.
@@ -602,7 +736,7 @@ class ConsoleFormatter(logging.Formatter):
             line = (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
                     f"{self._paint(head, colour)} "
                     f"{' '.join(lead + rendered)}".rstrip())
-            return self._continue(line, spill, colour)
+            return self._continuation_line(line, spill, colour)
 
         # A campaign is a queue, so say where you are in it. "3/5 · 2 left" is
         # the one thing a person watching a long run actually wants.
@@ -625,7 +759,7 @@ class ConsoleFormatter(logging.Formatter):
                 room = min(80, self._width - len(clock) - len(mark) - len(line) - 3)
                 if room > 12:
                     out += " " + self._paint(
-                        _value(str(data["error"]), room, self._cut), _RED)
+                        _render_value(str(data["error"]), room, self._cut), _RED)
             if done:
                 # A seam between one lead's block and the next. Over five leads
                 # the console is ~120 lines of one continuous wall; the eye
@@ -647,7 +781,7 @@ class ConsoleFormatter(logging.Formatter):
         line = (f"{self._paint(clock, _DIM)} {self._paint(mark, colour)} "
                 f"{self._paint(f'{event:<24}', colour)} "
                 f"{' '.join(rendered)}".rstrip())
-        return self._continue(line, spill, colour)
+        return self._continuation_line(line, spill, colour)
 
 
 def _console_handler(log_format: str, stream: Any = None) -> logging.Handler:
@@ -667,307 +801,648 @@ def _console_handler(log_format: str, stream: Any = None) -> logging.Handler:
     return handler
 
 
-#: The three streams. The stem of each file is OURS — a code constant, not a
-#: knob. The DIRECTORY is the knob, and the DATE is the day the record was
-#: written.
+# ── the OpenTelemetry OTLP sink ─────────────────────────────────────────────
+#
+# Everything above this line — the redaction rules, the three streams, the
+# step frame, the hop, the console renderer — is unchanged and is meant to
+# STAY byte-comparable with `research_logging.py`, so a fix ported into one
+# can be read straight across into the other. Below this line is this
+# module's own file handling: one FIXED, undated file per stream
+# (`research_process.log`, not `research_process_2026-09-03.log` — see
+# `stream_path`), plain and uncapped — no rotation, no size cap.
+# `configure_logging()` builds these handlers AND the OTLP handler AND the
+# console handler, every call — three independent sinks, not three
+# alternatives.
+
+#: The three streams. Still ours, still a code constant. They are no longer
+#: file stems — they are the value of the `log_group` attribute on every
+#: exported record, which is how a backend tells one stream from another now
+#: that they no longer live in three separate files.
 STREAMS = ("process", "audit", "system")
 
-#: Set when a sink could not be opened, so `/health` can say so.
-_SINK_STATE: Dict[str, Any] = {"dir": "", "files": {}, "degraded": []}
+#: Default collector address. gRPC OTLP, the sidecar on localhost — the shape
+#: the Cloud Run collector deployment uses.
+_OTLP_DEFAULT_ENDPOINT = "localhost:4317"
+_OTLP_DEFAULT_HTTP_ENDPOINT = "http://localhost:4318/v1/logs"
+
+#: How deep a nested field is flattened into dotted attribute names before the
+#: rest is stringified. `params` is a dict inside a field and a person wants
+#: `lqabr.params.tool`, not a JSON blob.
+_MAX_ATTR_DEPTH = 4
+
+#: What the sink actually is right now — for `/health`. `dir` and `files` are
+#: kept, always empty, because `service_app.py` spreads this dict into its
+#: health payload and `tests/test_log_sinks.py` reads both keys by name. An
+#: empty `files` is the honest answer here: this module writes no files.
+_SINK_STATE: Dict[str, Any] = {"dir": "", "files": {}, "degraded": [],
+                               "exporter": "none", "endpoint": "",
+                               "protocol": "", "service_name": "",
+                               "headers_from": ""}
 
 
 def sink_state() -> Dict[str, Any]:
-    """What the file sinks actually are right now — for `/health`."""
+    """What the log sinks actually are right now — for `/health`."""
     return {"dir": _SINK_STATE["dir"],
             "files": dict(_SINK_STATE["files"]),
-            "degraded": list(_SINK_STATE["degraded"])}
+            "degraded": list(_SINK_STATE["degraded"]),
+            "exporter": _SINK_STATE["exporter"],
+            "endpoint": _SINK_STATE["endpoint"],
+            "protocol": _SINK_STATE["protocol"],
+            "service_name": _SINK_STATE["service_name"],
+            "headers_from": _SINK_STATE["headers_from"]}
 
 
-#: One file per UTC day, with the date IN THE NAME rather than as a rename
-#: target. These files live on a Windows filesystem where the service and the
-#: CLI are both live, and renaming a file another handle holds is
-#: `PermissionError` [WinError 32] — the scar `_GuardedRotatingFileHandler`
-#: exists for. Nothing is ever renamed here: both processes append to the same
-#: day's file, and appends of a line are atomic.
-#:
-#: UTC, not local. Cloud Run runs UTC and every `ts` inside the records is UTC,
-#: so a local split would file a run under a name that disagrees with every
-#: line in it.
-_DAY_FMT = "%Y-%m-%d"
-
-#: Only OUR dated files are ever swept. A legacy `agent.log`, or anything else
-#: a person left in the directory, is not matched and not touched.
-_DAY_NAME = re.compile(r"^research_(?:" + "|".join(STREAMS) +
-                       r")_(\d{4}-\d{2}-\d{2})\.log$")
+def _degraded(reason: str) -> None:
+    """Record a sink problem once. `/health` reports it; the run continues."""
+    if reason not in _SINK_STATE["degraded"]:
+        _SINK_STATE["degraded"].append(reason)
 
 
-def utc_day(when: float | None = None) -> str:
-    """The day a record belongs to. `None` means now."""
-    return time.strftime(_DAY_FMT, time.gmtime(when))
+# ── files — the add-on's foundation, ported verbatim from research_logging.py ──
+#
+# This is NOT a rewrite: OTLP export was added ON TOP of the working file
+# sink, not in place of it, so this section is the file-sink module's own
+# file-handling code, byte-for-byte. `configure_logging()` below builds these
+# handlers AND the OTLP handler AND the console handler, every call — three
+# independent sinks, not three alternatives.
+
+def stream_path(log_dir: str, stream: str) -> str:
+    """`<log_dir>/research_process.log` — one fixed file per stream, always
+    the same name. No date in it: a day boundary must never change which file
+    a `tail -f` is watching, and a service that stays up for a week keeps
+    writing the one file someone already has open. The file is uncapped —
+    no size cap, no rotation, no day-based sweep — it simply grows."""
+    return os.path.join(log_dir, f"research_{stream}.log")
 
 
-def daily_path(log_dir: str, stream: str, day: str = "") -> str:
-    """`<log_dir>/research_process_2026-08-31.log` — the whole naming rule."""
-    return os.path.join(log_dir, f"research_{stream}_{day or utc_day()}.log")
+def _file_handler(path: str, stream_name: str) -> Optional[logging.Handler]:
+    """One stream's file, or None with a named reason on the system stream.
 
-
-class _GuardedRotatingFileHandler(RotatingFileHandler):
-    """A rollover that cannot take the process with it.
-
-    These files live on a Windows filesystem and the service and the CLI can
-    both be live at once; `doRollover()` then raises `PermissionError`
-    [WinError 32] on the rename, uncaught, and every subsequent emit spams
-    stderr. ResearchLogging must never kill a run — so a failed rollover is
-    reported ONCE and the handler keeps appending to the file it has.
+    Plain, uncapped `FileHandler` — no size cap, no rotation. That also
+    removes the Windows `doRollover()` [WinError 32] hazard this used to
+    guard against (the service and the CLI can hold the same file open):
+    there is no rollover left to fail.
     """
-
-    def __init__(self, *args: Any, stream_name: str = "", **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._lqabr_stream = stream_name
-        self._rollover_failed = False
-
-    def doRollover(self) -> None:  # noqa: N802 - logging's own spelling
-        if self._rollover_failed:
-            return                      # already reported; keep appending
-        try:
-            super().doRollover()
-        except OSError as exc:
-            self._rollover_failed = True
-            _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:rotate")
-            logging.getLogger("lqabr.research").warning(json.dumps(
-                {"stream": "system", "event": "log_rotate_failed",
-                 "sink": self._lqabr_stream, "path": self.baseFilename,
-                 "reason": f"{type(exc).__name__}: {exc}",
-                 "detail": "the file is still being appended to; rollover is "
-                           "not retried for this handler"}))
-
-
-def _file_handler(path: str, stream_name: str, max_bytes: int,
-                  backups: int) -> Optional[logging.Handler]:
-    """One stream's file, or None with a named reason on the system stream."""
     try:
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        handler = _GuardedRotatingFileHandler(
-            path, maxBytes=max(0, int(max_bytes)), backupCount=max(0, int(backups)),
-            encoding="utf-8", stream_name=stream_name)
+        handler = logging.FileHandler(path, encoding="utf-8")
     except OSError as exc:
-        _SINK_STATE["degraded"].append(f"{stream_name}:open")
+        _degraded(f"{stream_name}:open")
         logging.getLogger("lqabr.research").warning(json.dumps(
             {"stream": "system", "event": "log_sink_unavailable",
              "sink": stream_name, "path": path,
              "reason": f"{type(exc).__name__}: {exc}",
-             "detail": "the run continues; this stream is console-only"}))
+             "detail": "the run continues; this stream is console/OTLP-only"}))
         return None
     handler.setFormatter(logging.Formatter("%(message)s"))
     handler._lqabr_path = path  # type: ignore[attr-defined]
     return handler
 
 
-def _sweep_old_days(log_dir: str, keep_days: int) -> None:
-    """Delete dated files outside the retention window. Never raises.
 
-    Daily files are never renamed, so `backupCount` no longer bounds anything
-    — this is what stops the directory growing without limit. It runs at boot
-    and again whenever a handler turns the page, so a service that stays up for
-    a month still prunes.
+# ── record → OTel attributes ────────────────────────────────────────────────
+# A log record here is already a flat-ish dict of redacted fields. OTel
+# attributes are primitives or homogeneous sequences of primitives, so a dict
+# handed over whole is dropped by the SDK with a warning per record. These two
+# functions are the whole translation, and they are pure so they can be tested
+# without a collector, without the SDK, and without a network.
 
-    `keep_days` counts the window INCLUSIVE of today: 7 keeps today and the six
-    days before it. 0 or less disables the sweep entirely.
-    """
-    if keep_days <= 0:
+def _scalar(value: Any) -> Any:
+    """One attribute value the SDK will accept."""
+    if isinstance(value, bool) or isinstance(value, (int, float, str)):
+        return value
+    return str(value)
+
+
+def _flatten(prefix: str, value: Any, out: Dict[str, Any], depth: int = 0) -> None:
+    if value is None or value == "":
         return
-    cutoff = utc_day(time.time() - (keep_days - 1) * 86_400)
-    try:
-        names = sorted(os.listdir(log_dir))
-    except OSError:
-        return                       # no directory yet, nothing to sweep or say
-    removed: List[str] = []
-    for name in names:
-        match = _DAY_NAME.match(name)
-        if not match or match.group(1) >= cutoff:
+    if isinstance(value, dict):
+        if not value:
+            return
+        if depth < _MAX_ATTR_DEPTH:
+            for key, held in value.items():
+                _flatten(f"{prefix}.{key}", held, out, depth + 1)
+        else:
+            out[prefix] = json.dumps(value, default=repr, ensure_ascii=False)
+        return
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return
+        # Homogeneous on purpose: a mixed list is rejected by the SDK, and a
+        # list of strings is still readable in every backend.
+        out[prefix] = [str(item) for item in value]
+        return
+    out[prefix] = _scalar(value)
+
+
+def otel_attributes(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The attributes one emitted record becomes.
+
+    `log_group` carries the stream — process | audit | system — because that
+    is the name the rest of the platform's OTel work already uses, and it is
+    what a backend filters on now that the three files are gone. `stream` is
+    kept alongside it so a query written against our own JSON still matches.
+
+    Everything else is namespaced under `lqabr.` so an agent field can never
+    collide with a semantic-convention attribute the SDK or the collector
+    sets. `run_id` stays unprefixed: it is the correlation key this whole
+    module exists for, and a person types it into a search box.
+    """
+    # `redact()` again, deliberately. The record reached here already redacted
+    # by `_Stream.emit`, and redaction is idempotent — but this function is
+    # public, pure and testable, and a caller who hands it a raw bag must not
+    # be able to put a credential on the wire. Cheap insurance on the one rule
+    # this project does not bend.
+    record = redact(dict(record))
+    out: Dict[str, Any] = {}
+    stream = record.get("stream")
+    if stream:
+        out["log_group"] = str(stream)
+        out["stream"] = str(stream)
+    for key in ("run_id", "event"):
+        if record.get(key):
+            out[key] = str(record[key])
+    ts = record.get("ts")
+    if isinstance(ts, (int, float)):
+        out["ts"] = float(ts)
+    for key, value in record.items():
+        if key in ("stream", "run_id", "event", "ts"):
             continue
-        try:
-            os.remove(os.path.join(log_dir, name))
-        except OSError as exc:
-            # One report, then stop trying. A locked file on Windows would
-            # otherwise produce a line per file per boot, forever.
-            if "retention:delete" not in _SINK_STATE["degraded"]:
-                _SINK_STATE["degraded"].append("retention:delete")
-                logging.getLogger("lqabr.research").warning(json.dumps(
-                    {"stream": "system", "event": "log_retention_failed",
-                     "path": os.path.join(log_dir, name),
-                     "reason": f"{type(exc).__name__}: {exc}",
-                     "detail": "the run continues; this file is left in place "
-                               "and the sweep is not retried this boot"}))
-            break
-        removed.append(name)
-    if removed:
-        logging.getLogger("lqabr.research").warning(json.dumps(
-            {"stream": "system", "event": "log_retention_swept",
-             "dir": log_dir, "keep_days": keep_days, "cutoff": cutoff,
-             "removed": removed}))
+        _flatten(f"lqabr.{str(key)}", value, out)
+    return out
 
 
-class _DailyFileHandler(logging.FileHandler):
-    """One file per UTC day, and never a rename.
+# ── the handler ─────────────────────────────────────────────────────────────
 
-    The day is re-checked on every emit rather than computed once when the
-    handler is built: the service can be started on Monday and still be up on
-    Thursday, and a name chosen at boot would put three days in Monday's file.
+#: Built once, kept so `shutdown_logging()` can flush it. A BatchLogRecord-
+#: Processor holds records in memory until its interval elapses; a CLI run
+#: that exits without flushing exports NOTHING, which is the failure mode this
+#: reference is here to prevent.
+_PROVIDER: Any = None
+_PROVIDER_PUBLISHED = False
+_ATEXIT_REGISTERED = False
 
-    Turning the page opens the new file BEFORE closing the old one, so a
-    failure leaves the handler writing where it already was rather than with no
-    stream at all. That failure is reported once and not retried — the same
-    contract `_GuardedRotatingFileHandler` keeps for size rollover, for the
-    same reason: logging must never kill a run.
+
+#: The tracer this module opens step spans on. Named for the agent so a
+#: backend can tell our spans from the auto-instrumentation's HTTP ones.
+_TRACER_NAME = "lqabr.research"
+
+
+def _step_span(name: str):
+    """A span for one step, or a no-op context manager.
+
+    Tracing is OPTIONAL here exactly as export is: no SDK, or no configured
+    provider, must not change what a step does. `start_as_current_span`
+    against the API's default no-op provider is already harmless, so the only
+    guard needed is the import one.
+    """
+    if _otel_trace is None:
+        return nullcontext()
+    try:
+        return _otel_trace.get_tracer(_TRACER_NAME).start_as_current_span(name)
+    except Exception:          # noqa: BLE001 - a sink cannot kill a run
+        return nullcontext()
+
+
+def current_trace_context() -> Dict[str, str]:
+    """`{otelTraceID, otelSpanID}` for the span in flight, or `{}`.
+
+    The SDK's LoggingHandler reads these off the record. It normally sets them
+    itself from the ambient span, but this module attaches its OWN handler to
+    `lqabr.research` (the logger sets `propagate = False`, so the root handler
+    auto-instrumentation installs is never reached), and a record built by
+    `_Stream.emit` carries no span context of its own. Reading it here is what
+    links a log line to the span it happened inside: click a slow MCP span,
+    see the `outbound_call` and `mcp_tool_result` records within it.
+
+    Silent by design. Tracing is optional — no SDK, no auto-instrumentation,
+    or no span in flight all mean the same thing to a log record: no ids, and
+    nothing said about it.
+    """
+    if _otel_trace is None:
+        return {}
+    try:
+        ctx = _otel_trace.get_current_span().get_span_context()
+        if not ctx or not ctx.is_valid:
+            return {}
+        return {"otelTraceID": format(ctx.trace_id, "032x"),
+                "otelSpanID": format(ctx.span_id, "016x")}
+    except Exception:                # noqa: BLE001 - a sink cannot kill a run
+        return {}
+
+
+def _make_stream_handler(base: Any = None) -> Any:
+    """`LoggingHandler`, taught the three streams.
+
+    The SDK handler turns whatever it finds in `vars(record)` into attributes.
+    Our record rides as ONE key — `lqabr_record`, a dict — which the SDK would
+    reject wholesale. So the record is copied, that key is swapped for the flat
+    attributes it expands into, and the copy is what goes downstream: the
+    original is left untouched, so the console handler still renders it
+    whatever order the handlers were added in.
     """
 
-    def __init__(self, log_dir: str, stream_name: str,
-                 keep_days: int = 0) -> None:
-        self._lqabr_dir = log_dir
-        self._lqabr_stream = stream_name
-        self._lqabr_keep = keep_days
-        self._day = utc_day()
-        self._roll_failed = False
-        super().__init__(daily_path(log_dir, stream_name, self._day),
-                         encoding="utf-8")
+    base = LoggingHandler if base is None else base
 
-    def emit(self, record: logging.LogRecord) -> None:
-        day = utc_day()
-        if day != self._day and not self._roll_failed:
-            self._turn_the_page(day)
-        super().emit(record)
+    class _OtelStreamHandler(base):  # type: ignore[misc, valid-type]
 
-    def _turn_the_page(self, day: str) -> None:
-        new_path = daily_path(self._lqabr_dir, self._lqabr_stream, day)
-        self.acquire()          # an RLock; emit() already holds it, so this is
-        try:                    # re-entrant rather than a deadlock
-            previous_stream = self.stream
-            previous_path, previous_day = self.baseFilename, self._day
-            self.baseFilename, self._day = new_path, day
+        def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
+            data = getattr(record, "lqabr_record", None)
+            if isinstance(data, dict):
+                record = copy.copy(record)
+                record.__dict__ = dict(record.__dict__)
+                record.__dict__.pop("lqabr_record", None)
+                record.__dict__.update(otel_attributes(data))
+                # Correlation. Set on the COPY, so the console handler and the
+                # file sinks keep rendering the record exactly as before.
+                record.__dict__.update(current_trace_context())
             try:
-                self.stream = self._open()          # the NEW file first
-            except OSError as exc:
-                self.baseFilename, self._day = previous_path, previous_day
-                self.stream = previous_stream       # keep the handle we hold
-                self._roll_failed = True
-                _SINK_STATE["degraded"].append(f"{self._lqabr_stream}:day")
-                logging.getLogger("lqabr.research").warning(json.dumps(
-                    {"stream": "system", "event": "log_day_roll_failed",
-                     "sink": self._lqabr_stream, "path": new_path,
+                super().emit(record)
+            except Exception as exc:  # noqa: BLE001 - a sink cannot kill a run
+                _degraded("otlp:emit")
+                if _SINK_STATE.get("emit_reported"):
+                    return
+                _SINK_STATE["emit_reported"] = True
+                sys.stderr.write(json.dumps(
+                    {"stream": "system", "event": "log_export_failed",
                      "reason": f"{type(exc).__name__}: {exc}",
-                     "detail": f"still appending to {previous_path}; the day "
-                               "roll is not retried for this handler"}))
-                return
-            if previous_stream is not None:
-                try:
-                    previous_stream.flush()
-                    previous_stream.close()
-                except OSError:
-                    pass                    # the new file is already open
-            _SINK_STATE["files"][self._lqabr_stream] = new_path
-        finally:
-            self.release()
-        _sweep_old_days(self._lqabr_dir, self._lqabr_keep)
+                     "detail": "the run continues; this is reported once and "
+                               "the handler keeps accepting records"}) + "\n")
+
+    return _OtelStreamHandler
 
 
-def _daily_handler(log_dir: str, stream_name: str,
-                   keep_days: int) -> Optional[logging.Handler]:
-    """One stream's file for today, or None with a named reason."""
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        handler = _DailyFileHandler(log_dir, stream_name, keep_days)
-    except OSError as exc:
-        _SINK_STATE["degraded"].append(f"{stream_name}:open")
-        logging.getLogger("lqabr.research").warning(json.dumps(
+#: The OTLP/HTTP signal path. gRPC has no equivalent: it addresses a service,
+#: not a URL.
+_OTLP_HTTP_LOGS_PATH = "/v1/logs"
+
+
+def http_logs_endpoint(endpoint: str) -> str:
+    """`http://host:4318` -> `http://host:4318/v1/logs`; an endpoint that
+    already carries a path is returned untouched.
+
+    The SDK appends the signal path only when it reads the endpoint from the
+    environment ITSELF. Passed explicitly to the exporter - which is what this
+    module does, because the endpoint may come from
+    LQABR_RESEARCH_OTLP_ENDPOINT - it is used verbatim, and a bare host POSTs
+    to `/` for a 404.
+
+    The failure is silent: the exporter retries a 404 and reports nothing, so
+    the agent exports NO logs while traces and metrics keep flowing - those
+    are configured by the auto-instrumentation from the environment, so they
+    DO get the path appended. That asymmetry is the only tell.
+    """
+    text = (endpoint or "").strip()
+    if not text:
+        return text
+    parts = urlsplit(text if "//" in text else f"//{text}")
+    # A path of "" or "/" means none was given. Anything else is the caller's.
+    if parts.path.strip("/"):
+        return text
+    return text.rstrip("/") + _OTLP_HTTP_LOGS_PATH
+
+
+def _otlp_handler(*, service_name: str, endpoint: str, protocol: str,
+                  insecure: bool, headers: str, headers_from: str,
+                  timeout_seconds: int) -> Optional[logging.Handler]:
+    """The OTLP handler, or None with a named reason on stderr.
+
+    Every failure here is survivable by design: no OpenTelemetry installed, no
+    collector listening, a bad endpoint. The agent falls back to console-only
+    and says so, because PROJECT_CONTEXT's rule is that observability never
+    kills a run.
+    """
+    global _PROVIDER, _PROVIDER_PUBLISHED, _ATEXIT_REGISTERED
+    exporter_class = EXPORTERS.get(protocol)
+    missing = OTEL_MISSING or (
+        "" if exporter_class is not None else
+        f"opentelemetry-exporter-otlp-proto-{protocol} is not installed")
+    if missing:
+        # Named, not swallowed: which package, and what to install. The
+        # import itself already happened at the top of this file.
+        _degraded("otlp:import")
+        sys.stderr.write(json.dumps(
             {"stream": "system", "event": "log_sink_unavailable",
-             "sink": stream_name, "path": daily_path(log_dir, stream_name),
-             "reason": f"{type(exc).__name__}: {exc}",
-             "detail": "the run continues; this stream is console-only"}))
+             "sink": "otlp", "protocol": protocol, "reason": missing,
+             "detail": "the run continues and this agent is console-only. "
+                       "pip install -r requirements.txt"}) + "\n")
         return None
-    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    attributes: Dict[str, Any] = {"service.name": service_name,
+                                  "lqabr.agent": "research"}
+
+    try:
+        resource = Resource.create(attributes)
+        # `insecure` is a gRPC channel option and the HTTP exporter has no
+        # such parameter — the scheme in the endpoint carries it there.
+        # http only: gRPC addresses a service, not a URL.
+        wire_endpoint = (http_logs_endpoint(endpoint) if protocol == "http"
+                         else endpoint)
+        options: Dict[str, Any] = {"endpoint": wire_endpoint,
+                                   "timeout": max(1, int(timeout_seconds)),
+                                   "headers": _headers_dict(headers) or None}
+        if protocol == "grpc":
+            options["insecure"] = insecure
+        exporter = exporter_class(**options)
+        provider = LoggerProvider(resource=resource)
+        provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
+    except Exception as exc:  # noqa: BLE001 - a sink cannot kill a run
+        _degraded("otlp:build")
+        sys.stderr.write(json.dumps(
+            {"stream": "system", "event": "log_sink_unavailable",
+             "sink": "otlp", "endpoint": endpoint, "protocol": protocol,
+             "reason": f"{type(exc).__name__}: {exc}",
+             "detail": "the run continues; this agent is console-only"}) + "\n")
+        return None
+
+    # Shut the previous one down rather than leaking its exporter thread across
+    # a reconfigure — `configure_logging` is idempotent and gets called twice
+    # in a test run and once per lifespan in the service.
+    _shutdown_provider()
+    _PROVIDER = provider
+    if not _PROVIDER_PUBLISHED:
+        # The global provider, so a library that logs through OTel on its own
+        # lands in the same place. Set once: the SDK warns and ignores a
+        # second call, and a warning on every reconfigure is noise.
+        try:
+            set_logger_provider(provider)
+            _PROVIDER_PUBLISHED = True
+        except Exception:  # noqa: BLE001 - the handler below works regardless
+            pass
+    if not _ATEXIT_REGISTERED:
+        atexit.register(shutdown_logging)
+        _ATEXIT_REGISTERED = True
+
+    handler = _make_stream_handler(LoggingHandler)(
+        level=logging.NOTSET, logger_provider=provider)
+    _SINK_STATE.update({"exporter": "otlp", "endpoint": wire_endpoint,
+                        "protocol": protocol, "service_name": service_name,
+                        "headers_from": headers_from})
     return handler
 
 
-def configure_logging(level: str = "INFO", log_dir: str = "",
-                      log_format: str = "auto", detail: bool = True,
-                      max_bytes: int = 52_428_800, backups: int = 5,
-                      log_file: str = "", mode: str = "",
-                      console: Any = None, retention_days: int = 7) -> None:
-    """Readable console on the parent, one JSON file per stream on the children.
+def _headers_dict(raw: str) -> Dict[str, str]:
+    """`key=value,key2=value2` — the OTLP env-var spelling — as a dict.
 
-        lqabr.research                 <- ConsoleFormatter, propagate=False
-        ├── lqabr.research.process     -> research_process_2026-08-31.log
-        ├── lqabr.research.audit       -> research_audit_2026-08-31.log
-        └── lqabr.research.system      -> research_system_2026-08-31.log
-
-    Three files per UTC day, one story on screen. Idempotent across calls.
-
-    The date is part of the NAME, so nothing is ever renamed and the service
-    and the CLI can both append to the same day's file. `retention_days` is
-    what bounds the directory now that no file rolls; `max_bytes` / `backups`
-    apply only to the deprecated single-file sink below.
-
-    `log_file` is the deprecated single-file sink: when set, every stream goes
-    to that one file and the boot says so, rather than the setting being
-    silently ignored.
+    The VALUE never reaches a log line here or anywhere else: only the name of
+    the variable it came from is ever recorded (`headers_from` in
+    `sink_state()`), which is the project's rule for a credential.
     """
-    if mode:
-        set_mode(mode)
-    else:
-        set_detail(detail)
+    out: Dict[str, str] = {}
+    for pair in str(raw or "").split(","):
+        if "=" in pair:
+            key, _, value = pair.partition("=")
+            key, value = key.strip(), value.strip()
+            if key:
+                out[key] = value
+    return out
+
+
+def _shutdown_provider() -> None:
+    global _PROVIDER
+    provider, _PROVIDER = _PROVIDER, None
+    if provider is None:
+        return
+    try:
+        provider.shutdown()             # flushes, then stops the export thread
+    except Exception:  # noqa: BLE001 - shutting down cannot be the thing that fails
+        _degraded("otlp:shutdown")
+
+
+def flush_logging(timeout_millis: int = 5_000) -> bool:
+    """Push everything queued to the collector NOW.
+
+    A `BatchLogRecordProcessor` holds records until its schedule elapses. A CLI
+    run, a Cloud Run Job, or a container that exits promptly will otherwise
+    drop the entire run's logs — the one failure this sink has that the file
+    sink did not. Call it before exiting; `shutdown_logging` calls it for you.
+    """
+    if _PROVIDER is None:
+        return False
+    try:
+        return bool(_PROVIDER.force_flush(timeout_millis))
+    except Exception:  # noqa: BLE001
+        _degraded("otlp:flush")
+        return False
+
+
+def shutdown_logging() -> None:
+    """Flush and stop. Registered with `atexit` when the sink is built."""
+    _shutdown_provider()
+
+
+# ── configuration ───────────────────────────────────────────────────────────
+
+def _system_event(event: str, **fields: Any) -> None:
+    """One line from the sink itself, on the system stream.
+
+    It matters that these go through `_Stream`, not through
+    `root.warning(json.dumps(...))` as the file-sink module does. A bare
+    warning carries no `lqabr_record`, so the console renders it as a raw JSON
+    blob AND — the part that actually bites — it reaches the exporter with no
+    `log_group`, no `run_id` and no attributes at all. The one place the sink
+    talks about itself would be the one place a backend query misses.
+    """
+    _Stream("system", get_run_log().run_id,
+            logging.getLogger("lqabr.research").getChild("system")).emit(
+                event, **fields)
+
+
+def _env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def configure_logging(level: str = "INFO", log_dir: str = "",
+                      log_format: str = "auto", mode: str = "",
+                      console: Any = None) -> None:
+    """Readable console on the parent, OTLP export on the same parent.
+
+        lqabr.research                 <- ConsoleFormatter + OTLP, propagate=False
+        ├── lqabr.research.process     -> log_group=process
+        ├── lqabr.research.audit       -> log_group=audit
+        └── lqabr.research.system      -> log_group=system
+
+    Three independent sinks, every call, not three alternatives:
+
+        lqabr.research                 <- ConsoleFormatter + OTLP, propagate=False
+        ├── lqabr.research.process     -> research_process.log + log_group=process
+        ├── lqabr.research.audit       -> research_audit.log   + log_group=audit
+        └── lqabr.research.system      -> research_system.log  + log_group=system
+
+    Console, files and OTLP are three independent sinks, built by one call —
+    not three alternatives. The files are one fixed, undated name per stream,
+    plain and uncapped: no rotation, no size cap, no day-based sweep. `log_dir`
+    is the only file knob; every OTLP knob is env-only (listed below).
+
+    **The OTLP handler goes on `lqabr.research`, not on the Python root
+    logger.** This is the single thing that makes the difference between
+    working and silently doing nothing. This logger sets `propagate = False`
+    (a few lines down, and it has to: it is what stops every record being
+    printed twice). A handler installed on the root logger — which is what
+    `logging.getLogger().addHandler(...)` in the usual OpenTelemetry recipe
+    does — is therefore never reached by a single record this agent emits. The
+    collector starts, the pipeline is healthy, and nothing arrives. Attaching
+    here instead means all three child streams reach the exporter by ordinary
+    propagation — the same propagation that already carries them to their
+    files, since a file handler sits on the CHILD logger, not the parent.
+
+    The signature is IDENTICAL to the file-sink module's `configure_logging` —
+    no OTLP-specific parameters at all — so this stays a genuine drop-in:
+    `import ... research_logging as research_logging` and every existing
+    call site (agent.py, service_app.py) keeps working unmodified, with the
+    exact same file behaviour it always had, now plus OTLP.
+
+    Every OTLP knob is env-only, on purpose: PROJECT_CONTEXT's rule is "config
+    is env-driven, a rename outside is a config change, never a code edit",
+    and there is exactly one production caller of each of `agent.py` and
+    `service_app.py` — a Python-level override parameter would be dead code
+    the moment it shipped, reachable only from a test. If a caller-supplied
+    override is ever actually needed, add it then, wired to something that
+    calls it.
+
+        LQABR_RESEARCH_OTLP_ENDPOINT     collector address  (localhost:4317)
+        LQABR_RESEARCH_OTLP_PROTOCOL     grpc | http        (grpc)
+        LQABR_RESEARCH_OTLP_INSECURE     1 for a sidecar on localhost   (1)
+        LQABR_RESEARCH_OTLP_HEADERS_ENV  the NAME of the var holding the
+                                         OTLP headers — never the headers
+        LQABR_RESEARCH_OTEL_SERVICE_NAME resource service.name
+        LQABR_RESEARCH_OTLP_ENABLED      0 to run console-only
+
+    The standard `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`
+    and `OTEL_SERVICE_NAME` are read as fallbacks, so a collector sidecar that
+    already injects them needs no LQABR-specific configuration at all.
+    """
+    set_mode(mode or "normal")
+
     root = logging.getLogger("lqabr.research")
-    if not root.handlers:
+    # OURS, by flag — not "is this logger empty?". The file-sink module asks
+    # `if not root.handlers`, and any foreign handler on this logger then
+    # suppresses the console for the whole process: no narrative on screen,
+    # and `propagate` left True so every record also climbs to the root
+    # logger and prints a second time. pytest's own capture handler is enough
+    # to trigger it, which is how it was found.
+    if not any(getattr(existing, "_lqabr_console", False)
+               for existing in root.handlers):
         # `console` is stderr for the CLI, whose stdout IS the result document.
-        # It must be chosen HERE: the sink's own warnings (log_sink_legacy,
-        # log_sink_unavailable) are emitted inside this function, before any
-        # caller could redirect a handler — which is exactly how a
-        # `log_sink_legacy` line ended up in front of the CLI's JSON.
-        root.addHandler(_console_handler(log_format, console))
-        root.propagate = False
+        # It must be chosen HERE: the sink's own notes are emitted inside this
+        # function, before any caller could redirect a handler.
+        handler = _console_handler(log_format, console)
+        handler._lqabr_console = True  # type: ignore[attr-defined]
+        root.addHandler(handler)
+    root.propagate = False
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
 
-    _SINK_STATE["dir"] = log_dir
-    _SINK_STATE["files"] = {}
-    _SINK_STATE["degraded"] = []
-
+    # Children carry nothing of their own now. Any handler left over from a
+    # previous configuration — including a file handler from the other module
+    # in a mixed test run — is removed, so a record is exported exactly once.
     for stream in STREAMS:
         child = root.getChild(stream)
         child.setLevel(logging.NOTSET)          # severity is the parent's call
         for existing in list(child.handlers):
             child.removeHandler(existing)
 
-    if log_file:
-        # Deprecated, and announced rather than ignored.
-        handler = _file_handler(log_file, "legacy", max_bytes, backups)
-        if handler is not None:
-            for stream in STREAMS:
+    # Drop any OTLP handler from a previous call before adding a new one:
+    # `configure_logging` is idempotent, and two handlers means two exports.
+    for existing in list(root.handlers):
+        if getattr(existing, "_lqabr_otlp", False):
+            root.removeHandler(existing)
+            try:
+                existing.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    _SINK_STATE.update({"dir": log_dir, "files": {}, "degraded": [],
+                        "exporter": "none", "endpoint": "", "protocol": "",
+                        "service_name": "", "headers_from": ""})
+    _SINK_STATE.pop("emit_reported", None)
+
+    # Held, not emitted yet: a note sent before the exporter is attached is a
+    # note the collector never sees. Everything below reports at the end,
+    # through `_system_event`, once every sink for this call is in place.
+    pending: List[Tuple[str, Dict[str, Any]]] = []
+
+    # ── files — unconditional, exactly the file-sink module's own logic ──────
+    # One fixed file per stream — `research_process.log`, no date, no size
+    # cap, no rotation. The file simply grows.
+    if log_dir:
+        for stream in STREAMS:
+            path = stream_path(log_dir, stream)
+            handler = _file_handler(path, stream)
+            if handler is not None:
                 root.getChild(stream).addHandler(handler)
-                _SINK_STATE["files"][stream] = log_file
-        root.warning(json.dumps(
-            {"stream": "system", "event": "log_sink_legacy", "path": log_file,
-             "detail": "LQABR_RESEARCH_LOG_FILE is deprecated: all three "
-                       "streams share one file. Use LQABR_RESEARCH_LOG_DIR."}))
+                _SINK_STATE["files"][stream] = path
+
+    def _report() -> None:
+        for event, fields in pending:
+            _system_event(event, **fields)
+
+    # ── OTLP — the add-on ─────────────────────────────────────────────────
+    if not _env_bool("LQABR_RESEARCH_OTLP_ENABLED", True):
+        pending.append(("log_export_disabled",
+                        {"detail": "LQABR_RESEARCH_OTLP_ENABLED=0; console only"}))
+        _report()
         return
 
-    if not log_dir:
-        return                                   # console only, deliberately
+    protocol = _env_first("LQABR_RESEARCH_OTLP_PROTOCOL",
+                          "OTEL_EXPORTER_OTLP_PROTOCOL", default="grpc").lower()
+    protocol = "http" if protocol.startswith("http") else "grpc"
+    endpoint = _env_first("LQABR_RESEARCH_OTLP_ENDPOINT",
+                          "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+                          "OTEL_EXPORTER_OTLP_ENDPOINT",
+                          default=(_OTLP_DEFAULT_HTTP_ENDPOINT if protocol == "http"
+                                   else _OTLP_DEFAULT_ENDPOINT))
+    insecure = _env_bool("LQABR_RESEARCH_OTLP_INSECURE", True)
+    name = _env_first("LQABR_RESEARCH_OTEL_SERVICE_NAME", "OTEL_SERVICE_NAME",
+                      default="lqabr-research")
+    # The credential by NAME. `headers_env` names the variable; its value is
+    # read here and never logged, never returned by `sink_state()`, never put
+    # in a record. Only the NAME is reported.
+    headers_from = os.environ.get("LQABR_RESEARCH_OTLP_HEADERS_ENV", "")
+    headers = os.environ.get(headers_from, "") if headers_from else ""
 
-    for stream in STREAMS:
-        handler = _daily_handler(log_dir, stream, retention_days)
-        if handler is not None:
-            root.getChild(stream).addHandler(handler)
-            _SINK_STATE["files"][stream] = handler.baseFilename
+    handler = _otlp_handler(service_name=name, endpoint=endpoint,
+                            protocol=protocol, insecure=insecure,
+                            headers=headers, headers_from=headers_from,
+                            timeout_seconds=10)
+    if handler is None:
+        _report()
+        return                                   # console only, and said so
 
-    # After the handlers, so today's files exist and the directory does too.
-    _sweep_old_days(log_dir, retention_days)
+    handler._lqabr_otlp = True  # type: ignore[attr-defined]
+    root.addHandler(handler)
+    pending.append((
+        "log_sink_otlp",
+        # The endpoint ON THE WIRE, not the one that was asked for: for
+        # http these differ by the signal path, and this event is what a
+        # person reads when logs are not arriving.
+        {"endpoint": (http_logs_endpoint(endpoint) if protocol == "http"
+                       else endpoint),
+         "protocol": protocol,
+         "insecure": insecure,
+         "service_name": name, "headers_from": headers_from or "(none)",
+         "detail": "attached to lqabr.research, NOT to the root logger — this "
+                   "logger does not propagate, so a root handler would never "
+                   "see a record"}))
+    _report()
 
 
-def get_obs(run_id: str | None = None, *, refresh: bool = False) -> ResearchLogging:
-    current = _OBS.get()
+def get_run_log(run_id: str | None = None, *, refresh: bool = False) -> ResearchLogging:
+    current = _RUN_LOG.get()
     if current is None or refresh:
         current = ResearchLogging(run_id=run_id or new_run_id())
-        _OBS.set(current)
+        _RUN_LOG.set(current)
     return current

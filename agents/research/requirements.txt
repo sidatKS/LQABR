@@ -1,5 +1,13 @@
-# agents/research — runtime dependencies.
-# Standalone: nothing from packages/lqabr_core, nothing from another agent.
+# agents/research — every dependency, one file.
+#
+# Merged 2026-09-09 from requirements.txt + requirements-otel.txt +
+# requirements-dev.txt. The Dockerfile and the test suite both install this
+# one file now.
+#
+# NOTE: the test tools below ship in the image as a result. That is the price
+# of a single file; split them back out if image size or surface matters.
+
+# ── runtime ──────────────────────────────────────────────────────────────
 anthropic>=0.40          # the model call AND the server-side web_search tool
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
@@ -7,3 +15,30 @@ pydantic>=2.7.0
 requests>=2.32.0         # the MCP transport
 PyYAML>=6.0              # the config map
 python-dotenv>=1.0.1     # local .env; no-op on Cloud Run
+
+# ── OpenTelemetry ────────────────────────────────────────────────────────
+# Logs: research_logging_otel.py builds the OTLP handler itself and reads
+# LQABR_RESEARCH_OTLP_*. It still degrades to console-only with a named
+# reason if these are missing, so the code stays import-safe either way.
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp-proto-grpc>=1.27.0   # LQABR_RESEARCH_OTLP_PROTOCOL=grpc (default, :4317)
+opentelemetry-exporter-otlp-proto-http>=1.27.0   # LQABR_RESEARCH_OTLP_PROTOCOL=http (:4318)
+
+# Traces + metrics: auto-instrumentation, no call-site edits. The Dockerfile
+# CMD runs under `opentelemetry-instrument`, which needs these present.
+# opentelemetry-distro is REQUIRED: it ships the configurator that builds the
+# Tracer/MeterProvider. Without it spans are created against the no-op
+# provider and dropped silently — no error, no export.
+opentelemetry-distro>=0.48b0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation-requests>=0.48b0
+opentelemetry-instrumentation-logging>=0.48b0   # LoggingHandler's preferred home
+
+# ── tests ────────────────────────────────────────────────────────────────
+# The suite is offline and needs no credentials:
+#   cd agents/research && PYTHONPATH=src:packages python3 -m pytest -q
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0
+responses>=0.25.0

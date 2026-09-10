@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from research_core.research_logging_otel import ResearchLoggingOtel, get_obs
+    from research_core.research_logging import ResearchLogging, get_run_log
     from research_core.settings import Settings, get_settings
     from research_core.search.base import SearchError, SearchProvider, build_provider
     from research_core.types import BlogFacts, LeadFacts, ResearchNote
 except ImportError:  # pragma: no cover - direct `uvicorn service_app:app`
-    from ..packages.research_core.research_logging_otel import (  # type: ignore
-        ResearchLoggingOtel, get_obs)
+    from ..packages.research_core.research_logging import (  # type: ignore
+        ResearchLogging, get_run_log)
     from ..packages.research_core.settings import Settings, get_settings  # type: ignore
     from ..packages.research_core.search.base import (  # type: ignore
         SearchError, SearchProvider, build_provider)
@@ -195,10 +195,10 @@ class Composer:
 
     def __init__(self, provider: Optional[SearchProvider] = None, *,
                  settings: Settings | None = None,
-                 obs: ResearchLoggingOtel | None = None) -> None:
+                 run_log: ResearchLogging | None = None) -> None:
         self._settings = settings or get_settings()
-        self._obs = obs or get_obs()
-        self._provider = provider or build_provider(self._settings, obs=self._obs)
+        self._run_log = run_log or get_run_log()
+        self._provider = provider or build_provider(self._settings, run_log=self._run_log)
 
     def compose(self, lead: LeadFacts, blog: BlogFacts) -> ResearchNote:
         """Raises SearchError when the research pass fails — the caller reports
@@ -212,7 +212,7 @@ class Composer:
         if len(cleaned) != len(findings.text):
             # The model narrated before writing. Say how much was dropped —
             # a preamble stripper that starts eating the note must be visible.
-            self._obs.process.emit("compose_preamble_stripped",
+            self._run_log.process.emit("compose_preamble_stripped",
                                    objectId=lead.objectId,
                                    raw_chars=len(findings.text),
                                    kept_chars=len(cleaned),

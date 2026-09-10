@@ -79,11 +79,11 @@ class IdentityTokenSource:
     def __init__(self, audience: str, *,
                  session: Optional[requests.Session] = None,
                  timeout_seconds: float = 5.0,
-                 obs: Any = None) -> None:
+                 run_log: Any = None) -> None:
         self._audience = audience or ""
         self._session = session or requests
         self._timeout = timeout_seconds
-        self._obs = obs
+        self._run_log = run_log
         self._token: str = ""
         self._expires_at: float = 0.0
         self._retry_at: float = 0.0
@@ -93,10 +93,10 @@ class IdentityTokenSource:
         return self._audience
 
     def _emit(self, event: str, **fields: Any) -> None:
-        if self._obs is None:
+        if self._run_log is None:
             return
         try:
-            self._obs.system.emit(event, audience=self._audience, **fields)
+            self._run_log.system.emit(event, audience=self._audience, **fields)
         except Exception:  # noqa: BLE001 - logging never breaks a request
             pass
 
