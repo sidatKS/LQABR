@@ -1,68 +1,103 @@
 ---
 name: outreach
-description: The single set of drafting instructions for LQABR cold outreach, covering every industry. The email is framed by the lead's lead_context (the research agent's knowledge graph for that lead); the industry selects only which sector restraint applies. Use for every lead, in every sector.
+description: The single set of drafting instructions for LQABR cold outreach, covering every industry. The email opens on the specific development the lead's lead_context supplies, then names what it means for this reader's desk; the industry selects only which sector restraint applies. Use for every lead, in every sector.
 industries: technology, software, saas, information technology, computer software, computer hardware, computer networking, computer network security, computer games, mobile games, consumer electronics, semiconductors, nanotechnology, information technology and services, information services, it services, internet, telecommunications, wireless, data centres, program development, healthcare, hospital, hospitals, hospital health care, medical devices, medical practice, mental health care, health wellness and fitness, alternative medicine, veterinary, pharmaceuticals, pharma, biotechnology, health tech, healthcare technology, life sciences, financial services, banking, bank, capital markets, investment banking, investment management, venture capital, private equity, insurance, accounting, financial technology, fintech, credit, lending, wealth management, manufacturing, industrial automation, machinery, industrial engineering, mechanical or industrial engineering, automotive, aerospace, aviation and aerospace, chemicals, plastics, packaging and containers, electrical electronic manufacturing, building materials, textiles, construction, civil engineering, architecture and planning, building construction, real estate, commercial real estate, facilities services, education, higher education, primary secondary education, e-learning, education management, research, professional training and coaching, legal, law practice, legal services, government, government administration, government relations, nonprofit, non-profit organization management, civic and social organization, public policy, public safety, international affairs, philanthropy, logistics, transportation, transportation trucking railroad, warehousing, supply chain, maritime, package freight delivery, import and export, retail, consumer goods, consumer services, apparel and fashion, luxury goods and jewelry, wholesale, supermarkets, ecommerce, e-commerce, food and beverages, food production, restaurants, wine and spirits, dairy, farming, agriculture, energy, oil and energy, utilities, renewables and environment, mining and metals, environmental services, media, entertainment, broadcast media, online media, publishing, music, motion pictures and film, marketing and advertising, public relations, sports, gaming, hospitality, travel, leisure travel and tourism, hotels, events services, airlines aviation, recreational facilities and services, professional services, management consulting, staffing and recruiting, human resources, outsourcing offshoring, business supplies and equipment, security and investigations, translation and localization, design, graphic design
 ---
 
 # Outreach email — all industries
 
-**Owner: the email agent, exclusively.** This file lives at
-`agents/email/skills/outreach/SKILL.md` because it is the email agent's
-business logic, not shared infrastructure. Shared code lives in
-`packages/lqabr_core` and shared HubSpot access in `mcp/hubspot/` — this is
-neither. No other agent reads it, imports it, or drafts from it: the
-text/voice, scheduling, lead_profile, orchestrator and ingestion agents each
-own their own copy decisions, and a change here must never alter what any of
-them sends. `agents/email/tests/test_skills.py` enforces that mechanically.
-
 Draft ONE cold outreach email to ONE named person, from these instructions and
 the lead facts supplied. The shared drafting rules above apply in full and win
-over anything written here.
+over anything here. One instruction set covers every sector: what changes from
+lead to lead is the `lead_context`, and which sector restraint applies.
 
-There is one set of instructions for every sector. What changes from lead to
-lead is the `lead_context` you are given, and which sector restraint applies.
+## The five moves
 
-## Your primary input is `lead_context`
+The email is not a pitch with a personalised sentence bolted on. It is a short
+briefing on something real happening in this reader's world, which arrives at a
+point where we can help.
 
-`lead_context` is a short research summary — written for this lead by a
-separate research step — of why this particular person is likely to be
-in-market now. It is the frame for the whole email.
+**1 — Greeting.** First name only.
 
-- **The angle comes from it.** What you lead with, what you leave out, and how
-  you connect the problem to this reader all follow from the context. Do not
-  open with a generic sector observation when the context gives you a specific
-  one.
-- **Never quote it, restate it, or refer to it.** Do not mention research, a
-  summary, "I noticed", "I saw that", or anything implying you have been
-  reading about them. Write as someone who already understands their
-  situation. A reader who can tell they were researched reads it as
-  surveillance, not relevance.
-- **It licenses no new claim.** Every assertion must be supported by the
-  `lead_context` or another supplied fact. The no-invention rules above bind
-  its contents exactly as they bind every other field.
-- **Stay as hedged as it is.** If the context says something "appears to be" or
-  "points at", do not harden it into "since you are". Asserting an inference as
-  fact to someone who knows their own business is the fastest way to lose them.
-- **Two leads in the same sector have different contexts.** That difference is
-  what must make their emails different. Same industry must never mean same
-  email.
+**2 — The development.** Open on the specific thing `lead_context` gives you.
+State it flatly, as a well-informed colleague would. Name it: the regulation,
+ruling, deadline, mandate — with the date and parties the context supplies.
+Close the paragraph by turning it toward this reader's desk. Never open with
+yourself: no "I'm reaching out", no "I noticed".
 
-If the `lead_context` is thin, write a shorter email. Do not pad it with sector
-generalities.
+**3 — What it actually means.** The reader's instinct is to file move 2 as
+harmless. Take that away: name the easy misreading and correct it in a short
+sentence ("That's not an exemption."). Then name the concrete moment it bites —
+the exam, the audit, the renewal, the board slide. End on the gap: what they
+will need then and do not have. Do not name our product here.
 
-**If the context ends in a question**, that question is the intended hook — it
-was written to be put to this reader. Use it, or a tightened version of it, as
-the ask. Do not bolt a second question on top of it.
+**4 — The resource.** One sentence offering something to read, as an inline link
+on descriptive words — never a bare URL, never "click here". Follow it with a
+qualifier that lets them opt out by not caring: "Worth five minutes if this is
+on your radar."
 
-**If the context carries a `(ref: ...)` marker**, that is a pointer to the
-source the research drew on, for our records. It is not a link to include, and
-you must not reproduce it, cite it, or turn it into the call to action. The
-call to action is always `{cta_url}` and nothing else.
+**5 — What we do, and a soft ask.** One sentence on what we build, framed
+against the gap from move 3 — the contrast is what lands, not a feature list.
+Then offer a conversation that is easy to decline. No calendar link, no assumed
+next step.
+
+**6 — Sign-off.** `Best,` then `{sender_name}`. Nothing else.
+
+### The shape, annotated
+
+A real email in this shape. Study the **moves and the voice** — never copy its
+facts or sentences. Every specific in it came from that lead's own context.
+
+> Hi Ross,
+>
+> *(2 — named, dated, sourced, then turned toward the reader)*
+> Fifteen years of model-risk examinations ran on SR 11-7. That changed on
+> April 17, 2026, when the OCC, Federal Reserve, and FDIC jointly replaced it
+> with new guidance that's explicitly principles-based. And there's a line in it
+> that should give any bank's operations team pause: generative and agentic AI
+> are "not within the scope of this guidance."
+>
+> *(3 — the misreading corrected, the moment it bites, then the gap)*
+> That's not an exemption. The agencies still expect you to manage the risk
+> under broader safety-and-soundness standards, but they didn't hand you a
+> checklist. So when an examiner asks how you govern your AI, there's no
+> paragraph number to cite. There's only the evidence your system can produce.
+>
+> *(4 — descriptive anchor words, low-pressure out)*
+> We wrote up [what changed and what it means for banks building AI right now].
+> Worth five minutes if this is on your radar.
+>
+> *(5 — the offer as a contrast, then the soft ask)*
+> We help banks build Claude implementations where the audit trail and oversight
+> controls are properties of the system itself, not documents assembled before
+> an exam. Happy to share how that maps to the questions the new guidance leaves
+> open, if you'd like a quick conversation.
+>
+> Best,
+> Vasanth Nemala
+
+## Specificity comes from `lead_context`, and only from there
+
+`lead_context` is a short research summary of why this person is likely to be
+in-market now. Moves 2 and 3 come from it.
+
+- **Never manufacture a citation.** That email works because the date, the
+  agencies and the quoted line were all real and all supplied. You must NEVER
+  invent a date, regulation, ruling, agency, deadline, figure or quotation to
+  reproduce that effect. If the context does not name it, you do not name it.
+- **Match its hardness.** A dated, attributable event earns a hard opening. A
+  context that "appears to" or "points at" earns a hedged one — write shorter
+  and softer rather than sharpening an inference into a fact.
+- **If it is thin**, write three short paragraphs instead of four. Never pad
+  with sector generalities.
+- **If it ends in a question**, that question is the intended hook — use it, or
+  a tightened version, as the ask in move 5. Do not add a second question.
+- **If it carries a `(ref: ...)` marker**, that is a source pointer for our
+  records. Never reproduce it or turn it into the call to action.
 
 ## The facts you are given
 
-Eleven fields, and no others. Confirmed against the HubSpot record
-2026-08-18:
+Eleven fields, and no others.
 
 | Field | What it is for |
 |---|---|
@@ -71,118 +106,94 @@ Eleven fields, and no others. Confirmed against the HubSpot record
 | `company` | the real company name — use it once, early |
 | `job_title` | the concern you speak to |
 | `industry` | which sector restraint binds |
-| `industry_group` | the sharper read of what they do |
+| `industry_group` | the sharper read — prefer it over `industry` |
 | `company_about` | what they sell — context, never recited back |
-| `company_website` | their site. Context only; not a link to include |
+| `company_website` | context only; not a link to include |
 | `annual_revenue` | scale only. **Never written as a figure** |
-| `lead_context` | the frame for the whole email |
+| `lead_context` | the frame for moves 2 and 3 |
 
-`industry_group` is the more useful of the two industry fields — "Investment /
-Wealth Management (Automated Investing)" tells you far more than "Financial
-Services", so speak to the narrower one where you have it.
+`job_title` decides move 2's final turn and move 3's concrete moment: the same
+development lands differently on a CTO, a head of operations and a general
+counsel. Anything absent is simply not offered — write around it.
 
-`company_about` is there so you understand what they do before you write. Never
-tell a reader what their own company does.
+## What we sell, and what you may claim
 
-`annual_revenue` has no recorded unit — a bare `4.7` could be millions or
-billions. Judge scale by it; never print it. See the shared rules above.
+We help organisations build AI implementations where oversight is a property of
+the system itself — the audit trail, the traceability of a decision and the
+human review controls are built into how the system runs, rather than
+documentation assembled afterwards to describe it. That contrast is the pitch.
 
-Anything absent is simply not offered to you. Write around it; never
-placeholder it.
+You may claim only: that we build AI implementations; that in what we build the
+audit trail, traceability and human-oversight controls are properties of the
+system rather than after-the-fact documentation; and that we can talk through
+how that maps to a specific situation.
 
-## Who you are writing to
+You may NOT claim or imply: that we make anyone compliant with any regime; that
+we have passed or anticipated any audit or examination; any result, percentage
+or saving; any named customer, case study, award or partnership; any prior
+relationship with the reader; or any capability of a specific model or vendor
+beyond building an implementation.
 
-An operator at a company in the lead's industry, at the seniority their
-`job_title` implies. Assume they receive a lot of cold email, can tell
-instantly when something was mass-produced, and decide from the first
-sentence.
+## Sector restraint — apply the row matching the lead's `industry`
 
-Let the `job_title` set the concern you speak to — the same offer lands
-differently on a VP of Engineering, a plant manager, a managing partner and a
-head of admissions. Where `lead_context` tells you what this person is likely
-dealing with, that beats anything the job title alone would suggest.
+**The governing distinction, in every sector including unlisted ones:**
 
-## What we sell
+- You **may** state a PUBLIC development that `lead_context` supplies — a rule,
+  ruling, guidance, mandate or deadline, with its date and parties, including a
+  short quoted line if the context carries one. That is move 2.
+- You may **never** describe **this reader's own** operations, posture,
+  controls, exposure, readiness, compliance status, customers, performance or
+  systems. You know none of it. "The agencies still expect the risk to be
+  managed" describes the rule's reach and is fine; "your current controls won't
+  satisfy this" is a claim about them and is not.
+- You may **never advise.** Describing what a rule says is reporting. Telling
+  them what to do about it is advice, and in a regulated sector that is a
+  liability, not a hook.
 
-Automated qualification and follow-up on inbound enquiries. We score real
-engagement — opens, clicks, replies — rather than form fills, so the team
-follows up on the enquiries that showed genuine interest first, instead of
-working a queue sorted by arrival time.
+Say nothing about **their** instance of:
 
-Use the vocabulary of the reader's sector: "leads" for technology and
-financial services, "enquiries" for most others, "enquiries worth a quote" for
-manufacturing, construction, logistics and food production.
-
-## The problem to lead with
-
-Inbound arrives faster than the team qualifying it can work it, and the
-ordering is arrival time rather than interest — so the good ones sit behind the
-bad ones and go cold.
-
-Frame it as a pattern in how organisations like theirs tend to operate, **not**
-as a diagnosis of their pipeline, which you know nothing about — unless
-`lead_context` gives you something specific, in which case lead with that
-instead.
-
-## Claims you may make
-
-Only these: we qualify and follow up on inbound automatically, and we score
-engagement rather than form fills. That is the whole offer.
-
-## Sector restraint — find the lead's `industry` below and apply it
-
-**The general rule, which applies in every sector including ones not listed:**
-say nothing about how they run their business. You know nothing about their
-operations, and this email is about their inbound enquiry flow and nothing
-else.
-
-Concretely, by sector — say nothing about:
-
-| If `industry` is | Say nothing about |
+| `industry` | say nothing about their |
 |---|---|
-| Technology, software, SaaS, IT | *(general rule only)* |
-| Healthcare, pharma, biotech, medical devices, life sciences | patients, patient data, patient outcomes, clinical workflow, diagnosis, treatment, trials, HIPAA, PHI, or any regulatory regime |
-| Financial services, banking, insurance, fintech | compliance, regulation, data residency, audit, KYC, AML, suitability, any specific regime, returns, or performance |
-| Legal, law practice | their matters, clients, cases, practice areas, compliance, or any regulatory regime |
-| Government, nonprofit, public sector | their mandate, policy, constituents, donors, beneficiaries, funding, or mission |
-| Manufacturing, industrial, automotive, aerospace | their production, plant, equipment, capacity, lead times, tariffs, or supply chain |
-| Construction, civil engineering, real estate | their projects, sites, buildings, tenders, permits, materials, timelines, or safety |
-| Energy, utilities, mining, environmental | their operations, plants, grid, reserves, extraction, production, capacity, commodity prices, emissions, safety, or any regulatory regime |
-| Logistics, transportation, supply chain | their fleet, routes, lanes, capacity, rates, transit times, or supply chain |
-| Retail, consumer goods, ecommerce, wholesale | their products, ranges, stores, stock, pricing, margins, or customers |
-| Food, beverage, agriculture, restaurants | their products, ingredients, recipes, sourcing, food safety, supply chain, or shelf life |
-| Education, e-learning, research | their students, learners, curriculum, teaching, outcomes, enrolment, or funding |
-| Media, entertainment, publishing, marketing | their content, titles, audiences, ratings, rights, or creative work |
-| Hospitality, travel, hotels, events | their venues, rooms, menus, guests, occupancy, or service |
-| Professional services, consulting, staffing, HR | their clients, engagements, billings, headcount, or the services they deliver |
+| Technology, software, SaaS, IT | *(governing distinction only)* |
+| Healthcare, pharma, biotech, medical devices, life sciences | patients, patient data, outcomes, clinical workflow, trials, PHI handling |
+| Financial services, banking, insurance, fintech | compliance posture, controls, audit history, KYC/AML, suitability, returns |
+| Legal, law practice | matters, clients, cases, practice areas, compliance |
+| Government, nonprofit, public sector | mandate, policy, constituents, donors, beneficiaries, funding, mission |
+| Manufacturing, industrial, automotive, aerospace | production, plant, equipment, capacity, lead times, supply chain |
+| Construction, civil engineering, real estate | projects, sites, tenders, permits, materials, timelines, safety record |
+| Energy, utilities, mining, environmental | operations, plants, grid, reserves, capacity, emissions, safety record |
+| Logistics, transportation, supply chain | fleet, routes, lanes, capacity, rates, transit times |
+| Retail, consumer goods, ecommerce, wholesale | products, ranges, stores, stock, pricing, margins, customers |
+| Food, beverage, agriculture, restaurants | products, ingredients, sourcing, food-safety record, shelf life |
+| Education, e-learning, research | students, curriculum, teaching, outcomes, enrolment, funding |
+| Media, entertainment, publishing, marketing | content, titles, audiences, ratings, rights, creative work |
+| Hospitality, travel, hotels, events | venues, rooms, guests, occupancy, service |
+| Professional services, consulting, staffing, HR | clients, engagements, billings, headcount, services delivered |
 
-**Three sectors carry an additional prohibition, and these are not negotiable:**
+**Four additional prohibitions, not negotiable:**
 
-- **Healthcare** — make no claim that touches health outcomes, and do not imply
-  our product goes anywhere near clinical or patient systems. It does not.
-- **Financial services** — say nothing that could read as financial advice. We
-  have made no compliance claims, and implying one in a regulated sector is
-  worse than sending nothing.
-- **Legal** — say nothing that could read as legal advice.
+- **Healthcare** — no claim touching health outcomes; never imply what we build
+  goes near clinical or patient systems.
+- **Financial services** — nothing that reads as financial advice; never state
+  or imply that what we build makes anyone compliant.
+- **Legal** — nothing that reads as legal advice. Report what a rule says;
+  never say what it requires *of them*.
 - **Government and nonprofit** — take no political position and imply none.
 
-**If the `industry` field is missing, or is a sector not listed above:** apply
-the strictest reading. Say nothing whatsoever about their operations, their
-customers, their products, their staff or their regulatory environment. Speak
-only to the inbound-enquiry problem and what we do. When in doubt, say less.
+**Missing or unlisted `industry`:** strictest reading. Report only what
+`lead_context` supplies, say nothing about their operations, customers,
+products, staff or regulatory posture, and keep it short.
 
-## Structure
+## Before you send it
 
-1. Open with the greeting as set out in the shared drafting rules above — the
-   reader's full name, or a plain nameless greeting when no name is on record.
-   Never an internal identifier.
-2. One or two sentences on the problem, led by `lead_context` where it gives
-   you something specific and by the sector pattern where it does not.
-3. One or two sentences on what we do — concrete, unhyped. For manufacturing,
-   construction, logistics, energy and food production, plain language with no
-   software jargon. For healthcare, financial services, legal and government,
-   restrained and commercial.
-4. The call to action as a link, offering something small: a short overview,
-   not a demo or a meeting.
-5. A line that makes it easy to say no.
-6. Sign-off.
+Any "no" means rewrite:
+
+- Does the first sentence say something specific that came from `lead_context` —
+  no invented date, agency, rule or figure?
+- Would this be wrong to send to a different person in the same sector? If it
+  would fit any of them, it is not specific enough.
+- Does move 3 name a concrete moment, not a vague concern?
+- Is every claim about us inside the permitted list?
+- Have you described *this reader's own* posture, controls or operations? Cut it.
+- Exactly one link, on descriptive words, and it is `{cta_url}`?
+- Does it end without demanding anything?

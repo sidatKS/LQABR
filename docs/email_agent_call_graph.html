@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Agent Call Graph</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f5f7f9; --surface:#ffffff; --sunk:#eef1f5;
+    --ink:#161a20; --ink-2:#4a5361; --ink-3:#7a8492;
+    --rule:#dde2e8; --rule-2:#c8cfd8;
+    --send:#2c6491; --event:#6a4b9c; --ext:#1f7a5e; --obs:#a56526; --crit:#a3392e;
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0f1216; --surface:#161a20; --sunk:#12161b;
+      --ink:#e5e9ef; --ink-2:#9ba5b3; --ink-3:#6a7482;
+      --rule:#262c35; --rule-2:#333b46;
+      --send:#6faddf; --event:#b294dd; --ext:#5cc4a0; --obs:#dda059; --crit:#de8375;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0f1216; --surface:#161a20; --sunk:#12161b;
+    --ink:#e5e9ef; --ink-2:#9ba5b3; --ink-3:#6a7482;
+    --rule:#262c35; --rule-2:#333b46;
+    --send:#6faddf; --event:#b294dd; --ext:#5cc4a0; --obs:#dda059; --crit:#de8375;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6}
+  .wrap{max-width:1500px;margin:0 auto;padding:clamp(20px,4vw,48px);display:flex;flex-direction:column;gap:32px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+  h1{margin:0;font-size:clamp(26px,4vw,38px);font-weight:600;letter-spacing:-.02em}
+  .dek{margin:0;max-width:70ch;color:var(--ink-2)}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:16px;border-top:1px solid var(--rule)}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--ink-2);background:var(--surface);
+        border:1px solid var(--rule);border-radius:2px;padding:4px 9px}
+  figure{margin:0;background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+         padding:24px;overflow-x:auto}
+  svg{display:block;width:100%;min-width:1150px;height:auto;color:var(--ink-2)}
+  figcaption{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);
+             font-size:13.5px;color:var(--ink-3);max-width:80ch}
+  figcaption b{color:var(--ink-2);font-weight:600}
+  code{font-family:var(--mono);font-size:.88em;background:var(--sunk);border:1px solid var(--rule);
+       border-radius:2px;padding:1px 5px;color:var(--ink)}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+  footer{padding-top:20px;border-top:1px solid var(--rule);font-family:var(--mono);
+         font-size:11px;color:var(--ink-3)}
+  .b{fill:var(--surface);stroke:var(--rule-2);stroke-width:1}
+  .t{font-family:var(--mono);font-size:12px;fill:var(--ink)}
+  .s{font-family:var(--mono);font-size:9.5px;fill:var(--ink-3)}
+  .lbl{font-family:var(--mono);font-size:9px;fill:var(--ink-3);letter-spacing:.12em}
+  .ln{stroke:var(--ink-3);stroke-width:1.3;fill:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">LQABR · Email agent · 2026-08-26</div>
+    <h1>Email Agent Call Graph</h1>
+    <p class="dek">Two entry points, one logging spine. The send path runs synchronously from a
+      gateway trigger; the event path runs later, on a container that scaled to zero in
+      between — which is why nothing is held in memory across them.</p>
+    <div class="meta">
+      <span class="chip">line numbers verified against src</span>
+      <span class="chip">pairs with email_agent_call_tree.txt</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span><i class="sw" style="background:var(--send)"></i> send path</span>
+    <span><i class="sw" style="background:var(--event)"></i> event path</span>
+    <span><i class="sw" style="background:var(--ext)"></i> external system</span>
+    <span><i class="sw" style="background:var(--obs)"></i> observability</span>
+    <span><i class="sw" style="background:var(--crit)"></i> guard / known issue</span>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1400 1180" role="img"
+         aria-label="Call graph. Left spine: hubspot_campaign calls run_campaign, which calls start_run, then load_leads which runs resolve_lead_ids then get_lead_profile per lead, then work_lead per lead which claims SENT, calls construct_email with build_prompt, call_model and parse_reply, then send_one. Right spine: mailgun_events calls dispatch_mailgun, handle_event, write_back and mark_campaign_complete. HubSpot, the model and Mailgun sit on the far right. Every function logs through observability, which writes stdout plus four JSON files.">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--ink-3)"/></marker>
+        <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--send)"/></marker>
+        <marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--event)"/></marker>
+        <marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--ext)"/></marker>
+        <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--obs)"/></marker>
+      </defs>
+
+      <text class="lbl" x="60" y="30">SEND PATH · synchronous</text>
+      <text class="lbl" x="760" y="30">EVENT PATH · later, cold start</text>
+      <text class="lbl" x="1150" y="30">EXTERNAL</text>
+
+      <!-- SEND SPINE -->
+      <rect class="b" x="60" y="46" width="300" height="46" rx="2" stroke="var(--send)" stroke-width="1.5"/>
+      <text class="t" x="76" y="68" fill="var(--send)">hubspot_campaign</text>
+      <text class="s" x="76" y="83">POST /email/campaign · step 2 · service_app:228</text>
+
+      <path class="ln" d="M210 92 V126" stroke="var(--send)" marker-end="url(#as)"/>
+
+      <rect class="b" x="60" y="130" width="300" height="46" rx="2" stroke="var(--send)" stroke-width="1.5"/>
+      <text class="t" x="76" y="152" fill="var(--send)">run_campaign</text>
+      <text class="s" x="76" y="167">the entry point · outreach:106</text>
+
+      <path class="ln" d="M210 176 V210" marker-end="url(#a)"/>
+
+      <rect class="b" x="60" y="214" width="300" height="44" rx="2"/>
+      <text class="t" x="76" y="235">start_run</text>
+      <text class="s" x="76" y="249">step 3/4 · bind_run + acquire_bearer · :158</text>
+
+      <path class="ln" d="M210 258 V292" marker-end="url(#a)"/>
+
+      <rect class="b" x="60" y="296" width="300" height="44" rx="2"/>
+      <text class="t" x="76" y="317">load_leads</text>
+      <text class="s" x="76" y="331">step 5 · two phases · :189</text>
+
+      <path class="ln" d="M210 340 V374" marker-end="url(#a)"/>
+
+      <rect class="b" x="80" y="378" width="280" height="44" rx="2"/>
+      <text class="t" x="96" y="399">_resolve_lead_ids</text>
+      <text class="s" x="96" y="413">phase 1 · which leads? · :257</text>
+
+      <path class="ln" d="M220 422 V456" marker-end="url(#a)"/>
+
+      <rect class="b" x="80" y="460" width="280" height="44" rx="2"/>
+      <text class="t" x="96" y="481">_get_lead_profile</text>
+      <text class="s" x="96" y="495">phase 2 · one span per lead · :241</text>
+
+      <path class="ln" d="M210 504 V546" marker-end="url(#as)" stroke="var(--send)"/>
+      <text class="s" x="220" y="530">per lead</text>
+
+      <rect class="b" x="60" y="550" width="300" height="46" rx="2" stroke="var(--send)" stroke-width="1.5"/>
+      <text class="t" x="76" y="572" fill="var(--send)">work_lead</text>
+      <text class="s" x="76" y="587">claim → construct → send · :297</text>
+
+      <path class="ln" d="M210 596 V630" marker-end="url(#a)"/>
+
+      <rect class="b" x="80" y="634" width="280" height="46" rx="2" stroke="var(--crit)" stroke-width="1.4"/>
+      <text class="t" x="96" y="656" fill="var(--crit)">claim SENT</text>
+      <text class="s" x="96" y="671">before construction · still races · :321</text>
+
+      <path class="ln" d="M210 680 V714" marker-end="url(#a)"/>
+
+      <rect class="b" x="60" y="718" width="300" height="44" rx="2"/>
+      <text class="t" x="76" y="739">construct_email</text>
+      <text class="s" x="76" y="753">step 6 · one model call · :360</text>
+
+      <path class="ln" d="M210 762 V796" marker-end="url(#a)"/>
+
+      <rect class="b" x="80" y="800" width="280" height="58" rx="2"/>
+      <text class="s" x="96" y="820">build_prompt        :424</text>
+      <text class="s" x="96" y="835">call_model          :443</text>
+      <text class="s" x="96" y="850">parse_reply         :481</text>
+
+      <path class="ln" d="M210 858 V892" marker-end="url(#a)"/>
+
+      <rect class="b" x="60" y="896" width="300" height="46" rx="2" stroke="var(--send)" stroke-width="1.5"/>
+      <text class="t" x="76" y="918" fill="var(--send)">send_one</text>
+      <text class="s" x="76" y="933">step 7 · max_retries=1 · never twice · :500</text>
+
+      <!-- EVENT SPINE -->
+      <rect class="b" x="760" y="46" width="300" height="46" rx="2" stroke="var(--event)" stroke-width="1.5"/>
+      <text class="t" x="776" y="68" fill="var(--event)">mailgun_events</text>
+      <text class="s" x="776" y="83">POST /mailgun/events · step 8 · :264</text>
+
+      <path class="ln" d="M910 92 V126" stroke="var(--event)" marker-end="url(#ae)"/>
+
+      <rect class="b" x="760" y="130" width="300" height="46" rx="2"/>
+      <text class="t" x="776" y="152">dispatch_mailgun</text>
+      <text class="s" x="776" y="167">HMAC · 401 / 503, no bypass · :276</text>
+
+      <path class="ln" d="M910 176 V210" marker-end="url(#a)"/>
+
+      <rect class="b" x="760" y="214" width="300" height="44" rx="2"/>
+      <text class="t" x="776" y="235">handle_event</text>
+      <text class="s" x="776" y="249">step 8 · reads lqabr_object_id · events:215</text>
+
+      <path class="ln" d="M910 258 V292" marker-end="url(#a)"/>
+
+      <rect class="b" x="760" y="296" width="300" height="44" rx="2"/>
+      <text class="t" x="776" y="317">write_back</text>
+      <text class="s" x="776" y="331">step 9 · rank, score, patch · :262</text>
+
+      <path class="ln" d="M910 340 V374" marker-end="url(#a)"/>
+
+      <rect class="b" x="780" y="378" width="280" height="44" rx="2" stroke="var(--crit)" stroke-width="1.4"/>
+      <text class="t" x="796" y="399" fill="var(--crit)">_mark_campaign_complete</text>
+      <text class="s" x="796" y="413">step 10 · property missing → 400 · :323</text>
+
+      <!-- EXTERNAL -->
+      <rect class="b" x="1150" y="290" width="200" height="60" rx="2" stroke="var(--ext)" stroke-width="1.4"/>
+      <text class="t" x="1166" y="312" fill="var(--ext)">HubSpot</text>
+      <text class="s" x="1166" y="327">via mcp/hubspot</text>
+      <text class="s" x="1166" y="341">system of record</text>
+
+      <rect class="b" x="1150" y="718" width="200" height="46" rx="2" stroke="var(--ext)" stroke-width="1.4"/>
+      <text class="t" x="1166" y="740" fill="var(--ext)">Model</text>
+      <text class="s" x="1166" y="755">litellm / google-genai</text>
+
+      <rect class="b" x="1150" y="896" width="200" height="46" rx="2" stroke="var(--ext)" stroke-width="1.4"/>
+      <text class="t" x="1166" y="918" fill="var(--ext)">Mailgun</text>
+      <text class="s" x="1166" y="933">send + events</text>
+
+      <path class="ln" stroke="var(--ext)" marker-end="url(#ax)"
+            d="M360 482 C 720 482, 960 400, 1146 340"/>
+      <text class="s" x="620" y="474" fill="var(--ext)">get_lead_profile · patch_object</text>
+
+      <path class="ln" stroke="var(--ext)" marker-end="url(#ax)" d="M360 740 H1146"/>
+      <text class="s" x="660" y="734" fill="var(--ext)">one call per lead · 26–88s</text>
+
+      <path class="ln" stroke="var(--ext)" marker-end="url(#ax)" d="M360 919 H1146"/>
+      <text class="s" x="620" y="913" fill="var(--ext)">send · lqabr_object_id rides on the message</text>
+
+      <path class="ln" stroke="var(--ext)" marker-end="url(#ax)" d="M1060 318 H1146"/>
+
+      <path class="ln" stroke="var(--event)" stroke-dasharray="5 4" marker-end="url(#ae)"
+            d="M1252 896 C 1300 560, 1300 130, 1064 69"/>
+      <text class="s" x="1300" y="520" fill="var(--event)">later</text>
+
+      <!-- OBSERVABILITY BAND -->
+      <rect class="b" x="60" y="1000" width="1290" height="150" rx="3"
+            stroke="var(--obs)" stroke-width="1.5" fill="var(--sunk)"/>
+      <text class="t" x="80" y="1026" fill="var(--obs)">observability.py — the one owner of logger "lqabr.email"</text>
+      <text class="s" x="80" y="1044">span() · log_process · log_audit · log_model · log_system   →   _emit builds the event ONCE</text>
+
+      <rect class="b" x="80" y="1058" width="240" height="40" rx="2"/>
+      <text class="s" x="94" y="1076">stdout</text>
+      <text class="s" x="94" y="1090">ConsoleFormatter | JSON off-TTY</text>
+
+      <rect class="b" x="336" y="1058" width="240" height="40" rx="2"/>
+      <text class="s" x="350" y="1076">email_process.log</text>
+      <text class="s" x="350" y="1090">steps, spans, progress</text>
+
+      <rect class="b" x="592" y="1058" width="240" height="40" rx="2"/>
+      <text class="s" x="606" y="1076">email_audit.log</text>
+      <text class="s" x="606" y="1090">every boundary hop</text>
+
+      <rect class="b" x="848" y="1058" width="240" height="40" rx="2"/>
+      <text class="s" x="862" y="1076">email_model.log</text>
+      <text class="s" x="862" y="1090">tokens, duration, prompt</text>
+
+      <rect class="b" x="1104" y="1058" width="226" height="40" rx="2"/>
+      <text class="s" x="1118" y="1076">email_system.log</text>
+      <text class="s" x="1118" y="1090">container + adopted core</text>
+
+      <text class="s" x="80" y="1124">_adopt_core_loggers() takes over lqabr.audit / lqabr.process / lqabr.system, so a HubSpot call made by the SHARED package renders like every other hop</text>
+
+      <path class="ln" stroke="var(--obs)" stroke-dasharray="4 4" marker-end="url(#ao)" d="M210 942 V996"/>
+      <text class="s" x="228" y="974" fill="var(--obs)">every function logs here</text>
+      <path class="ln" stroke="var(--obs)" stroke-dasharray="4 4" marker-end="url(#ao)"
+            d="M910 422 C 910 720, 760 960, 700 996"/>
+    </svg>
+
+    <figcaption><b>The two spines never touch in memory.</b> The send path puts
+      <code>lqabr_object_id</code> on the Mailgun message; the event comes back carrying it, and
+      that value is the only thing tying them together — no run state, which is what makes it
+      correct on a container that scales to zero in between. The red boxes are where
+      correctness currently depends on something outside our control: the SENT claim races
+      because HubSpot acknowledges a PATCH before it is readable, and step 10 targets a
+      property that does not exist in the portal.</figcaption>
+  </figure>
+
+  <footer>LQABR · email agent · call graph · 2026-08-26 · full tree with line numbers in email_agent_call_tree.txt</footer>
+
+</div>
+</body>
+</html>

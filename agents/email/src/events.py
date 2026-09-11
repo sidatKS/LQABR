@@ -39,7 +39,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from outreach import MCPObservability, RunContext, log_audit, log_process
+from observability import MCPObservability, RunContext, log_audit, log_process, span
 
 from lqabr_core.crm import CRMError
 from lqabr_core.probability import apply_event
@@ -183,6 +183,34 @@ def _severity(event_data: Dict[str, Any]) -> str:
     return str(event_data.get("severity") or delivery.get("severity") or "")
 
 
+def _message_id(event_data: Dict[str, Any]) -> str:
+    """The id Mailgun gave the send. THE join key back to the outbound
+    ``mailgun:/messages`` audit line — without it a delivery cannot be tied to
+    the message that produced it, which is exactly what you need when one lead
+    was sent twice."""
+    headers = (event_data.get("message") or {}).get("headers") or {}
+    return str(headers.get("message-id") or event_data.get("message-id") or "")
+
+
+def _audit_event(ctx: Optional[RunContext], event_data: Dict[str, Any],
+                 raw_event: str, **extra: Any) -> None:
+    """The inbound hop, with enough of the payload to diagnose it alone."""
+    delivery = event_data.get("delivery-status") or event_data.get("delivery_status") or {}
+    log_audit(ctx, step=8, direction="inbound", endpoint=EVENTS_ROUTE,
+              method="POST", status_code=200,
+              mailgun_event=raw_event,
+              message_id=_message_id(event_data) or None,
+              recipient=str(event_data.get("recipient") or "") or None,
+              mailgun_ts=event_data.get("timestamp"),
+              severity=_severity(event_data) or None,
+              # Why a bounce bounced — Mailgun puts it in either place.
+              reason=str(event_data.get("reason")
+                         or delivery.get("description")
+                         or delivery.get("message") or "") or None,
+              smtp_code=delivery.get("code"),
+              **extra)
+
+
 # --------------------------------------------------------------- step 8
 def handle_event(event_data: Dict[str, Any],
                  session: Optional[MCPSession] = None) -> Dict[str, Any]:
@@ -193,37 +221,45 @@ def handle_event(event_data: Dict[str, Any],
     (outside the vocabulary), ``superseded`` (ranked at or below what HubSpot
     already holds) or ``unresolved`` (flagged, never dropped)."""
     variables = _variables(event_data)
-    object_id = str(variables.get("lqabr_object_id") or "")
+    objectId = str(variables.get("lqabr_object_id") or "")
     run_id = str(variables.get("lqabr_run_id") or "")
     # The SEND's run id, echoed back by Mailgun, purely so the logs correlate
     # with the original send — not a lookup key; nothing is read by it.
-    ctx = RunContext(object_id=object_id, run_id=run_id) if object_id else None
+    ctx = RunContext(objectId=objectId, run_id=run_id) if objectId else None
 
     raw_event = str(event_data.get("event") or "")
-    log_audit(ctx, step=8, direction="inbound", endpoint=EVENTS_ROUTE,
-              method="POST", status_code=200, mailgun_event=raw_event)
+    _audit_event(ctx, event_data, raw_event)
 
     event = from_mailgun(raw_event, _severity(event_data))
     if event is None:
         if raw_event.lower() not in IGNORED_WIRE_EVENTS:
             log_process(ctx, step=8, event="event_outside_vocabulary", mailgun_event=raw_event,
                         detail="not in the closed enum — acknowledged and skipped")
+        _audit_event(ctx, event_data, raw_event, outcome="ignored")
         return {"status": "ignored", "event": raw_event}
 
     if event is MailgunEvent.CLICKED:  # stored, ranked and scored as an open
         event = MailgunEvent.OPENED
 
-    if not object_id:
-        log_process(ctx, step=8, event="event_without_object_id", mailgun_event=raw_event,
+    if not objectId:
+        log_process(ctx, step=8, event="event_without_objectId", mailgun_event=raw_event,
                     detail="event carried no lqabr_object_id — cannot attribute to a lead")
+        _audit_event(ctx, event_data, raw_event, outcome="unresolved")
         return {"status": "unresolved", "reason": "event carried no lqabr_object_id",
                 "event": event.value}
 
-    return write_back(ctx, object_id, event, raw_event, session=session)
+    result = write_back(ctx, objectId, event, raw_event, session=session)
+    # The closing hop: an audit stream that says an event ARRIVED but not what
+    # became of it answers half the question.
+    _audit_event(ctx, event_data, raw_event, outcome=str(result.get("status") or ""),
+                 scored_as=event.value,
+                 email_status=result.get("email_status"),
+                 probability=result.get("probability"))
+    return result
 
 
 # --------------------------------------------------------------- step 9
-def write_back(ctx: Optional[RunContext], object_id: str, event: MailgunEvent,
+def write_back(ctx: Optional[RunContext], objectId: str, event: MailgunEvent,
                raw_event: str, session: Optional[MCPSession] = None) -> Dict[str, Any]:
     """Land engagement state on the HubSpot record, through the central MCP
     and against the same schema used for the read."""
@@ -232,22 +268,22 @@ def write_back(ctx: Optional[RunContext], object_id: str, event: MailgunEvent,
     # HubSpot is the system of record: read the lead's current status and
     # probability rather than trusting anything held here.
     try:
-        profile = mcp_session.crm.get_lead_profile(object_id)
+        profile = mcp_session.crm.get_lead_profile(objectId)
     except (CRMError, SchemaValidationError) as exc:
-        log_process(ctx, step=9, event="profile_read_failed", object_id=object_id, error=str(exc))
+        log_process(ctx, step=9, event="profile_read_failed", objectId=objectId, error=str(exc))
         return {"status": "unresolved", "reason": f"crm-error: {exc}",
-                "object_id": object_id, "event": event.value}
+                "objectId": objectId, "event": event.value}
 
     # Rank against what HubSpot holds: events arrive out of order and Mailgun
     # retries, so a weaker/duplicate event must not overwrite or re-score.
     current = _STATUS_TO_EVENT.get((profile.email_status or "").upper())
     winner, changed = resolve_status(current, event)
-    log_process(ctx, step=8, event="status_resolved", object_id=object_id,
+    log_process(ctx, step=8, event="status_resolved", objectId=objectId,
                 arrived=event.value, previous=profile.email_status or None,
                 winner=winner.value, changed=changed, raw=raw_event)
     if not changed:
         return {"status": "superseded", "event": event.value,
-                "current_status": profile.email_status, "object_id": object_id}
+                "current_status": profile.email_status, "objectId": objectId}
 
     email_status = HUBSPOT_EMAIL_STATUS[winner]
     properties: Dict[str, Any] = {"email_status": email_status}
@@ -260,28 +296,32 @@ def write_back(ctx: Optional[RunContext], object_id: str, event: MailgunEvent,
         properties["probability"] = new_probability
 
     try:
-        mcp_session.crm.patch_object(object_id, properties)
+        with span(ctx, "writeback", step=9, objectId=objectId,
+                  status=email_status) as written:
+            mcp_session.crm.patch_object(objectId, properties)
+            written.update(properties=sorted(properties), probability=new_probability)
     except (CRMError, SchemaValidationError) as exc:
-        log_process(ctx, step=9, event="writeback_failed", object_id=object_id,
+        log_process(ctx, step=9, event="writeback_failed", objectId=objectId,
                     error=str(exc), detail="event not recorded — retry expected")
         return {"status": "unresolved", "reason": f"crm-error: {exc}",
-                "object_id": object_id, "event": winner.value}
-    log_process(ctx, step=9, event="writeback_applied", object_id=object_id, written=properties)
+                "objectId": objectId, "event": winner.value}
+    log_process(ctx, step=9, event="writeback_applied", objectId=objectId,
+                written=properties)
 
-    complete = _mark_campaign_complete(ctx, mcp_session, object_id, email_status)
+    complete = _mark_campaign_complete(ctx, mcp_session, objectId, email_status)
 
     if is_terminal(winner):
-        log_process(ctx, step=9, event="run_ended", object_id=object_id,
+        log_process(ctx, step=9, event="run_ended", objectId=objectId,
                     reason=f"terminal status {winner.value}", handoff=False)
 
-    return {"status": "recorded", "event": winner.value, "object_id": object_id,
+    return {"status": "recorded", "event": winner.value, "objectId": objectId,
             "probability": new_probability, "email_status": email_status,
             "campaign_complete": complete, "terminal": is_terminal(winner)}
 
 
 # -------------------------------------------------------------- step 10
 def _mark_campaign_complete(ctx: Optional[RunContext], mcp_session: MCPSession,
-                            object_id: str, email_status: str) -> bool:
+                            objectId: str, email_status: str) -> bool:
     """THE HAND-OFF: campaign-complete once the status reaches OPENED.
 
     A SEPARATE PATCH, deliberately never bundled with the status write —
@@ -294,9 +334,9 @@ def _mark_campaign_complete(ctx: Optional[RunContext], mcp_session: MCPSession,
     if not (prop and email_status == "OPENED"):
         return False
     try:
-        mcp_session.crm.patch_object(object_id, {prop: True})
+        mcp_session.crm.patch_object(objectId, {prop: True})
     except (CRMError, SchemaValidationError) as exc:
-        log_process(ctx, step=10, event="campaign_complete_write_failed", object_id=object_id,
+        log_process(ctx, step=10, event="campaign_complete_write_failed", objectId=objectId,
                     error=str(exc),
                     detail=(f"'{prop}' could not be written — confirm the real property "
                             "name against the HubSpot schema and set "
@@ -304,7 +344,7 @@ def _mark_campaign_complete(ctx: Optional[RunContext], mcp_session: MCPSession,
                             "disable this column). email_status and probability "
                             "were still written successfully."))
         return False
-    log_process(ctx, step=10, event="handoff_condition_met", object_id=object_id,
+    log_process(ctx, step=10, event="handoff_condition_met", objectId=objectId,
                 detail=(f"{prop} set — ownership passes to the text/voice agent; "
                         "the email agent stops acting on this lead"))
     return True

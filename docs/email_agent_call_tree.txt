@@ -1,0 +1,301 @@
+================================================================================
+ LQABR EMAIL AGENT — CALL TREE
+ Generated 2026-08-26 from agents/email/src/ — every :line verified against
+ the current source. Numbers are the log `step=` keys.
+================================================================================
+
+MODULES
+-------
+  service_app.py    HTTP surface        create_app + the two routes
+  outreach.py       the send path       run_campaign -> ... -> send_one
+  events.py         the event path      handle_event -> write_back
+  observability.py  THE logging owner   4 streams, 2 renderers, handlers
+  email_agent.py    ADK wrapper         6 model-facing tools
+
+  Every file is laid out top-down: each section calls the one below it.
+
+
+================================================================================
+ A.  THE CAMPAIGN — trigger in, one email per lead out
+================================================================================
+
+service_app.hubspot_campaign                                  service_app.py:228
+│   POST /email/campaign   <- the gateway.  STEP 2
+│
+├── body.resolved_id()                                                     :215
+│      objectId | object_id | trigger_id | params.metadata.objectId
+│      400 if none of them carry a value
+│
+├── _log_audit(step=2, direction=inbound)                                  :243
+│
+└── outreach.run_campaign(objectId, limit, dry_run, run_id)                :248
+    │                                                          outreach.py:106
+    │
+    ├── start_run(objectId, run_id, session)                               :158
+    │   ├── bind_run  --------------------------> observability.py:514
+    │   │      STEP 3 · mints RunContext(objectId, run_id) · logs run_started
+    │   ├── build_session(obs=MCPObservability(ctx))       mcp/hubspot/server
+    │   ├── mcp_session.acquire_bearer()
+    │   │      STEP 4 · Secret Manager · token cached for the run
+    │   └── log_process(step=4, "bearer_acquired")
+    │
+    ├── span("load_leads", step=5)  ------------> observability.py:485      :113
+    │   │
+    │   └── load_leads(ctx, mcp_session, objectId, limit)                  :189
+    │       │   STEP 5.  TWO PHASES — list first, then load.
+    │       │
+    │       ├── PHASE 1 -- _resolve_lead_ids(...)                          :218
+    │       │   │                                                          :257
+    │       │   ├── _get_lead_profile(objectId)          [direct path]     :271
+    │       │   │      span("get_lead_profile", via=mcp)                   :241
+    │       │   │        └── mcp_session.crm.get_lead_profile()            :247
+    │       │   │              ├── GET /crm/v3/objects/contacts/{id}
+    │       │   │              ├── GET /crm/v4/.../associations/companies
+    │       │   │              ├── GET /crm/v3/objects/companies/{id}
+    │       │   │              ├── company_enriched      (MCP -> step 5)
+    │       │   │              ├── lead_context_read     (MCP -> step 9 *)
+    │       │   │              └── schema_validated      (MCP -> step 5)
+    │       │   │      A CONTACT ID RESOLVES TO ITSELF.  The only way to know
+    │       │   │      that is to read it, so the profile is carried forward
+    │       │   │      and phase 2 does not fetch it twice.
+    │       │   │
+    │       │   └── on HTTP 404 --- "not_a_contact_id"    [batch path]     :275
+    │       │       └── span("list_leads", tool=leads_for_trigger)         :279
+    │       │           └── mcp_session.crm.leads_for_trigger(limit)
+    │       │                 · lead_without_objectId  -> skipped          :284
+    │       │                 · duplicate_lead_skipped -> DEDUP            :288
+    │       │
+    │       ├── log_process("leads_found", leads=[...], source=…)          :224
+    │       │      THE LIST, before any per-lead traffic
+    │       │
+    │       └── PHASE 2 -- for each lead not already loaded                :234
+    │           └── _get_lead_profile(lead_id, label="i/n")                :241
+    │                 on CRMError / SchemaValidationError:
+    │                 └── _unresolved() --> log + _set_email_status(FAILED) :208
+    │
+    └── for index, profile in enumerate(profiles)                          :128
+        │
+        ├── log_process("profile", debug_only=True, **fields(profile))     :132
+        │      DEBUG ONLY · all 20 ValidatedProfile fields · prospect PII
+        │
+        ├── log_process("lead i/n", glyph=BUSY, state=working)   step 6    :134
+        │
+        ├── work_lead(ctx, mcp_session, profile)             ------> §B    :137
+        │
+        └── log_process("lead i/n", glyph=OK|FAIL, remaining=…)  step 7    :143
+        ...
+        log_process("batch_complete", sent/rejected/skipped/unresolved)    :152
+
+
+================================================================================
+ B.  ONE LEAD — claim, construct, send
+================================================================================
+
+outreach.work_lead(ctx, mcp_session, profile)                 outreach.py:297
+│
+├── GUARD 1 · already outreached?                                          :304
+│      profile.email_status in ALREADY_SENT_STATUSES {SENT,DELIVERED,OPENED}
+│      └── log_process("send_skipped_already_sent")  -> return, no send    :306
+│
+├── GUARD 2 · CLAIM BEFORE CONSTRUCTION                        step 6      :321
+│      _set_email_status(SENT, "claimed before construction")              :170
+│      └── mcp_session.crm.patch_object() -> PATCH /crm/v3/objects/contacts
+│      WHY HERE, not before the send: construct_email is a model call that
+│      runs 26-88s. A caller that times out inside that window starts a
+│      second run, which re-reads the lead and must see SENT.
+│      !! STILL RACES.  HubSpot acks the PATCH before the value is visible
+│         to a subsequent GET; two triggers 0.65s apart both sent (11:28:06).
+│
+├── span("construct", step=6)                                              :328
+│   └── construct_email(ctx, profile, cta_url)          ------> §C         :331
+│       │
+│       ├── MissingLeadContext --> release claim to previous_status        :338
+│       │      NOT a failure: research has not reached the lead yet
+│       └── SkillError         --> _set_email_status(FAILED)               :347
+│
+└── span("send", step=7)                                                   :351
+    └── send_one(...)                                    ------> §D        :352
+
+
+================================================================================
+ C.  STEP 6 — CONSTRUCT.  One model call per lead.
+================================================================================
+
+outreach.construct_email(ctx, profile, cta_url)               outreach.py:360
+│
+├── GATE · profile.has_lead_context                                        :371
+│      └── raise MissingLeadContext   (!! live: "Sample Test", 11 chars)
+│
+├── skills.select_skill(profile.industry)    -> skill + sector restraint   :377
+├── skills.build_context(profile.as_context(), cta_url)                    :378
+├── skills.industry_is_recognised(industry)  -> strictest default if not   :379
+├── log_process("skill_selected")                                          :384
+│
+├── build_prompt(skill, skills.lead_facts(context))                        :388
+│   │                                                                      :424
+│   └── INSTRUCTIONS FIRST, lead facts LAST and labelled DATA — so a value
+│       in a field cannot act as an instruction.  Do not reorder.
+│
+├── log_process("model_call_started", prompt_chars=…)                      :390
+│
+├── call_model(prompt)                                                     :443
+│   │   gemini-*  -> google-genai native client
+│   │   else      -> litellm.completion(model, messages, temperature,
+│   │                drop_params)   !! NO max_tokens — see the as-built doc
+│   └── returns (text, {input_tokens, output_tokens})
+│
+├── log_model(prompt=…, completion=…)                                      :402
+│      model_log stream · content only in debug mode
+│
+├── parse_reply(text) -> (subject, html_body)                              :481
+│      strips a ```json fence · ValueError -> SkillError                   :408
+│
+├── skills.finalise(subject, body, context)                                :415
+│      substitutes {cta_url} / {sender_name}, appends OUR opt-out footer
+│      — a model-written unsubscribe link is a compliance problem
+│
+└── log_process("email_drafted", subject_length, body_length)              :419
+
+
+================================================================================
+ D.  STEP 7 — SEND.  One email, never twice.
+================================================================================
+
+outreach.send_one(ctx, mcp_session, profile, subject, html_body, skill)
+│                                                             outreach.py:500
+├── dry_run --> log_process("send_skipped_dry_run") -> return              :506
+│
+├── GUARD 3 · client = mailgun or MailgunClient(max_retries=1)             :518
+│      NEVER RETRY A SEND. A timeout means "no reply", not "not sent" —
+│      Mailgun may have accepted it and answered late. Retrying that
+│      ambiguity is what delivered one lead 2-3 copies.
+│
+├── client.send_email(to, subject, html, tags, variables)                  :521
+│      variables = {lqabr_object_id, lqabr_run_id}
+│      lqabr_object_id IS the lead — echoed on every event.  NO RUN STATE.
+│
+├── MailgunError  --> log_audit + _set_email_status(FAILED) -> rejected    :529
+├── Exception     --> _set_email_status(FAILED) then RE-RAISE              :542
+│      the claim MUST be released or the lead is never contacted again
+│
+└── log_audit(step=7, "mailgun:/messages", message_id=…)                   :547
+       no status write here — SENT was claimed before construction
+
+
+================================================================================
+ E.  STEPS 8-10 — THE EVENT PATH.  Later, container scaled to zero.
+================================================================================
+
+service_app.mailgun_events(request)                        service_app.py:264
+│   POST /mailgun/events   <- Mailgun
+│
+└── dispatch_mailgun(payload, _handle)                                     :276
+    │
+    ├── verify_webhook_signature(timestamp, token, signature)   lqabr_core
+    │      SecretNotFoundError --> 503  (a 5xx makes Mailgun retry — the
+    │                                    event is deferred, not lost)
+    │      not authentic       --> 401  NO BYPASS FLAG
+    │
+    └── _handle -> events.handle_event(event-data)            events.py:215
+        │
+        ├── _variables() -> lqabr_object_id + lqabr_run_id                 :223
+        │      the SEND's ids, echoed back. This is what replaces run state.
+        ├── RunContext(objectId, run_id)                                   :228
+        ├── _audit_event(...)  -- inbound hop, ENRICHED                    :231
+        │      message_id · recipient · mailgun_ts · severity · reason
+        │      · smtp_code    (message_id is the join key back to the send)
+        │
+        ├── from_mailgun(raw_event, severity)                              :147
+        │      outside the closed enum --> "ignored" + audit               :238
+        │      CLICKED collapses to OPENED (ranked and scored as an open)
+        ├── no objectId       --> "unresolved" + audit                     :247
+        │
+        ├── write_back(ctx, objectId, event, raw)              STEP 9      :262
+        │   │
+        │   ├── mcp_session.crm.get_lead_profile(objectId)                 :271
+        │   │      HubSpot is the system of record — read, never assume
+        │   ├── resolve_status(current, arrived) -> winner, changed        :280
+        │   │      events arrive OUT OF ORDER and Mailgun retries;
+        │   │      a weaker or duplicate event must not overwrite or rescore
+        │   │      !! BOUNCED = "failed" aliases FAILED — corrupts _PRECEDENCE
+        │   ├── not changed  --> "superseded", no write                    :285
+        │   ├── apply_event(probability, SCORED_AS[winner])      lqabr_core
+        │   │      delivered +2 · opened +5 · (clicks collapse to OPENED)
+        │   ├── span("writeback", step=9) -> crm.patch_object()            :299
+        │   ├── _mark_campaign_complete(...)               STEP 10         :323
+        │   │      SEPARATE PATCH, never bundled — HubSpot validates a
+        │   │      property bag atomically and this name 400s where it does
+        │   │      not exist; bundled, that 400 takes the status down too.
+        │   │      !! the property does not exist in the portal -> always 400
+        │   └── is_terminal(winner) --> log "run_ended"                    :313
+        │
+        └── _audit_event(outcome=…, scored_as=…, email_status=…)           :254
+               THE CLOSING HOP — what became of the event, not just that
+               it arrived
+
+
+================================================================================
+ F.  OBSERVABILITY — one event, two renderings, four files
+================================================================================
+
+  Every log call in every module lands here.  observability.py owns the only
+  getLogger("lqabr.email") in the tree and imports nothing from the agent.
+
+configure_logging(mode, log_dir)                        observability.py:379
+│   THE ONE OWNER · outreach / service_app / email_agent call this and never
+│   install handlers of their own
+│
+├── stdout  --> ConsoleFormatter (colour on TTY) | JsonFormatter (not a TTY)
+├── file x4 --> JsonFormatter + _StreamFilter, 10 MB x 5
+│        logs/agents/email/email_{process,audit,system,model}.log
+└── _adopt_core_loggers()                                                  :229
+       lqabr.audit / lqabr.process / lqabr.system — lqabr_core's own
+       loggers.  Left alone, a HubSpot call the SHARED package makes prints
+       as a raw JSON blob mid-console.  Adopted, it renders like every
+       other hop and files with them.
+
+_emit(stream, ctx, glyph, level, **fields)                                 :417
+│   builds the payload ONCE, attaches it as record.lqabr
+│   normal mode drops None fields; debug keeps them
+│
+├── log_system   system_log   container start/stop                         :434
+├── log_process  process_log  steps, spans, per-lead progress              :439
+├── log_audit    audit_log    boundary hops, bearer FINGERPRINTED          :449
+└── log_model    model_log    tokens, duration, prompt+completion          :471
+
+span(ctx, name, step)                                                      :485
+    IN on entry · OUT with elapsed ms on exit · ALWAYS closes, exception
+    path included · the subject carries to the closing line
+
+fields(obj)        every dataclass field, empties included                 :120
+preview(v, limit)  head + "(+N chars)"  — console only, never the file     :111
+
+
+================================================================================
+ G.  ADK TOOLS — the model-facing surface (local dev)
+================================================================================
+
+email_agent.py     run_email_campaign      :72   -> outreach.run_campaign
+                   preview_email           :94   -> construct, never sends
+                   send_outreach_email    :130   -> outreach.send_one
+                                                    !! BYPASSES work_lead, so
+                                                       it writes NO status
+                   get_lead_status        :175
+                   list_email_queue       :198
+                   get_lead_profile       :213
+
+
+================================================================================
+ OPEN ISSUES flagged above
+================================================================================
+  !! B  duplicate send — HubSpot acks a PATCH before it is readable
+  !! C  no max_tokens; a cap was tried at 1500 and 3000 and REVERTED
+  !! C  lead_context is "Sample Test" (11 chars) on the live test lead
+  !! E  BOUNCED = "failed" aliases FAILED, corrupting _PRECEDENCE
+  !! E  email_campaign_complete does not exist in the portal -> 400 every time
+  !! G  send_outreach_email bypasses work_lead -> leaves the lead PENDING
+  *     lead_context_read logs step=9 during step 5 — comes from mcp/hubspot,
+        shared code, out of this agent's scope
+
+  Detail: claude/email-agent-logging-as-built-2026-08-26.md
+================================================================================
