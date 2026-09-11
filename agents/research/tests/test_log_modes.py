@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from research_core.obs import (ConsoleFormatter, Observability, _GLYPHS_UNICODE,
+from research_core.research_logging import (ConsoleFormatter, ResearchLogging, _GLYPHS_UNICODE,
                                current_mode, preview, redact, set_mode,
                                summarize_args)
 
@@ -49,7 +49,7 @@ def _render(width: int, **fields):
     logger.setLevel(logging.INFO)
     sink = _Sink(width)
     logger.addHandler(sink)
-    Observability(run_id="res-mode", logger=logger).process.emit("model_request", **fields)
+    ResearchLogging(run_id="res-mode", logger=logger).process.emit("model_request", **fields)
     return sink
 
 
@@ -144,35 +144,6 @@ def test_a_record_holding_a_newline_is_still_exactly_one_json_line():
     assert "\n" in json.loads(sink.raw[-1])["note_preview"], "and survives the round trip"
 
 
-# --- the deprecated knob still works, and says so -------------------------
-
-def test_log_detail_zero_resolves_to_terse_and_is_flagged(monkeypatch):
-    from research_core.settings import get_settings
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_DETAIL", "0")
-    monkeypatch.delenv("LQABR_RESEARCH_LOG_MODE", raising=False)
-    settings = get_settings(refresh=True)
-    assert settings.log_mode == "terse"
-    assert settings.log_detail_deprecated is True
-
-
-def test_log_detail_one_resolves_to_normal(monkeypatch):
-    from research_core.settings import get_settings
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_DETAIL", "1")
-    monkeypatch.delenv("LQABR_RESEARCH_LOG_MODE", raising=False)
-    settings = get_settings(refresh=True)
-    assert settings.log_mode == "normal"
-    assert settings.log_detail_deprecated is True
-
-
-def test_the_mode_env_var_wins_over_the_deprecated_one(monkeypatch):
-    from research_core.settings import get_settings
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_DETAIL", "0")
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_MODE", "debug")
-    settings = get_settings(refresh=True)
-    assert settings.log_mode == "debug"
-    assert settings.log_detail_deprecated is False
-
-
 def test_an_unknown_mode_falls_back_rather_than_raising(monkeypatch):
     from research_core.settings import get_settings
     monkeypatch.setenv("LQABR_RESEARCH_LOG_MODE", "loud")
@@ -202,17 +173,17 @@ class _Rows(logging.Handler):
         self.rows.append(json.loads(record.getMessage()))
 
 
-def _obs(name: str = "payload"):
+def _run_log(name: str = "payload"):
     logger = logging.getLogger(f"lqabr.test.{name}.{id(object())}")
     logger.handlers.clear()
     logger.propagate = False
     logger.setLevel(logging.INFO)
     sink = _Rows()
     logger.addHandler(sink)
-    return Observability(run_id="res-payload", logger=logger), sink
+    return ResearchLogging(run_id="res-payload", logger=logger), sink
 
 
-def _stub_provider(obs):
+def _stub_provider(run_log):
     """The real AnthropicWebSearch with a stubbed transport — the emit under
     test is the production one, not a re-implementation."""
     import types
@@ -228,7 +199,7 @@ def _stub_provider(obs):
         stop_reason = "end_turn"
         usage = types.SimpleNamespace(input_tokens=10, output_tokens=5)
 
-    provider = AnthropicWebSearch(settings=get_settings(refresh=True), obs=obs)
+    provider = AnthropicWebSearch(settings=get_settings(refresh=True), run_log=run_log)
     provider._client = types.SimpleNamespace(
         messages=types.SimpleNamespace(create=lambda **kw: _Msg()))
     return provider
@@ -243,8 +214,8 @@ def test_debug_logs_the_full_system_prompt_on_every_request(monkeypatch):
     have to scroll back through the run to learn what was asked."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     set_mode("debug")
-    obs, sink = _obs()
-    provider = _stub_provider(obs)
+    run_log, sink = _run_log()
+    provider = _stub_provider(run_log)
     for i in range(3):
         provider.research(f"prompt {i}", system=SYSTEM)
     requests = [r for r in sink.rows if r["event"] == "model_request"]
@@ -259,8 +230,8 @@ def test_debug_logs_the_exact_payload_handed_to_the_sdk(monkeypatch):
     the payload itself is the record, so "what did we send" has one answer."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     set_mode("debug")
-    obs, sink = _obs()
-    _stub_provider(obs).research("prompt zero", system=SYSTEM)
+    run_log, sink = _run_log()
+    _stub_provider(run_log).research("prompt zero", system=SYSTEM)
     payload = [r for r in sink.rows if r["event"] == "model_request"][0]["payload"]
     assert payload["messages"] == [{"role": "user", "content": "prompt zero"}]
     assert payload["system"] == SYSTEM
@@ -274,8 +245,8 @@ def test_outside_debug_the_payload_is_not_logged(monkeypatch, mode_name):
     affordance, not a new default."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     set_mode(mode_name)
-    obs, sink = _obs()
-    provider = _stub_provider(obs)
+    run_log, sink = _run_log()
+    provider = _stub_provider(run_log)
     for i in range(2):
         provider.research(f"prompt {i}", system=SYSTEM)
     requests = [r for r in sink.rows if r["event"] == "model_request"]
@@ -296,7 +267,7 @@ def test_debug_spills_an_audit_hop_instead_of_one_giant_line():
     logger.addHandler(sink)
 
     body = "X" * 4000
-    Observability(run_id="res-hop", logger=logger).hop(
+    ResearchLogging(run_id="res-hop", logger=logger).outbound_call(
         service="mcp", endpoint="http://localhost:8080/mcp", status=200,
         duration_ms=1.0, attempt=2,
         params={"tool": "upsert", "authorization": "Bearer NEVER", "note": body})

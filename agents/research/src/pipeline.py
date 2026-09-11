@@ -9,7 +9,7 @@ Never raises for a bad lead, a missing post or a failed model call — those com
 back as ``status="failed"`` with the reason and the step named, because a caller
 needs to know WHICH step failed, not just that something did.
 
-Every stage runs inside ``obs.step``, so the log carries its inputs, its outputs
+Every stage runs inside ``run_log.step``, so the log carries its inputs, its outputs
 and its duration whichever way the block is left. Read top to bottom, the log is
 the run.
 """
@@ -20,13 +20,14 @@ from typing import List, Optional
 
 try:
     from research_core.mcp.hubspot import HubSpotMCP
-    from research_core.obs import Observability, get_obs, new_run_id, preview
+    from research_core.research_logging import (ResearchLogging, get_run_log,
+                                                      new_run_id, preview)
     from research_core.settings import Settings, get_settings
     from research_core.types import BlogFacts, ResearchNote
 except ImportError:  # pragma: no cover
     from ..packages.research_core.mcp.hubspot import HubSpotMCP  # type: ignore
-    from ..packages.research_core.obs import (  # type: ignore
-        Observability, get_obs, new_run_id, preview)
+    from ..packages.research_core.research_logging import (  # type: ignore
+        ResearchLogging, get_run_log, new_run_id, preview)
     from ..packages.research_core.settings import Settings, get_settings  # type: ignore
     from ..packages.research_core.types import BlogFacts, ResearchNote  # type: ignore
 
@@ -48,20 +49,20 @@ def _crm_error(hubspot: HubSpotMCP, absent: str, refused: str) -> str:
 
 def run_research(target: ResearchTarget, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None,
+                 run_log: ResearchLogging | None = None,
                  hubspot: Optional[HubSpotMCP] = None,
                  composer: Optional[Composer] = None,
                  blog: Optional[BlogFacts] = None,
                  run_id: str = "") -> ResearchResponse:
     settings = settings or get_settings()
-    obs = obs or get_obs(run_id or new_run_id(), refresh=True)
-    hubspot = hubspot or HubSpotMCP(settings=settings, obs=obs)
+    run_log = run_log or get_run_log(run_id or new_run_id(), refresh=True)
+    hubspot = hubspot or HubSpotMCP(settings=settings, run_log=run_log)
 
     # The config belongs on the line that opens a STANDALONE run. In a campaign
     # these values were printed once by campaign_start; repeating ten of them
     # per lead is noise, not information.
     if blog is None:
-        obs.process.emit("run_start", objectId=target.objectId,
+        run_log.process.emit("run_start", objectId=target.objectId,
                          summary_objectId=target.summary_objectId,
                          model=settings.model, mcp_url=settings.mcp_base_url,
                          write_tool=settings.mcp_tool_write,
@@ -73,8 +74,8 @@ def run_research(target: ResearchTarget, *,
                          dry_run=settings.dry_run)
 
     def _failed(step: str, reason: str) -> ResearchResponse:
-        obs.process.emit("run_failed", step=step, objectId=target.objectId, reason=reason)
-        return ResearchResponse(run_id=obs.run_id, status="failed",
+        run_log.process.emit("run_failed", step=step, objectId=target.objectId, reason=reason)
+        return ResearchResponse(run_id=run_log.run_id, status="failed",
                                 objectId=target.objectId, model=settings.model,
                                 error=reason)
 
@@ -82,7 +83,7 @@ def run_research(target: ResearchTarget, *,
     if not target.objectId:
         return _failed("input", "bad-data: no objectId was supplied, so there is "
                                 "no lead to research")
-    with obs.step("read_lead", objectId=target.objectId, via="mcp",
+    with run_log.step("read_lead", objectId=target.objectId, via="mcp",
                   tool=settings.mcp_tool_read_lead, url=settings.mcp_base_url) as step:
         lead = hubspot.read_lead(target.objectId)
         if lead is None:
@@ -100,18 +101,18 @@ def run_research(target: ResearchTarget, *,
     # MCP, which currently returns company_id but no name. Logged loudly so a
     # run using it is never mistaken for one where the MCP supplied the name.
     if target.company:
-        obs.process.emit("company_override_applied", objectId=target.objectId,
+        run_log.process.emit("company_override_applied", objectId=target.objectId,
                          supplied=target.company, from_mcp=lead.company,
                          reason="TEST ONLY — gap B1; the gateway never sends this")
         lead.company = target.company
 
     if settings.skip_if_context_present and lead.existing_lead_context.strip():
-        obs.process.emit("run_skipped", objectId=target.objectId,
+        run_log.process.emit("run_skipped", objectId=target.objectId,
                          existing_context_chars=len(lead.existing_lead_context),
                          reason="lead_context already present and "
                                 "LQABR_RESEARCH_SKIP_IF_CONTEXT_PRESENT=1")
         return ResearchResponse(
-            run_id=obs.run_id, status="completed", objectId=target.objectId,
+            run_id=run_log.run_id, status="completed", objectId=target.objectId,
             lead=lead.to_dict(), model=settings.model,
             hubspot=HubSpotOutcome(status="skipped", objectId=target.objectId,
                                    property_name=settings.hubspot_context_property,
@@ -128,7 +129,7 @@ def run_research(target: ResearchTarget, *,
             return _failed("input", "bad-data: no summary_objectId was supplied — the "
                                     "MCP reads the blog store by the post's record "
                                     "id, so the post cannot be fetched without it")
-        with obs.step("read_blog", summary_objectId=target.summary_objectId, via="mcp",
+        with run_log.step("read_blog", summary_objectId=target.summary_objectId, via="mcp",
                       tool=settings.mcp_tool_read_blog,
                       url=settings.mcp_base_url) as step:
             blog = hubspot.read_blog(target.summary_objectId)
@@ -145,8 +146,8 @@ def run_research(target: ResearchTarget, *,
                     summary_preview=preview(blog.blog_summary))
 
     # ---- step 3: research + compose ---------------------------------
-    composer = composer or Composer(settings=settings, obs=obs)
-    with obs.step("research", objectId=target.objectId,
+    composer = composer or Composer(settings=settings, run_log=run_log)
+    with run_log.step("research", objectId=target.objectId,
                   company=lead.company or "<not on the record>",
                   industry=lead.industry or blog.blog_industry,
                   model=settings.model, max_tokens=settings.max_tokens,
@@ -165,7 +166,7 @@ def run_research(target: ResearchTarget, *,
                 words=len(note.text.split()), sources=len(note.sources))
 
     # ---- step 4: write it back --------------------------------------
-    with obs.step("write_context", objectId=target.objectId, via="mcp",
+    with run_log.step("write_context", objectId=target.objectId, via="mcp",
                   tool=settings.mcp_tool_write,
                   property_name=settings.hubspot_context_property,
                   chars=len(note.as_hubspot_text(settings.note_max_chars)),
@@ -183,7 +184,7 @@ def run_research(target: ResearchTarget, *,
             step.failed(outcome.error, **written)
 
     response = ResearchResponse(
-        run_id=obs.run_id,
+        run_id=run_log.run_id,
         # status follows the WRITE: a note that could not be landed is a failure,
         # and the note still comes back so the work is not lost.
         status="completed" if outcome.ok else "failed",
@@ -197,7 +198,7 @@ def run_research(target: ResearchTarget, *,
         model=settings.model,
         error="" if outcome.ok else outcome.error,
     )
-    obs.process.emit("run_complete", status=response.status,
+    run_log.process.emit("run_complete", status=response.status,
                      write_status=outcome.status, objectId=target.objectId,
                      chars=outcome.chars, sources=len(note.sources))
     return response
@@ -205,7 +206,7 @@ def run_research(target: ResearchTarget, *,
 
 def run_campaign(target: CampaignTarget, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None,
+                 run_log: ResearchLogging | None = None,
                  hubspot: Optional[HubSpotMCP] = None,
                  composer: Optional[Composer] = None,
                  run_id: str = "") -> CampaignResponse:
@@ -222,10 +223,10 @@ def run_campaign(target: CampaignTarget, *,
     (`leads_found`, `written`, `failed`, `skipped`) and a per-lead breakdown.
     """
     settings = settings or get_settings()
-    obs = obs or get_obs(run_id or new_run_id(), refresh=True)
-    hubspot = hubspot or HubSpotMCP(settings=settings, obs=obs)
+    run_log = run_log or get_run_log(run_id or new_run_id(), refresh=True)
+    hubspot = hubspot or HubSpotMCP(settings=settings, run_log=run_log)
 
-    obs.process.emit("campaign_start", objectId=target.objectId,
+    run_log.process.emit("campaign_start", objectId=target.objectId,
                      limit=target.limit,
                      model=settings.model, mcp_url=settings.mcp_base_url,
                      lead_lookup="hubspot_direct" if settings.use_direct_lead_lookup
@@ -235,9 +236,9 @@ def run_campaign(target: CampaignTarget, *,
                      dry_run=settings.dry_run)
 
     def _failed(step: str, reason: str, **extra) -> CampaignResponse:
-        obs.process.emit("campaign_failed", step=step,
+        run_log.process.emit("campaign_failed", step=step,
                          objectId=target.objectId, reason=reason)
-        return CampaignResponse(run_id=obs.run_id, status="failed",
+        return CampaignResponse(run_id=run_log.run_id, status="failed",
                                 objectId=target.objectId,
                                 model=settings.model, error=reason, **extra)
 
@@ -248,7 +249,7 @@ def run_campaign(target: CampaignTarget, *,
         return _failed("input",
                        "bad-data: no objectId was supplied, so there is no "
                        "blog post to build a campaign from")
-    with obs.step("read_blog", objectId=target.objectId, via="mcp",
+    with run_log.step("read_blog", objectId=target.objectId, via="mcp",
                   tool=settings.mcp_tool_read_blog, url=settings.mcp_base_url,
                   detail="the objectId on this route is a blog POST") as step:
         blog = hubspot.read_blog(target.objectId)
@@ -272,7 +273,7 @@ def run_campaign(target: CampaignTarget, *,
                        blog=blog.to_dict())
 
     # ---- step 2: who is in that industry -----------------------------
-    with obs.step("list_leads", industry=industry, limit=target.limit,
+    with run_log.step("list_leads", industry=industry, limit=target.limit,
                   via="hubspot_direct" if settings.use_direct_lead_lookup else "mcp",
                   tool="" if settings.use_direct_lead_lookup
                        else settings.mcp_tool_list_leads) as step:
@@ -291,28 +292,28 @@ def run_campaign(target: CampaignTarget, *,
 
     if not lead_ids:
         # A real, valid answer: nobody matched. Not a failure.
-        obs.process.emit("campaign_complete", objectId=target.objectId,
+        run_log.process.emit("campaign_complete", objectId=target.objectId,
                          status="completed", industry=industry, leads_found=0,
                          written=0, failed=0, skipped=0,
                          reason="no lead is in this industry")
         return CampaignResponse(
-            run_id=obs.run_id, status="completed", objectId=target.objectId,
+            run_id=run_log.run_id, status="completed", objectId=target.objectId,
             industry=industry, leads_found=0, blog=blog.to_dict(),
             model=settings.model)
 
     # ---- step 3: one lead at a time ----------------------------------
     # The blog is passed down already-read: a campaign over N leads must not
     # fetch the same post N times.
-    composer = composer or Composer(settings=settings, obs=obs)
+    composer = composer or Composer(settings=settings, run_log=run_log)
     results: List[CampaignLeadResult] = []
     for position, leadObjectId in enumerate(lead_ids, start=1):
-        obs.process.emit("campaign_lead_start", objectId=leadObjectId,
+        run_log.process.emit("campaign_lead_start", objectId=leadObjectId,
                          position=position, of=len(lead_ids), industry=industry)
         one = run_research(
             ResearchTarget(objectId=leadObjectId,
                            summary_objectId=target.objectId),
-            settings=settings, obs=obs, hubspot=hubspot,
-            composer=composer, blog=blog, run_id=obs.run_id)
+            settings=settings, run_log=run_log, hubspot=hubspot,
+            composer=composer, blog=blog, run_id=run_log.run_id)
         write_status = (one.hubspot.status if one.hubspot else "") or one.status
         result = CampaignLeadResult(
             objectId=leadObjectId,
@@ -320,7 +321,7 @@ def run_campaign(target: CampaignTarget, *,
             chars=one.hubspot.chars if one.hubspot else 0,
             error=one.error)
         results.append(result)
-        obs.process.emit("campaign_lead_done", objectId=leadObjectId,
+        run_log.process.emit("campaign_lead_done", objectId=leadObjectId,
                          position=position, of=len(lead_ids),
                          status=result.status, chars=result.chars,
                          error=result.error[:200])
@@ -332,14 +333,14 @@ def run_campaign(target: CampaignTarget, *,
               else "failed" if written == 0 and skipped == 0
               else "partial")
 
-    obs.process.emit("campaign_complete", objectId=target.objectId,
+    run_log.process.emit("campaign_complete", objectId=target.objectId,
                      status=status, industry=industry,
                      leads_found=len(lead_ids), written=written,
                      failed=failed, skipped=skipped,
                      failed_leads=[r.objectId for r in results
                                    if r.status == "failed"][:20])
     return CampaignResponse(
-        run_id=obs.run_id, status=status, objectId=target.objectId,
+        run_id=run_log.run_id, status=status, objectId=target.objectId,
         industry=industry, leads_found=len(lead_ids), written=written,
         failed=failed, skipped=skipped, results=results, blog=blog.to_dict(),
         model=settings.model,

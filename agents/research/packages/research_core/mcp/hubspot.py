@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..obs import Observability, get_obs, preview
+from ..research_logging import ResearchLogging, get_run_log, preview
 from ..settings import Settings, get_settings
 from ..types import BlogFacts, LeadFacts, ResearchNote, WriteResult
 from .client import MCPClient, MCPError
@@ -82,10 +82,10 @@ class HubSpotMCP:
 
     def __init__(self, client: MCPClient | None = None, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None) -> None:
+                 run_log: ResearchLogging | None = None) -> None:
         self._settings = settings or get_settings()
-        self._obs = obs or get_obs()
-        self._client = client or MCPClient(self._settings, obs=self._obs)
+        self._run_log = run_log or get_run_log()
+        self._client = client or MCPClient(self._settings, run_log=self._run_log)
         self._last_error = ""
 
     @property
@@ -123,18 +123,18 @@ class HubSpotMCP:
                 {settings.mcp_object_id_arg: str(objectId)})
         except MCPError as exc:
             self._last_error = str(exc)
-            self._obs.process.emit("lead_read_failed", objectId=objectId, reason=str(exc))
+            self._run_log.process.emit("lead_read_failed", objectId=objectId, reason=str(exc))
             return None
 
         flat = _flatten(result)
         refused = refusal(flat)
         if refused:
             self._last_error = refused
-            self._obs.process.emit("lead_read_rejected", objectId=objectId,
+            self._run_log.process.emit("lead_read_rejected", objectId=objectId,
                                    tool=settings.mcp_tool_read_lead, reason=refused)
             return None
         if not flat or flat.get("found") is False:
-            self._obs.process.emit("lead_read_empty", objectId=objectId,
+            self._run_log.process.emit("lead_read_empty", objectId=objectId,
                                    reason="not found")
             return None
 
@@ -177,7 +177,7 @@ class HubSpotMCP:
         settings = self._settings
         industry = (industry or "").strip()
         if not industry:
-            self._obs.process.emit("leads_list_skipped",
+            self._run_log.process.emit("leads_list_skipped",
                                    reason="bad-data: no industry to match on")
             return None
 
@@ -191,10 +191,10 @@ class HubSpotMCP:
                 from hubspot_direct import HubSpotDirect  # type: ignore
             try:
                 ids = HubSpotDirect(settings=settings,
-                                    obs=self._obs).list_leads_by_industry(
+                                    run_log=self._run_log).list_leads_by_industry(
                                         industry, limit=limit)
             except Exception as exc:  # noqa: BLE001 - reported, never swallowed
-                self._obs.process.emit("leads_list_failed", industry=industry,
+                self._run_log.process.emit("leads_list_failed", industry=industry,
                                        source="hubspot_direct", reason=str(exc))
                 return None
             return ids
@@ -203,20 +203,20 @@ class HubSpotMCP:
             result = self._client.call_tool(settings.mcp_tool_list_leads,
                                             {"industry": industry, "limit": limit})
         except MCPError as exc:
-            self._obs.process.emit("leads_list_failed", industry=industry,
+            self._run_log.process.emit("leads_list_failed", industry=industry,
                                    tool=settings.mcp_tool_list_leads, reason=str(exc))
             return None
 
         flat = _flatten(result)
         if flat.get("error") or flat.get("failure_kind"):
-            self._obs.process.emit("leads_list_rejected", industry=industry,
+            self._run_log.process.emit("leads_list_rejected", industry=industry,
                                    reason=str(flat.get("error") or flat.get("failure_kind")))
             return None
 
         rows = result if isinstance(result, list) else (
             flat.get("leads") or flat.get("results") or flat.get("contacts") or [])
         if not isinstance(rows, list):
-            self._obs.process.emit("leads_list_rejected", industry=industry,
+            self._run_log.process.emit("leads_list_rejected", industry=industry,
                                    reason=f"unexpected reply shape: {type(rows).__name__}")
             return None
 
@@ -249,7 +249,7 @@ class HubSpotMCP:
                 {settings.mcp_object_id_arg: str(objectId)})
         except MCPError as exc:
             self._last_error = str(exc)
-            self._obs.process.emit("blog_read_failed",
+            self._run_log.process.emit("blog_read_failed",
                                    objectId=objectId, reason=str(exc))
             return None
 
@@ -258,12 +258,12 @@ class HubSpotMCP:
         refused = refusal(flat)
         if refused:
             self._last_error = refused
-            self._obs.process.emit("blog_read_rejected", objectId=objectId,
+            self._run_log.process.emit("blog_read_rejected", objectId=objectId,
                                    tool=settings.mcp_tool_read_blog, reason=refused)
             return None
         # Not-found is a VALID result on this tool, never an error.
         if not flat or flat.get("found") is False:
-            self._obs.process.emit("blog_read_empty", objectId=objectId)
+            self._run_log.process.emit("blog_read_empty", objectId=objectId)
             return None
 
         blog = BlogFacts(
@@ -274,7 +274,7 @@ class HubSpotMCP:
         )
         warnings = flat.get("warnings")
         if warnings:
-            self._obs.process.emit("blog_read_warnings",
+            self._run_log.process.emit("blog_read_warnings",
                                    objectId=objectId, warnings=warnings)
         return blog
 
@@ -291,7 +291,7 @@ class HubSpotMCP:
         text = note.as_hubspot_text(settings.note_max_chars)
 
         if not text.strip():
-            self._obs.process.emit("context_write_not_writable", objectId=lead.objectId,
+            self._run_log.process.emit("context_write_not_writable", objectId=lead.objectId,
                                    reason="bad-data: the composed note was empty")
             return WriteResult(status="not_writable", objectId=lead.objectId,
                                property_name=prop, tool=settings.mcp_tool_write,
@@ -301,14 +301,14 @@ class HubSpotMCP:
         if missing:
             reason = (f"bad-data: lead is missing {missing}, which "
                       f"{settings.mcp_tool_write} requires to write")
-            self._obs.process.emit("context_write_not_writable", objectId=lead.objectId,
+            self._run_log.process.emit("context_write_not_writable", objectId=lead.objectId,
                                    reason=reason)
             return WriteResult(status="not_writable", objectId=lead.objectId,
                                property_name=prop, tool=settings.mcp_tool_write,
                                error=reason)
 
         if settings.dry_run:
-            self._obs.process.emit("context_write_dry_run", objectId=lead.objectId,
+            self._run_log.process.emit("context_write_dry_run", objectId=lead.objectId,
                                    tool=settings.mcp_tool_write,
                                    property_name=prop, chars=len(text),
                                    reason="LQABR_RESEARCH_DRY_RUN=1 — composed and "
@@ -327,7 +327,7 @@ class HubSpotMCP:
         try:
             result = self._client.call_tool(settings.mcp_tool_write, arguments)
         except MCPError as exc:
-            self._obs.process.emit("context_write_failed", objectId=lead.objectId,
+            self._run_log.process.emit("context_write_failed", objectId=lead.objectId,
                                    tool=settings.mcp_tool_write, reason=str(exc))
             return WriteResult(status="error", objectId=lead.objectId,
                                property_name=prop, chars=len(text),
@@ -345,7 +345,7 @@ class HubSpotMCP:
                 reason = (str(result.get("error") or "")
                           or "; ".join(str(r) for r in (result.get("reasons") or []))
                           or status_value or "write rejected")
-                self._obs.process.emit("context_write_rejected", objectId=lead.objectId,
+                self._run_log.process.emit("context_write_rejected", objectId=lead.objectId,
                                        tool=settings.mcp_tool_write, reason=reason)
                 return WriteResult(status="error", objectId=lead.objectId,
                                    property_name=prop, chars=len(text),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -11,19 +10,19 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 
-from lqabr_core import observability as obs
-from lqabr_core.types import VoiceLead
+from text_voice_core import observability as obs, settings
+from text_voice_core.types import VoiceLead
 
 
-VAPI_BASE_URL = os.environ.get("LQABR_VAPI_BASE_URL", "https://api.vapi.ai")
-VAPI_CREDENTIAL_NAME = "lqabr-vapi-api-key"
+VAPI_BASE_URL = settings.VAPI_BASE_URL
+VAPI_CREDENTIAL_NAME = settings.VAPI_CREDENTIAL_NAME
 
-VAPI_PHONE_NUMBER_ID = os.environ.get("LQABR_VAPI_PHONE_NUMBER_ID", "")
-VAPI_ASSISTANT_ID = os.environ.get("LQABR_VAPI_ASSISTANT_ID", "")
+VAPI_PHONE_NUMBER_ID = settings.VAPI_PHONE_NUMBER_ID
+VAPI_ASSISTANT_ID = settings.VAPI_ASSISTANT_ID
 
-SENDER_NAME = os.environ.get("LQABR_SENDER_NAME", "the LQABR team")
+SENDER_NAME = settings.SENDER_NAME
 
-LEAD_CONTEXT_MAX_CHARS = int(os.environ.get("LQABR_LEAD_CONTEXT_MAX_CHARS", "1000"))
+LEAD_CONTEXT_MAX_CHARS = settings.LEAD_CONTEXT_MAX_CHARS
 
 
 class VapiError(RuntimeError):
@@ -110,8 +109,8 @@ class VapiClient:
     def __init__(self, api_key: Optional[str] = None,
                  session: Optional[requests.Session] = None,
                  max_retries: int = 3, backoff_seconds: float = 1.0) -> None:
-        env_name = VAPI_CREDENTIAL_NAME.upper().replace("-", "_")
-        self._key = api_key or os.environ.get(env_name) or ""
+        env_name = settings.VAPI_API_KEY_ENV
+        self._key = api_key or settings.vapi_api_key()
         if not self._key:
             raise VapiError(
                 f"no Vapi api key: set {env_name} (env-only by design — this "
@@ -226,8 +225,7 @@ def healthz() -> Dict[str, str]:
     missing = [name for name, value in (
         ("LQABR_VAPI_PHONE_NUMBER_ID", VAPI_PHONE_NUMBER_ID),
         ("LQABR_VAPI_ASSISTANT_ID", VAPI_ASSISTANT_ID),
-        ("LQABR_VAPI_API_KEY", os.environ.get(
-            VAPI_CREDENTIAL_NAME.upper().replace("-", "_"), "")),
+        (settings.VAPI_API_KEY_ENV, settings.vapi_api_key()),
     ) if not value]
     if missing:
         raise HTTPException(status_code=503,
@@ -337,7 +335,7 @@ def _handoff_new_lead(object_id: str, correlation_id: str) -> None:
                                 "Step 3/4 did not complete — see reason",
                                 level=level, object_id=object_id,
                                 reason=result.get("reason"))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             obs.log_process(obs.STEP_GATEWAY_LEAD, "error",
                             "unhandled error in the Step 3->4 handoff",
                             level=logging.ERROR, object_id=object_id,

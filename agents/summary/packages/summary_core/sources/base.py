@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ..obs import Observability, get_obs, preview
+from ..summary_logging import SummaryLogging, get_obs, preview
 from ..settings import Settings, get_settings
 from ..types import NormalizedDocument, SourceError, SourceSpec
 
@@ -61,7 +61,7 @@ def get_adapter(kind: str) -> Callable[..., NormalizedDocument]:
 
 def fetch(spec: SourceSpec, settings: Settings | None = None,
           *, session: Optional[requests.Session] = None,
-          obs: Observability | None = None) -> NormalizedDocument:
+          obs: SummaryLogging | None = None) -> NormalizedDocument:
     """Normalise any SourceSpec. The one entry point the agent's tools call."""
     settings = settings or get_settings()
     obs = obs or get_obs()
@@ -129,7 +129,7 @@ def guard_url(url: str, settings: Settings) -> str:
 # ---------------------------------------------------------------- transport
 def request(method: str, url: str, *, settings: Settings,
             session: Optional[requests.Session] = None,
-            obs: Observability | None = None,
+            obs: SummaryLogging | None = None,
             headers: Optional[Dict[str, str]] = None,
             json_body: Any = None) -> requests.Response:
     """One guarded, audited, retrying HTTP call."""

@@ -52,7 +52,7 @@ is a smaller problem than a shared package that cannot be upgraded alone.
 | `summary_core/types.py` | `SourceSpec`, `NormalizedDocument`, `SummaryResult`, `WriteResult` |
 | `summary_core/settings.py` | the only place that reads `os.environ` |
 | `summary_core/secrets.py` | env / Secret Manager / auto; logs name + source, never a value |
-| `summary_core/obs.py` | process, audit and system streams; name-based redaction |
+| `summary_core/summary_logging.py` | process, audit and system streams; name-based redaction |
 | `summary_core/sources/` | the four adapters, the SSRF guard, the retry policy, the selector |
 | `summary_core/mcp/client.py` | MCP JSON-RPC: handshake, discovery, `tools/call`, session recovery |
 | `summary_core/mcp/hubspot.py` | the only HubSpot-shaped code in the agent |

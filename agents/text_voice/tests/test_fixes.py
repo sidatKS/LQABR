@@ -9,7 +9,7 @@ import pytest
 
 import tools
 import text_voice
-from lqabr_core.types import VoiceLead
+from text_voice_core.types import VoiceLead
 
 
 def _lead(**kw):
@@ -125,7 +125,7 @@ def _fake_litellm(captured):
 def test_anthropic_key_bridged_from_lqabr_name(monkeypatch):
     """LQABR_ANTHROPIC_API_KEY (how Cloud Run --set-secrets delivers the
     Secret Manager value) resolves via get_secret's `auto` source."""
-    from lqabr_core.secrets import get_secret
+    from text_voice_core.secrets import get_secret
     get_secret.cache_clear()  # avoid lru_cache bleed from other tests
 
     monkeypatch.setenv("LQABR_ANTHROPIC_API_KEY", "sk-test-123")

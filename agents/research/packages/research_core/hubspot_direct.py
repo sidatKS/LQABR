@@ -51,11 +51,11 @@ class HubSpotDirect:
     with the credential's NAME and the status code — never the token.
     """
 
-    def __init__(self, settings: Optional[Settings] = None, obs: Any = None,
+    def __init__(self, settings: Optional[Settings] = None, run_log: Any = None,
                  session: Optional[requests.Session] = None,
                  token: Optional[str] = None) -> None:
         self._settings = settings or get_settings()
-        self._obs = obs
+        self._run_log = run_log
         self._session = session or requests.Session()
         self._token = token
         self._credential_ref = self._settings.hubspot_token_secret
@@ -64,12 +64,12 @@ class HubSpotDirect:
     def _bearer(self) -> str:
         if self._token is None:
             self._token = resolve_secret(self._settings.hubspot_token_secret,
-                                         settings=self._settings, obs=self._obs)
+                                         settings=self._settings, run_log=self._run_log)
         return self._token
 
     def _emit(self, event: str, **fields: Any) -> None:
-        if self._obs is not None:
-            self._obs.audit.emit(event, **fields)
+        if self._run_log is not None:
+            self._run_log.audit.emit(event, **fields)
 
     def _request(self, method: str, path: str, *,
                  params: Optional[Dict[str, Any]] = None,
@@ -190,8 +190,8 @@ class HubSpotDirect:
             raise HubSpotDirectError("bad-data: no industry to match on")
 
         companies = self._companies_in_industry(industry, limit)
-        if self._obs is not None:
-            self._obs.process.emit("industry_companies_found",
+        if self._run_log is not None:
+            self._run_log.process.emit("industry_companies_found",
                                    industry=industry, count=len(companies),
                                    companies=companies[:10])
 

@@ -232,8 +232,7 @@ them.
 
 `LQABR_RESEARCH_LOG_MODE` is the detail axis — `terse` | `normal` | `debug`.
 `terse` drops the previews and the parameter bags; `debug` trims nothing at
-all, so do not leave it on and never set it on a shared box. (The old
-`LQABR_RESEARCH_LOG_DETAIL=0` still works and means `terse`.)
+all, so do not leave it on and never set it on a shared box.
 
 Set `LQABR_RESEARCH_LOG_FORMAT=json` to force JSON on a terminal. The files
 under `LQABR_RESEARCH_LOG_DIR` (default `logs/research/`) are always JSON,

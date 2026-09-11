@@ -3,6 +3,12 @@
 #     cd agents/summary
 #     HUBSPOT_MCP_IMAGE=<your image> docker compose -f infra/docker-compose.yml up --build
 #
+# Already running the HubSpot MCP as its own container, published on the
+# host (e.g. port 8080)? Skip the bundled one and point the agent at it:
+#
+#     LQABR_SUMMARY_MCP_BASE_URL=http://host.docker.internal:8080/mcp \
+#       docker compose -f infra/docker-compose.yml up -d summary-agent collector
+#
 # The agent reaches the MCP by SERVICE NAME on the compose network, which is
 # the same wiring as production with a different URL — no code path differs
 # between the two.
@@ -20,16 +26,62 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: lqabr-summary-agent
+    # Only the collector is a hard dependency. The MCP is reached by URL and
+    # the agent tolerates it being asleep at boot (STARTUP_CHECK=warn), so
+    # `up summary-agent collector` can run against an MCP started elsewhere.
     depends_on:
-      - hubspot-mcp
+      - collector
+    # Lets LQABR_SUMMARY_MCP_BASE_URL point at a container published on the
+    # host. Docker Desktop resolves the name natively; host-gateway covers a
+    # plain Linux engine.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - LQABR_SUMMARY_MCP_BASE_URL=http://hubspot-mcp:8080/mcp
+      - LQABR_SUMMARY_MCP_BASE_URL=${LQABR_SUMMARY_MCP_BASE_URL:-http://hubspot-mcp:8080/mcp}
+      # Tool names on the FastMCP `lqabr-hubspot` server. The bundled image
+      # and the dev container expose the same four tools; the code defaults
+      # are for the repo's central mcp/hubspot, which is a different surface.
+      - LQABR_SUMMARY_MCP_TOOL_READ=${LQABR_SUMMARY_MCP_TOOL_READ:-get_lead_profile}
+      - LQABR_SUMMARY_MCP_TOOL_WRITE=${LQABR_SUMMARY_MCP_TOOL_WRITE:-upsert_blog_summary}
+      - LQABR_SUMMARY_MCP_TOOL_LIST_LEADS=${LQABR_SUMMARY_MCP_TOOL_LIST_LEADS:-get_lead_profile}
+      - LQABR_SUMMARY_MCP_WRITE_STYLE=${LQABR_SUMMARY_MCP_WRITE_STYLE:-blog_summary}
       - LQABR_SUMMARY_MODEL=${LQABR_SUMMARY_MODEL:-anthropic/claude-sonnet-5}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - LQABR_SUMMARY_SECRETS_SOURCE=env
+      # Secret Manager via your WSL gcloud ADC (mounted read-only below).
+      # Override to `env` to fall back to shell variables:
+      #   LQABR_SUMMARY_SECRETS_SOURCE=env docker compose ... up
+      - LQABR_SUMMARY_SECRETS_SOURCE=${LQABR_SUMMARY_SECRETS_SOURCE:-secret_manager}
+      - LQABR_SUMMARY_GCP_PROJECT=${LQABR_SUMMARY_GCP_PROJECT:-ldqfingsrv-dev}
+      - GOOGLE_APPLICATION_CREDENTIALS=/gcp/adc.json
       # Local runs default to dry: prove the summary before touching the CRM.
       - LQABR_SUMMARY_DRY_RUN=${LQABR_SUMMARY_DRY_RUN:-1}
       - LQABR_SUMMARY_MCP_STARTUP_CHECK=warn
       - LQABR_SUMMARY_CORS_ORIGINS=http://localhost:5173
+      # Sidecar-equivalent wiring. On Cloud Run this is http://localhost:4317;
+      # in compose the collector is a separate container, so: service name.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_SERVICE_NAME=lqabr-summary-agent
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=none
+    volumes:
+      # Application Default Credentials from `gcloud auth application-default
+      # login`. NOT the same as `gcloud auth login` — libraries read only ADC.
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
     ports:
-      - "8080:8080"
+      # Host port is overridable: another MCP instance may already hold 8080.
+      #   SUMMARY_HOST_PORT=8090 docker compose -f infra/docker-compose.yml up
+      - "${SUMMARY_HOST_PORT:-8080}:8080"
+
+  # The same image that runs as a sidecar on Cloud Run, with a local-only
+  # config: spans print to this container's stdout instead of being exported.
+  #     docker compose -f infra/docker-compose.yml logs -f collector
+  collector:
+    image: us-docker.pkg.dev/cloud-ops-agents-artifacts/google-cloud-opentelemetry-collector/otelcol-google:0.159.0
+    container_name: lqabr-otel-collector
+    command: ["--config=/etc/otelcol-google/config.yaml"]
+    volumes:
+      - ../../../infra/otel/config.local.yaml:/etc/otelcol-google/config.yaml:ro
+    ports:
+      - "13133:13133"

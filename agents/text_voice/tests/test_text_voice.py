@@ -12,8 +12,8 @@ retired 2026-08-19 — Step 5 is a real MCP server now, see mcp_client.py.)
 
 import time
 
-from lqabr_core.crm.base import CRMError
-from lqabr_core.types import VoiceLead, VoiceOutcome
+from text_voice_core.types import CRMError
+from text_voice_core.types import VoiceLead, VoiceOutcome
 
 
 # ============================================================== fake mcp/vapi
@@ -52,8 +52,8 @@ class FakeMCP:
             "voice_status_written_ms": self.voice_status_written_ms_result,
         }
 
-    def upsert_lead(self, contact_id, voice_status=None, probability=None, outcome=None):
-        self.calls.append(("upsert_lead", contact_id, voice_status, probability, outcome))
+    def upsert_lead(self, object_id, voice_status=None, probability=None, outcome=None):
+        self.calls.append(("upsert_lead", object_id, voice_status, probability, outcome))
         if self.upsert_results:
             result = self.upsert_results.pop(0)
             if isinstance(result, Exception):
@@ -61,8 +61,8 @@ class FakeMCP:
             return result
         return {"status": "updated", "object_id": object_id}
 
-    def record_call_outcome(self, contact_id, outcome, detail=None, current=None):
-        self.calls.append(("record_call_outcome", contact_id, outcome, detail))
+    def record_call_outcome(self, object_id, outcome, detail=None):
+        self.calls.append(("record_call_outcome", object_id, outcome, detail))
         if self.record_call_outcome_error:
             raise self.record_call_outcome_error
         return self.record_call_outcome_result
@@ -506,7 +506,7 @@ def test_release_claim_writes_failed(tv_agent, monkeypatch):
     fake = FakeMCP()
     monkeypatch.setattr(tv_agent, "mcp", fake)
     tv_agent._release_claim("123", "vapi-error: boom")
-    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None, None)]
+    assert fake.calls == [("upsert_lead", "123", "FAILED", None, None)]
 
 
 def test_release_claim_swallows_crm_error_rather_than_raising(tv_agent, monkeypatch):
@@ -596,7 +596,7 @@ def test_object_id_for_report_swallows_crm_error_and_returns_none(tv_agent, monk
 # `lead_context` is a real contact property on portal 246777241 (type string,
 # label "lead_context", description "Lead context notes"), verified against
 # the live properties API on 2026-08-17 rather than read off a UI label. It is
-# deliberately NOT a VoiceLead field — VoiceLead lives in packages/lqabr_core,
+# deliberately NOT a VoiceLead field — VoiceLead lives in text_voice_core,
 # which this agent does not own — so it travels as its own value from Step 3
 # through handle_new_lead into Step 4.
 # ==========================================================================
@@ -681,9 +681,9 @@ def test_handle_new_lead_dials_with_empty_context_when_the_property_is_unset(
     assert result["status"] == "initiated"
     assert seen["lead_context"] == ""
 
-def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
-    """User request 2026-08-17: the text itself, not only its length. Step 3
-    logs the RAW property value."""
+def test_get_lead_keeps_raw_lead_context_off_the_process_log(tv_agent, monkeypatch):
+    """Superseded 2026-08-20: Step 3 logs the LENGTH only — the raw
+    property is lead content and does not belong on the logs."""
     fake = FakeMCP()
     fake.get_lead_result = _voice_lead()
     fake.lead_context_result = "Re: cutting your cloud spend"
@@ -704,13 +704,15 @@ def test_get_lead_puts_lead_context_on_process_log(tv_agent, monkeypatch):
     tv_agent.get_lead("904")
 
     entry = logged[tv_agent.obs.STEP_READ_LEAD]
-    assert entry["lead_context"] == "Re: cutting your cloud spend"
+    # 2026-08-20 decision: the raw property is lead content and never goes
+    # on the logs; only its length does.
+    assert "lead_context" not in entry
     assert entry["lead_context_chars"] == 28
 
 
-def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkeypatch):
-    """Step 4 logs the CAPPED value that went on the wire, which can differ
-    from the raw property Step 3 read — that difference is the whole point."""
+def test_place_call_step_logs_only_the_length_of_what_went_to_vapi(tv_agent, monkeypatch):
+    """Step 4 records how many characters actually went on the wire (the
+    capped length), never the text itself."""
     fake = FakeMCP()
     fake.get_lead_result = _voice_lead()
     fake.lead_context_result = "the full untruncated raw value from HubSpot"
@@ -737,7 +739,7 @@ def test_place_call_step_logs_the_context_actually_sent_to_vapi(tv_agent, monkey
     tv_agent.handle_new_lead("904")
 
     entry = logged[tv_agent.obs.STEP_PLACE_CALL]
-    assert entry["lead_context"] == "the full untrunc\u2026"
+    assert "lead_context" not in entry
     assert entry["lead_context_chars"] == 17
 
 

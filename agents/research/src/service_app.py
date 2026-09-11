@@ -52,9 +52,8 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from research_core import SERVICE_NAME, __version__  # noqa: E402
 from research_core.mcp.client import MCPError, MCPToolMissing  # noqa: E402
 from research_core.mcp.hubspot import HubSpotMCP  # noqa: E402
-from research_core.obs import (configure_logging, get_obs,  # noqa: E402
-                                new_run_id, sink_state)
-from research_core import SERVICE_NAME, __version__  # noqa: E402
+from research_core.research_logging import (configure_logging,  # noqa: E402
+                                                 get_run_log, new_run_id, sink_state)
 from research_core.settings import get_settings  # noqa: E402
 
 from pipeline import run_campaign  # noqa: E402
@@ -78,14 +77,14 @@ def _startup_mcp_check() -> Dict[str, Any]:
         state["error"] = str(exc)
         if SETTINGS.mcp_startup_check == "strict":
             raise
-        get_obs().system.emit("mcp_startup_check_failed", reason=str(exc))
+        get_run_log().system.emit("mcp_startup_check_failed", reason=str(exc))
     except MCPError as exc:
         state["error"] = str(exc)
         if SETTINGS.mcp_startup_check == "strict":
             raise
-        get_obs().system.emit("mcp_startup_check_unreachable", reason=str(exc))
+        get_run_log().system.emit("mcp_startup_check_unreachable", reason=str(exc))
     else:
-        get_obs().system.emit("mcp_startup_check_ok", tools=state["tools"])
+        get_run_log().system.emit("mcp_startup_check_ok", tools=state["tools"])
     return state
 
 
@@ -95,20 +94,13 @@ _MCP_STATE: Dict[str, Any] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(SETTINGS.log_level, SETTINGS.log_dir, SETTINGS.log_format,
-                      max_bytes=SETTINGS.log_max_bytes,
-                      backups=SETTINGS.log_backups, log_file=SETTINGS.log_file,
                       mode=SETTINGS.log_mode)
-    if SETTINGS.log_detail_deprecated:
-        get_obs().system.emit(
-            "log_detail_deprecated", mode=SETTINGS.log_mode,
-            detail="LQABR_RESEARCH_LOG_DETAIL still works and resolved to this "
-                   "mode. Use LQABR_RESEARCH_LOG_MODE=terse|normal|debug.")
-    obs = get_obs(new_run_id(), refresh=True)
-    obs.system.emit("service_start", service=SERVICE_NAME, version=__version__,
+    run_log = get_run_log(new_run_id(), refresh=True)
+    run_log.system.emit("service_start", service=SERVICE_NAME, version=__version__,
                     config=SETTINGS.redacted())
     _MCP_STATE.update(_startup_mcp_check())
     yield
-    get_obs().system.emit("service_stop", service=SERVICE_NAME)
+    get_run_log().system.emit("service_stop", service=SERVICE_NAME)
 
 
 app = FastAPI(title=SERVICE_NAME, version=__version__, lifespan=lifespan)
@@ -182,39 +174,18 @@ def mcp_tools() -> Dict[str, Any]:
             "missing": [name for name in configured.values() if name not in tools]}
 
 
-def _guarded(runner: Any, route: str) -> Any:
-    """Run in the background, but never disappear.
-
-    The gateway already holds `{"status": "accepted"}`. Anything the pipeline
-    does not catch — a ValueError out of get_settings on a bad env var, a
-    SecretError while building the Composer — would otherwise propagate out of
-    the background task with no `run_failed` anywhere, and the run simply never
-    happened. Flagged with a named reason, then re-raised for the server log.
-    """
-    def _run(target: Any, *, run_id: str) -> None:
-        try:
-            runner(target, run_id=run_id)
-        except BaseException as exc:  # noqa: BLE001 - named, then re-raised
-            get_obs().process.emit(
-                "run_crashed", route=route, run_id=run_id,
-                objectId=getattr(target, "objectId", ""),
-                reason=f"{type(exc).__name__}: {exc}")
-            raise
-    return _run
-
-
-def _rejected(envelope: A2AEnvelope, route: str, reason: str,
-              run_id: str) -> Any:
+def _reject(envelope: A2AEnvelope, reason: str, run_id: str) -> Any:
     """A refusal, correlatable.
 
-    It used to log under whatever id `get_obs()` happened to mint for the
+    It used to log under whatever id `get_run_log()` happened to mint for the
     request context — an id that appeared on exactly one line and led nowhere.
     A rejection is the line you most want to find later, so it carries the
     SAME id the run would have had: the gateway's when it sent one, and the
     one echoed back to the caller either way.
     """
-    get_obs().audit.emit("http_in", route=route, status=400, reason=reason,
-                         run_id=run_id, **envelope.source())
+    get_run_log().audit.emit("http_in", route=SETTINGS.route_campaign_a2a,
+                         status=400, reason=reason, run_id=run_id,
+                         **envelope.source())
     body: Dict[str, Any] = {"status": "rejected", "reason": reason,
                             "run_id": run_id}
     if envelope.jsonrpc == "2.0":
@@ -231,52 +202,35 @@ def _rejected(envelope: A2AEnvelope, route: str, reason: str,
     return JSONResponse(status_code=400, content=body)
 
 
-def _accept(envelope: A2AEnvelope, background: BackgroundTasks, *, route: str,
-            target: Any, runner: Any, logged: Dict[str, Any],
-            result: Dict[str, Any], expects: str) -> Any:
-    """Acknowledge, then work in the background.
+def _run_campaign(target: Any, *, run_id: str) -> None:
+    """The background pass — runs after the gateway already has its 200.
 
-    The gateway answers HubSpot inside its ~5s delivery budget, and a research
-    pass (search + model + two CRM hops) is far longer than that. The outcome
-    lands on the log streams under the gateway's run id, which is how the two
-    are tied together.
+    Never disappears. The gateway holds `{"status": "accepted"}`, so anything
+    the pipeline does not catch — a ValueError out of get_settings on a bad
+    env var, a SecretError while building the Composer — would otherwise
+    propagate out of the background task with no `run_failed` anywhere, and
+    the run simply never happened. Flagged with a named reason, then
+    re-raised for the server log.
     """
-    # Resolved BEFORE the guards, so an accepted run and a refused one are
-    # findable by the same key.
-    run_id = envelope.run_id() or new_run_id()
-
-    if not target.objectId:
-        return _rejected(envelope, route, "payload carries no objectId", run_id)
-
-    # HubSpot names the record kind in the event. When it disagrees with the
-    # route, say so HERE — the alternative is a read that fails three steps
-    # later with a CRM error that reads like a record went missing.
-    kind = envelope.record_kind()
-    if kind and kind != expects:
-        return _rejected(
-            envelope, route,
-            f"bad-data: this route takes a {expects}, but the hand-off is a "
-            f"HubSpot {envelope.source()['subscription_type']} — id "
-            f"{target.objectId} is a {kind}. This agent researches a post's "
-            "whole industry; one lead on its own is the CLI (agent.py).",
-            run_id)
-
-    get_obs().audit.emit("http_in", route=route, status=200,
-                         objectId=target.objectId, run_id=run_id,
-                         **envelope.source(), **logged)
-    background.add_task(_guarded(runner, route), target, run_id=run_id)
-
-    body = {"status": "accepted", "objectId": target.objectId,
-            "run_id": run_id, **result}
-    if envelope.jsonrpc == "2.0":
-        return {"jsonrpc": "2.0", "id": envelope.id, "result": body}
-    return body
+    try:
+        run_campaign(target, run_id=run_id)
+    except BaseException as exc:  # noqa: BLE001 - named, then re-raised
+        get_run_log().process.emit(
+            "run_crashed", route=SETTINGS.route_campaign_a2a, run_id=run_id,
+            objectId=getattr(target, "objectId", ""),
+            reason=f"{type(exc).__name__}: {exc}")
+        raise
 
 
 @app.post(SETTINGS.route_campaign_a2a)
 async def research_campaign_a2a(envelope: A2AEnvelope,
                                 background: BackgroundTasks) -> Any:
     """The gateway's blog-summary hand-off — one post, the whole industry.
+
+    Acknowledge inside the gateway's ~5s delivery budget, then research in the
+    background: a pass (search + model + two CRM hops) is far longer than that.
+    The outcome lands on the log streams under the same run id, which is how
+    the acknowledgement and the work are tied together.
 
     The ONLY route the gateway drives. Its `agents_registry.yaml` has exactly
     one entry for this agent (`R-blog-summary`, `ticket.propertyChange` on
@@ -289,8 +243,34 @@ async def research_campaign_a2a(envelope: A2AEnvelope,
     dispatches to one and a contact event carries no blog-post id to research
     against.
     """
+    # Resolved BEFORE the guards, so an accepted run and a refused one are
+    # findable by the same key.
+    run_id = envelope.run_id() or new_run_id()
     target = envelope.campaign_target()
-    return _accept(envelope, background, route=SETTINGS.route_campaign_a2a,
-                   target=target, runner=run_campaign,
-                   logged={"limit": target.limit},
-                   result={"mode": "campaign"}, expects="post")
+
+    if not target.objectId:
+        return _reject(envelope, "payload carries no objectId", run_id)
+
+    # HubSpot names the record kind in the event. When it disagrees with the
+    # route, say so HERE — the alternative is a read that fails three steps
+    # later with a CRM error that reads like a record went missing.
+    kind = envelope.record_kind()
+    if kind and kind != "post":
+        return _reject(
+            envelope,
+            f"bad-data: this route takes a post, but the hand-off is a "
+            f"HubSpot {envelope.source()['subscription_type']} — id "
+            f"{target.objectId} is a {kind}. This agent researches a post's "
+            "whole industry; one lead on its own is the CLI (agent.py).",
+            run_id)
+
+    get_run_log().audit.emit("http_in", route=SETTINGS.route_campaign_a2a,
+                         status=200, objectId=target.objectId, run_id=run_id,
+                         limit=target.limit, **envelope.source())
+    background.add_task(_run_campaign, target, run_id=run_id)
+
+    body = {"status": "accepted", "objectId": target.objectId,
+            "run_id": run_id, "mode": "campaign"}
+    if envelope.jsonrpc == "2.0":
+        return {"jsonrpc": "2.0", "id": envelope.id, "result": body}
+    return body

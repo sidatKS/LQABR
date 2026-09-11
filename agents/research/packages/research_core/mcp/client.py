@@ -31,7 +31,8 @@ import requests
 from research_core.gcp_id_token import auth_header
 
 from .. import SERVICE_NAME, __version__
-from ..obs import Observability, get_obs, preview, summarize_args
+from ..research_logging import ResearchLogging, get_run_log, preview, summarize_args
+from .identity import IdentityTokenSource, audience_for
 from ..settings import Settings, get_settings
 
 class MCPError(RuntimeError):
@@ -112,11 +113,18 @@ class MCPClient:
 
     def __init__(self, settings: Settings | None = None, *,
                  session: Optional[requests.Session] = None,
-                 obs: Observability | None = None) -> None:
+                 run_log: ResearchLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._session = session or requests.Session()
-        self._obs = obs or get_obs()
+        self._run_log = run_log or get_run_log()
         self._mcp_session_id: str = ""
+        #: The MCP requires IAM auth, so every request carries an OIDC ID token
+        #: minted for the MCP's own URL. An explicit `mcp_auth_token` overrides
+        #: it (local runs, a stand-in server); off Cloud Run both are empty and
+        #: no Authorization header is sent.
+        self._identity = IdentityTokenSource(
+            self._settings.mcp_audience or audience_for(self._settings.mcp_base_url),
+            run_log=self._run_log)
         self._initialized = False
         self._tools: List[str] = []
         self._rpc_id = 0
@@ -134,8 +142,9 @@ class MCPClient:
         if self._mcp_session_id:
             headers["Mcp-Session-Id"] = self._mcp_session_id
             headers["MCP-Protocol-Version"] = self._settings.mcp_protocol_version
-        if self._settings.mcp_auth_token:
-            headers["Authorization"] = f"Bearer {self._settings.mcp_auth_token}"
+        token = self._settings.mcp_auth_token or self._identity.token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _post(self, payload: Dict[str, Any], *, label: str,
@@ -155,11 +164,11 @@ class MCPClient:
             # `attempt` rides the hop, not just the process retry line. Without
             # it the audit stream showed three identical calls with no way to
             # tell one operation retried three times from three operations.
-            self._obs.hop(service="mcp", endpoint=url, error=str(exc), params=sent,
+            self._run_log.outbound_call(service="mcp", endpoint=url, error=str(exc), params=sent,
                           attempt=attempt,
                           duration_ms=round((time.monotonic() - started) * 1000, 1))
             raise MCPError(f"MCP {label} failed: {exc}") from exc
-        self._obs.hop(service="mcp", endpoint=url, status=response.status_code,
+        self._run_log.outbound_call(service="mcp", endpoint=url, status=response.status_code,
                       params=sent, attempt=attempt,
                       duration_ms=round((time.monotonic() - started) * 1000, 1))
         session_id = (response.headers.get("Mcp-Session-Id")
@@ -197,13 +206,13 @@ class MCPClient:
                 # it, so a cold MCP failed on the first attempt of three.
                 if attempt >= attempts:
                     raise
-                self._obs.process.emit("mcp_initialize_retry", attempt=attempt,
+                self._run_log.process.emit("mcp_initialize_retry", attempt=attempt,
                                        reason=str(exc))
                 self._sleep(attempt)
                 continue
             if (response.status_code in tuple(self._settings.mcp_retryable_statuses)
                     and attempt < attempts):
-                self._obs.process.emit("mcp_initialize_retry", attempt=attempt,
+                self._run_log.process.emit("mcp_initialize_retry", attempt=attempt,
                                        status=response.status_code)
                 self._sleep(attempt)
                 continue
@@ -220,7 +229,7 @@ class MCPClient:
         if notified.status_code >= 400:
             raise MCPError(f"MCP initialized-notification failed: HTTP {notified.status_code}")
         self._initialized = True
-        self._obs.process.emit("mcp_initialized", url=self._settings.mcp_base_url,
+        self._run_log.process.emit("mcp_initialized", url=self._settings.mcp_base_url,
                                protocol=self._settings.mcp_protocol_version,
                                session="set" if self._mcp_session_id else "none")
 
@@ -238,7 +247,7 @@ class MCPClient:
         tools = ((body.get("result") or {}).get("tools")) or []
         self._tools = [t.get("name", "") for t in tools
                        if isinstance(t, dict) and t.get("name")]
-        self._obs.process.emit("mcp_tools_discovered", count=len(self._tools),
+        self._run_log.process.emit("mcp_tools_discovered", count=len(self._tools),
                                tools=sorted(self._tools))
         return list(self._tools)
 
@@ -254,7 +263,7 @@ class MCPClient:
                 "_READ_BLOG / _WRITE at the real names (config change, no code edit), "
                 "or set LQABR_RESEARCH_MCP_ASSERT_TOOLS=0 to start anyway.")
         if missing:
-            self._obs.process.emit("mcp_tools_missing_ignored", missing=missing,
+            self._run_log.process.emit("mcp_tools_missing_ignored", missing=missing,
                                    reason="LQABR_RESEARCH_MCP_ASSERT_TOOLS=0")
         return tools
 
@@ -266,7 +275,7 @@ class MCPClient:
         last_error = ""
 
         sent = summarize_args(arguments)
-        self._obs.process.emit("mcp_tool_call", tool=name, url=self._settings.mcp_base_url,
+        self._run_log.process.emit("mcp_tool_call", tool=name, url=self._settings.mcp_base_url,
                                arguments=sent, timeout_s=self._settings.mcp_timeout_seconds)
 
         for attempt in range(1, attempts + 1):
@@ -281,7 +290,7 @@ class MCPClient:
                 last_error = str(exc)
                 if attempt >= attempts:
                     break
-                self._obs.process.emit("mcp_call_retry", tool=name,
+                self._run_log.process.emit("mcp_call_retry", tool=name,
                                        attempt=attempt, reason=last_error)
                 self._sleep(attempt)
                 continue
@@ -289,7 +298,7 @@ class MCPClient:
             if response.status_code == 404 and attempt < attempts:
                 # The server forgot our session (scaled to zero between calls).
                 last_error = "HTTP 404 (session lost)"
-                self._obs.process.emit("mcp_session_lost", tool=name, attempt=attempt)
+                self._run_log.process.emit("mcp_session_lost", tool=name, attempt=attempt)
                 self.initialize(force=True)
                 continue
             if (response.status_code in tuple(self._settings.mcp_retryable_statuses)
@@ -309,7 +318,7 @@ class MCPClient:
             if isinstance(result, dict) and result.get("isError"):
                 raise MCPError(f"MCP tool {name} reported an error: {unwrap_result(result)}")
             value = unwrap_result(result)
-            self._obs.process.emit("mcp_tool_result", tool=name, attempt=attempt,
+            self._run_log.process.emit("mcp_tool_result", tool=name, attempt=attempt,
                                    **result_shape(value),
                                    result_preview=preview(value))
             return value

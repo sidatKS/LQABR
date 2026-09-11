@@ -5,54 +5,53 @@
 #
 #     docker build -t lqabr-dev-research agents/research
 #
-# That is the standalone contract expressed as a build, exactly as
-# agents/summary/Dockerfile does it: the image physically CANNOT contain
-# packages/lqabr_core or the repo-root mcp/ folder, because neither is in
-# the context. research_core/tests/test_standalone.py enforces the same rule
-# in code (FORBIDDEN_ROOTS = lqabr_core, summary_core, mcp, agents, packages);
-# this file enforces it in the build.
+# That is the standalone contract expressed as a build: the image
+# physically cannot contain packages/lqabr_core or the repo-root mcp/
+# folder, because neither is in the context. The HubSpot MCP is reached
+# over the network at runtime, so it is a URL in the environment, never
+# a layer in this image.
 #
-# Deliberately NOT built from infra/gcp/cloud-run/Dockerfile — that shared
-# image installs lqabr_core and copies mcp/ in, which would contradict the
-# standalone design and bloat the layer set for no benefit.
+# THE TREE SITS AT /app/agents/research, NOT AT /app.
+# packages/research_core/settings.py resolves the repo root as
+# parents[4] of itself (settings.py -> research_core -> packages ->
+# research -> agents -> ROOT). Copied to /app, that index does not
+# exist and the module dies at import with `IndexError: 4` before
+# uvicorn can bind a port — the container never becomes ready and the
+# revision fails health checks. Found by running the image, not by
+# reading it. Keep the depth, or change settings.py and its tests.
 #
-# The HubSpot MCP is reached over the network at runtime
-# (LQABR_RESEARCH_MCP_BASE_URL), so it is a URL in the environment, never a
-# layer in this image.
-#
-# One image, one service, one port. Zero instances at rest.
+# Secrets come from Secret Manager by NAME at run time. .env is excluded
+# by .dockerignore and must never enter a layer.
 # ============================================================
-FROM python:3.12-slim AS base
+FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8080 \
-    PYTHONPATH=/app/src:/app/packages
+    PYTHONPATH=/app/agents/research/src:/app/agents/research/packages
 
-WORKDIR /app
+WORKDIR /app/agents/research
 
 # Dependencies first, so a code change does not reinstall the world.
 COPY requirements.txt ./
+# One file: runtime + OpenTelemetry + test tools (merged 2026-09-09). OTel is
+# NOT optional in the image - the CMD runs under opentelemetry-instrument,
+# which ships in those packages.
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY packages ./packages
 COPY src ./src
+COPY config ./config
 COPY VERSION ./VERSION
 
-# The config map ships with the image. settings.py resolves it as
-# <agent root>/config/config.yaml (parents[2] of the settings module), which
-# is /app/config here. Env vars still override every value; without this the
-# agent would silently fall back to code defaults for the MCP tool names.
-COPY config ./config
-
-# Non-root, uid 1001 / `agent` — the single runtime identity shared by every
-# LQABR image (see agents/summary/Dockerfile and infra/gcp/cloud-run/Dockerfile).
+# Non-root, because nothing here needs to be root. /app is owned by the
+# runtime user so the daily log files under logs/ are writable.
 RUN useradd --create-home --uid 1001 agent && chown -R agent:agent /app
 USER agent
 
 EXPOSE 8080
 
-# Cloud Run health checks hit /health; the app answers as soon as the process
-# binds, without waiting for the MCP service to wake up.
-CMD exec uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/src
+# Cloud Run health checks hit /health; the app answers as soon as the
+# process binds, without waiting for the MCP service to wake up.
+CMD ["sh", "-c", "exec opentelemetry-instrument uvicorn service_app:app --host 0.0.0.0 --port ${PORT} --app-dir /app/agents/research/src"]

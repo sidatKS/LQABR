@@ -121,6 +121,10 @@ class Settings:
     mcp_base_url: str = "http://localhost:8091/mcp"
     mcp_timeout_seconds: int = 60
     mcp_auth_token: str = ""
+    #: Cloud Run audience for the minted ID token. Empty = derive it from
+    #: `mcp_base_url` (scheme://host, no path), which is what Cloud Run
+    #: validates against. Set it only for a custom audience.
+    mcp_audience: str = ""
     mcp_protocol_version: str = "2025-06-18"
     #: Tool names on that server. DISCOVERED via tools/list at startup and
     #: asserted; these are what we look for, not what we assume.
@@ -189,27 +193,13 @@ class Settings:
     #: Where the three per-stream files go. Relative resolves against the repo
     #: root; empty disables file logging entirely (console only).
     log_dir: str = "logs/research"
-    #: Deprecated single-file sink. When set, all three streams share it and
-    #: the boot emits `log_sink_legacy` — announced, never silently ignored.
-    log_file: str = ""
-    #: Bytes before a stream's file rolls over; 0 = never. At ~200 KB/day in
-    #: normal mode this will almost never fire — the point is the ceiling.
-    log_max_bytes: int = 52_428_800
-    log_backups: int = 5
     #: terse | normal | debug — how much of a value reaches the log. `debug`
     #: stops values arriving pre-mangled; it does NOT relax redaction.
     log_mode: str = "normal"
-    #: True when LQABR_RESEARCH_LOG_DETAIL was used to reach that mode, so the
-    #: boot can say the knob is deprecated rather than ignoring it.
-    log_detail_deprecated: bool = False
     # console shape only — the log FILE is always JSON. "auto" means text when
     # stdout is a terminal (a human is reading) and JSON when it is not (Cloud
     # Run, a pipe), so deployed structured logging is never traded for looks.
     log_format: str = "auto"            # auto | text | json
-    #: Payload previews and the parameter bag on every outbound call — the
-    #: "what exactly did we send the model / the MCP" detail. On by default so
-    #: a run is legible without remembering a flag; 0 gives the terser shape.
-    log_detail: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -218,28 +208,15 @@ class Settings:
         statuses_cfg = _cfg(cfg, "mcp", "retryable_statuses", [429, 500, 502, 503, 504])
         retryable = tuple(int(x) for x in (statuses_env if statuses_env else statuses_cfg))
 
-        # The mode axis, and the deprecated boolean that still reaches it.
+        # terse | normal | debug — the only detail axis.
         mode = _str("LQABR_RESEARCH_LOG_MODE",
                     _cfg(cfg, "logging", "mode", "normal")).lower()
-        detail_was_used = False
-        if os.environ.get("LQABR_RESEARCH_LOG_MODE") is None:
-            raw_detail = os.environ.get("LQABR_RESEARCH_LOG_DETAIL")
-            if raw_detail is not None:
-                detail_was_used = True
-                mode = "normal" if raw_detail.strip().lower() in (
-                    "1", "true", "yes", "on") else "terse"
         if mode not in ("terse", "normal", "debug"):
             mode = "normal"
 
         log_dir = os.environ.get("LQABR_RESEARCH_LOG_DIR")
         if log_dir is None:
             log_dir = str(_cfg(cfg, "logging", "dir", "logs/research"))
-        # The legacy single file is OFF unless explicitly asked for: it used to
-        # default to logs/agents/research/agent.log, which would quietly keep
-        # every stream in one place after the split.
-        log_file = os.environ.get("LQABR_RESEARCH_LOG_FILE")
-        if log_file is None:
-            log_file = str(_cfg(cfg, "logging", "file", ""))
         return cls(
             model=_str("LQABR_RESEARCH_MODEL", _cfg(cfg, "model", "name", "claude-sonnet-4-6")),
             max_tokens=_int("LQABR_RESEARCH_MAX_TOKENS", _cfg(cfg, "model", "max_tokens", 2000)),
@@ -252,6 +229,8 @@ class Settings:
             mcp_timeout_seconds=_int("LQABR_RESEARCH_MCP_TIMEOUT_SECONDS",
                                      _cfg(cfg, "mcp", "timeout_seconds", 60)),
             mcp_auth_token=_str("LQABR_RESEARCH_MCP_AUTH_TOKEN"),
+            mcp_audience=_str("LQABR_RESEARCH_MCP_AUDIENCE",
+                              _cfg(cfg, "mcp", "audience", "")),
             mcp_protocol_version=_str("LQABR_RESEARCH_MCP_PROTOCOL_VERSION",
                                       _cfg(cfg, "mcp", "protocol_version", "2025-06-18")),
             mcp_tool_read_lead=_str("LQABR_RESEARCH_MCP_TOOL_READ_LEAD",
@@ -321,17 +300,9 @@ class Settings:
             log_level=_str("LQABR_RESEARCH_LOG_LEVEL",
                            _cfg(cfg, "logging", "level", "INFO")).upper(),
             log_dir=_resolve_path(log_dir),
-            log_file=_resolve_path(log_file),
-            log_max_bytes=_int("LQABR_RESEARCH_LOG_MAX_BYTES",
-                               _cfg(cfg, "logging", "max_bytes", 52_428_800)),
-            log_backups=_int("LQABR_RESEARCH_LOG_BACKUPS",
-                             _cfg(cfg, "logging", "backups", 5)),
             log_format=_str("LQABR_RESEARCH_LOG_FORMAT",
                             _cfg(cfg, "logging", "format", "auto")).lower(),
-            log_detail=_bool("LQABR_RESEARCH_LOG_DETAIL",
-                             _cfg(cfg, "logging", "detail", True)),
             log_mode=mode,
-            log_detail_deprecated=detail_was_used,
         )
 
     # ------------------------------------------------------------------

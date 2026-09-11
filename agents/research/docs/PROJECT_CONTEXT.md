@@ -39,7 +39,7 @@ agents/research/
     prompts/research.md   the model contract (a file, not a string literal)
   packages/research_core/     the agent's own library — deliberately NOT shared
     settings.py        every knob, resolved once from env > config.yaml > default
-    obs.py             three log streams + the console formatter
+    research_logging.py  three log streams + the console formatter (class ResearchLogging)
     secrets.py         env | secret_manager | auto resolution
     hubspot_direct.py  THE one direct HubSpot call (read-only, test-enforced)
     mcp/client.py      JSON-RPC over streamable HTTP
@@ -166,7 +166,7 @@ the property, and every argument, with the note as `[N chars] head…`).
 
 Text payloads appear as length-marked `*_preview` fields — enough to see what
 was asked and what came back, never a 4,000-character block in the middle of a
-run. `LQABR_RESEARCH_LOG_DETAIL=0` drops previews and parameter bags.
+run. `LQABR_RESEARCH_LOG_MODE=terse` drops previews and parameter bags.
 
 `LQABR_RESEARCH_LOG_FORMAT` = `auto` (default) / `text` / `json`. **auto** means
 readable text when stdout is a terminal, JSON when it is not — so Cloud Run
