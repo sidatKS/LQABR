@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..obs import Observability, get_obs
+from ..summary_logging import SummaryLogging, get_obs
 from ..settings import Settings, get_settings
 from ..types import SummaryResult, WriteResult
 from .client import MCPClient, MCPError
@@ -36,12 +36,37 @@ def _iso_published_at(value: str) -> str:
     return v
 
 
+def _normalise_industry(value: str, allowed: tuple = ()) -> str:
+    """Coerce a free-text industry to the portal's dropdown spelling.
+
+    The model returns prose ("Healthcare", "financial services"); HubSpot stores
+    an enum ("HEALTHCARE", "FINANCIAL_SERVICES") and rejects anything else. The
+    MCP's own error says why that strictness matters: "a near-miss selects zero
+    leads and raises no error" — so a wrong-but-accepted value is worse than a
+    rejection.
+
+    Normalisation is therefore deliberately conservative: case and separators
+    only. A value that still does not match a configured option is returned as
+    normalised and left for the MCP to reject, rather than fuzzy-matched to the
+    nearest option — guessing which industry a lead belongs to is not this
+    function's job.
+    """
+    text = _re.sub(r"[\s\-/]+", "_", str(value or "").strip()).upper()
+    text = _re.sub(r"_+", "_", text).strip("_")
+    if not text:
+        return ""
+    for option in allowed or ():
+        if option.strip().upper() == text:
+            return option          # return the portal's exact spelling
+    return text
+
+
 class HubSpotMCP:
     """The HubSpot MCP, as this agent uses it."""
 
     def __init__(self, client: MCPClient | None = None, *,
                  settings: Settings | None = None,
-                 obs: Observability | None = None) -> None:
+                 obs: SummaryLogging | None = None) -> None:
         self._settings = settings or get_settings()
         self._obs = obs or get_obs()
         self._client = client or MCPClient(self._settings, obs=self._obs)
@@ -79,7 +104,8 @@ class HubSpotMCP:
         properties: Dict[str, Any] = {
             settings.hubspot_summary_property: summary.as_hubspot_text(),
         }
-        resolved_industry = (industry or summary.industry or "").strip()
+        resolved_industry = _normalise_industry(industry or summary.industry,
+                                                settings.hubspot_industry_options)
         if resolved_industry and settings.hubspot_industry_property:
             properties[settings.hubspot_industry_property] = resolved_industry
         properties.update(extra_properties or {})
@@ -134,7 +160,8 @@ class HubSpotMCP:
             "subject": (subject or summary.title or "").strip(),
             "blog_summary": summary.as_hubspot_text(),
             "blog_published_at": _iso_published_at(blog_published_at),
-            "blog_industry": (industry or summary.industry or "").strip(),
+            "blog_industry": _normalise_industry(industry or summary.industry,
+                                                 settings.hubspot_industry_options),
         }
         missing = [k for k in ("subject", "blog_summary", "blog_published_at", "blog_industry")
                    if not args[k]]

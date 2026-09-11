@@ -1,0 +1,56 @@
+# Research agent — build + push. Mirrors agents/summary/infra/cloudbuild.yaml.
+#
+#   bash agents/research/infra/02_build_push.sh
+#
+# or directly (context is the AGENT folder, not the repo root):
+#   gcloud builds submit agents/research \
+#     --project ldqfingsrv-dev \
+#     --config agents/research/infra/cloudbuild.yaml \
+#     --substitutions _IMAGE=...,_TAG=0.1.0
+#
+# Two tags every time: Cloud Run does not auto-pull :latest, so deploys pin
+# the immutable version tag while :latest stays a human pointer.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}:${_TAG}", "-t", "${_IMAGE}:latest", "-f", "Dockerfile", "."]
+
+  # Assert the runtime user (P2c). A silent regression to root or `nobody` is
+  # invisible until a permission error at runtime, so it fails the build here.
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        actual="$(docker run --rm --entrypoint id ${_IMAGE}:${_TAG} -un)"
+        echo "runtime user = $${actual}"
+        test "$${actual}" = "agent" || { echo "EXPECTED agent (uid 1001)"; exit 1; }
+
+  # Assert the standalone contract still holds inside the built image, and
+  # that the P8 ID-token helper behaves. No metadata server exists in a build,
+  # so a run.app target must degrade to {} rather than raise.
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        docker run --rm --entrypoint python ${_IMAGE}:${_TAG} -c "
+        import importlib.util as u
+        assert u.find_spec('lqabr_core') is None, 'lqabr_core must not be in this image'
+        from research_core.gcp_id_token import auth_header, _audience
+        assert auth_header('http://localhost:8091/mcp') == {}
+        assert _audience('https://x-uc.a.run.app/mcp') == 'https://x-uc.a.run.app'
+        assert _audience('https://api.hubapi.com/x') == ''
+        print('standalone + id-token helper OK')
+        "
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_IMAGE}"]
+
+images:
+  - "${_IMAGE}:${_TAG}"
+  - "${_IMAGE}:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

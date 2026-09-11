@@ -18,7 +18,7 @@ from typing import Optional
 
 import requests
 
-from ..obs import Observability
+from ..summary_logging import SummaryLogging
 from ..settings import Settings
 from ..types import NormalizedDocument, SourceSpec
 from . import html as html_extract
@@ -28,7 +28,7 @@ from .base import register, request, select_path, truncate
 
 def fetch_api(spec: SourceSpec, settings: Settings, *,
               session: Optional[requests.Session] = None,
-              obs: Observability | None = None) -> NormalizedDocument:
+              obs: SummaryLogging | None = None) -> NormalizedDocument:
     response = request(
         spec.method or "GET", str(spec.endpoint), settings=settings,
         session=session, obs=obs, headers=spec.headers, json_body=spec.body,

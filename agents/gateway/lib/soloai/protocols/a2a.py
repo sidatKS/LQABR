@@ -30,6 +30,8 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from soloai.id_token import auth_header
+
 
 class A2AError(RuntimeError):
     """Transport or protocol failure on the hand-off."""
@@ -217,9 +219,14 @@ class A2AClient:
         # Correlation headers, so the agentgateway sidecar's access log can be
         # joined to the gateway's own records (config/agentgateway.yaml reads
         # these). Ids only; nothing about the lead.
+        # auth_header() attaches a Google-signed ID token when `endpoint` is a
+        # private Cloud Run service, and nothing at all for loopback -- so this
+        # is unconditional and local dev is unchanged. Without it every hop to
+        # an --ingress=internal agent is 403 before reaching the container.
         headers = {
             "x-lqabr-trigger-id": trigger_id,
             "x-lqabr-run-id": str((metadata or {}).get("run_id", "")),
+            **auth_header(endpoint),
         }
         started = time.perf_counter()
         attempts = 0

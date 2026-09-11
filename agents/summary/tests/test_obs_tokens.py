@@ -13,7 +13,7 @@ import logging
 
 import pytest
 
-from summary_core.obs import Observability, redact, set_mode
+from summary_core.summary_logging import SummaryLogging, redact, set_mode
 from summary_core.settings import get_settings
 from summary_core.types import NormalizedDocument
 
@@ -49,7 +49,7 @@ def _run(completion, name: str):
     logger.setLevel(logging.INFO)
     sink = _Rows()
     logger.addHandler(sink)
-    obs = Observability(run_id="sum-tokens", logger=logger)
+    obs = SummaryLogging(run_id="sum-tokens", logger=logger)
     try:
         summarizer.summarize(DOC, settings=get_settings(refresh=True), obs=obs,
                              completion=completion)
@@ -143,7 +143,7 @@ def test_the_console_hop_line_says_what_the_call_cost(mode):
     never printed them — so the one place a human asks "what did that cost"
     was the one place the answer was missing. Terse included: terse drops the
     params, not the meter."""
-    from summary_core.obs import ConsoleFormatter  # noqa: WPS433 - local on purpose
+    from summary_core.summary_logging import ConsoleFormatter  # noqa: WPS433 - local on purpose
 
     set_mode(mode)
     record = logging.LogRecord("x", logging.INFO, __file__, 0, "", None, None)
@@ -161,7 +161,7 @@ def test_the_console_hop_line_says_what_the_call_cost(mode):
 
 def test_a_hop_with_no_meter_prints_no_meter():
     """An MCP call has no tokens; it must not grow an empty `/ tok`."""
-    from summary_core.obs import ConsoleFormatter
+    from summary_core.summary_logging import ConsoleFormatter
 
     set_mode("normal")
     record = logging.LogRecord("x", logging.INFO, __file__, 0, "", None, None)

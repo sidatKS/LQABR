@@ -39,12 +39,8 @@ def test_redacted_never_leaks_the_token(monkeypatch):
 
 
 def test_relative_log_path_resolves_against_repo_root(monkeypatch):
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_FILE", "logs/agents/research/agent.log")
+    monkeypatch.setenv("LQABR_RESEARCH_LOG_DIR", "logs/research")
     s = get_settings(refresh=True)
-    assert s.log_file.endswith("logs/agents/research/agent.log")
-    assert s.log_file.startswith("/")
+    assert s.log_dir.endswith("logs/research")
+    assert s.log_dir.startswith("/")
 
-
-def test_empty_log_file_disables_file_logging(monkeypatch):
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_FILE", "")
-    assert get_settings(refresh=True).log_file == ""

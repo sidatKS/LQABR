@@ -58,7 +58,17 @@ def _resolve_log_file(cfg: Dict[str, object] | None = None) -> str:
       3. code default  <repo_root>/logs/agents/summary/agent.log
     A relative value (env or config map) resolves against the repo root."""
     from pathlib import Path
-    root = Path(__file__).resolve().parents[4]   # summary_core->packages->summary->agents->REPO
+    # Repo layout:  <repo>/agents/summary/packages/summary_core/settings.py
+    #               -> parents[4] is the repo root.
+    # Image layout: /app/packages/summary_core/settings.py
+    #               -> the Dockerfile flattens agents/summary to /app, so `agents/` and the
+    #               agent dir do not exist and parents[4] raises IndexError. This ran at
+    #               MODULE IMPORT time (service_app.py:122 -> get_settings), so the container
+    #               died before binding the port and Cloud Run reported only "failed to start
+    #               and listen on PORT=8080". Fall back to the agent root, which is /app.
+    _here = Path(__file__).resolve()
+    _up = _here.parents
+    root = _up[4] if len(_up) > 4 and _up[3].name == "agents" else _up[2]
 
     def _resolve(v: str) -> str:
         v = str(v).strip()
@@ -83,7 +93,10 @@ def _resolve_log_dir(cfg: Dict[str, object] | None = None) -> str:
     """Where the three per-stream files go. Same precedence as the log file;
     a relative value resolves against the repo root; empty disables."""
     from pathlib import Path
-    root = Path(__file__).resolve().parents[4]
+    # Same flattened-image guard as _resolve_log_file above: in the container
+    # parents[4] does not exist and would raise IndexError at import time.
+    _up = Path(__file__).resolve().parents
+    root = _up[4] if len(_up) > 4 and _up[3].name == "agents" else _up[2]
     raw = os.environ.get("LQABR_SUMMARY_LOG_DIR")
     if raw is None:
         raw = str(_cfg(cfg or {}, "logging", "dir", "logs/summary"))
@@ -143,6 +156,12 @@ class Settings:
     #: "blog_summary" -> upsert_blog_summary{subject, blog_summary, blog_published_at,
     #: blog_industry}, the FastMCP central server's blog writer (keyed on blog_published_at).
     mcp_write_style: str = "patch"
+
+    #: The portal's blog_industry dropdown, character-for-character. Used to
+    #: normalise the model's free-text industry to a value HubSpot will accept.
+    #: Override with LQABR_SUMMARY_HUBSPOT_INDUSTRY_OPTIONS when the portal changes.
+    hubspot_industry_options: Tuple[str, ...] = (
+        "FINANCIAL_SERVICES", "LEGAL_SERVICES", "HEALTHCARE")
     mcp_assert_tools: bool = True
     #: What a failed startup discovery does. `warn` logs and keeps
     #: serving (the MCP container scales to zero, so being asleep at
@@ -215,6 +234,9 @@ class Settings:
             mcp_tool_write=_str("LQABR_SUMMARY_MCP_TOOL_WRITE", "post_patch_crm"),
             mcp_tool_list_leads=_str("LQABR_SUMMARY_MCP_TOOL_LIST_LEADS", "list_trigger_leads"),
             mcp_write_style=_str("LQABR_SUMMARY_MCP_WRITE_STYLE", "patch").lower(),
+            hubspot_industry_options=tuple(_list(
+                "LQABR_SUMMARY_HUBSPOT_INDUSTRY_OPTIONS",
+                ("FINANCIAL_SERVICES", "LEGAL_SERVICES", "HEALTHCARE"))),
             mcp_assert_tools=_bool("LQABR_SUMMARY_MCP_ASSERT_TOOLS", True),
             mcp_startup_check=_str("LQABR_SUMMARY_MCP_STARTUP_CHECK", "warn").lower(),
             mcp_arg_object_id=_str("LQABR_SUMMARY_MCP_ARG_OBJECT_ID", "objectId"),

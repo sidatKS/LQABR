@@ -504,6 +504,7 @@ INFO:     Started server process [7]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+<<<<<<< HEAD
 INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 200 OK
 INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 202 Accepted
 INFO:     172.17.0.1:52706 - "POST /mcp HTTP/1.1" 200 OK
@@ -513,3 +514,5 @@ INFO:     172.17.0.1:47776 - "POST /mcp HTTP/1.1" 200 OK
 {"ts": "2026-08-26T12:38:47.861+00:00", "log": "process", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "blog_validate_pass", "summary_ref_id": "summary-5cac4e1f-d2fb-42b5-806f-ce2e5323300e", "blog_industry": "FINANCIAL_SERVICES", "blog_published_at": "2026-08-25T11:00:00.000Z"}
 {"ts": "2026-08-26T12:39:17.225+00:00", "log": "audit", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "secret_manager_access", "endpoint": "projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest", "method": "AccessSecretVersion", "outcome": "error", "duration_ms": 30236.45, "error": "SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
 {"ts": "2026-08-26T12:39:17.225+00:00", "log": "process", "run_id": "909bbc8e-9387-48c7-9e28-d33b7b2003d1", "agent": "mcp_client", "event": "mcp_systemic_failure", "summary_ref_id": "summary-5cac4e1f-d2fb-42b5-806f-ce2e5323300e", "reason": "AuthConfigError: SecretAccessError: could not read projects/ldqfingsrv-dev/secrets/lqabr-hubspot-access-token/versions/latest: RetryError: Timeout of 60.0s exceeded, last exception: 503 Getting metadata from plugin failed with error: Reauthentication is needed. Please run `gcloud auth application-default login` to reauthenticate.. Check that the runtime service account has roles/secretmanager.secretAccessor on this secret."}
+=======
+>>>>>>> f3f9739e949236da954776fd33582267ffea0670

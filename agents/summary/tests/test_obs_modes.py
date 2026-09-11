@@ -13,7 +13,7 @@ import logging
 
 import pytest
 
-from summary_core.obs import (ConsoleFormatter, Observability, current_mode,
+from summary_core.summary_logging import (ConsoleFormatter, SummaryLogging, current_mode,
                               redact, set_mode)
 
 
@@ -71,7 +71,7 @@ def test_the_mode_comes_off_settings(monkeypatch):
 
 def test_configure_logging_sets_the_mode(tmp_path):
     import logging
-    from summary_core.obs import STREAMS, configure_logging
+    from summary_core.summary_logging import STREAMS, configure_logging
     root = logging.getLogger("lqabr.summary")
     root.handlers.clear()
     for stream in STREAMS:
@@ -98,7 +98,7 @@ def test_debug_spills_an_audit_hop_instead_of_one_giant_line():
     logger.addHandler(sink)
 
     body = "X" * 4000
-    Observability(run_id="res-hop", logger=logger).hop(
+    SummaryLogging(run_id="res-hop", logger=logger).hop(
         service="mcp", endpoint="http://localhost:8080/mcp", status=200,
         duration_ms=1.0, attempt=2,
         params={"tool": "upsert", "authorization": "Bearer NEVER", "note": body})

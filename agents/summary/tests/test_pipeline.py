@@ -55,7 +55,7 @@ class TestHappyPath:
         assert response.hubspot.status == "written"
         properties = mcp.tool_calls[0]["params"]["arguments"]["properties"]
         assert "It shipped." in properties["blog_summary"]
-        assert properties["blog_industry"] == "Software"
+        assert properties["blog_industry"] == "SOFTWARE"   # normalised to the portal enum form
 
     def test_raw_json_input_takes_the_same_path(self, settings):
         mcp = FakeMCPSession()
@@ -158,5 +158,5 @@ class TestFailuresAreAttributed:
                                                  properties={"source_url": "https://x"})),
             settings=settings, hubspot=hubspot_for(mcp, settings), completion=model())
         properties = mcp.tool_calls[0]["params"]["arguments"]["properties"]
-        assert properties["blog_industry"] == "Fintech"
+        assert properties["blog_industry"] == "FINTECH"    # normalised to the portal enum form
         assert properties["source_url"] == "https://x"

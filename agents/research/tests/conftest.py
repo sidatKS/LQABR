@@ -18,10 +18,19 @@ def _clean_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith("LQABR_RESEARCH_") or key == "ANTHROPIC_API_KEY":
             monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("LQABR_RESEARCH_LOG_FILE", "")
     # ...and no test run leaks INTO the real log directory. Empty means
     # console only; a sink test that wants files passes its own tmp dir.
     monkeypatch.setenv("LQABR_RESEARCH_LOG_DIR", "")
+    # research_logging.configure_logging() is now the ONLY logging
+    # module wired into src/ — every boot (agent.py, service_app.py's
+    # lifespan) calls it unconditionally. Left enabled, it builds a real
+    # gRPC channel to localhost:4317 with no collector listening, which
+    # blocked `TestClient(app)` inside `lifespan()` indefinitely — the exact
+    # thing "the suite never reaches the network" exists to prevent. A test
+    # that specifically wants the OTLP path (tests/test_log_export.py) turns
+    # this back on itself, with `_otlp_handler` mocked so it still never
+    # touches a socket.
+    monkeypatch.setenv("LQABR_RESEARCH_OTLP_ENABLED", "0")
     yield
 
 

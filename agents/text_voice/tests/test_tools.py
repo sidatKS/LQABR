@@ -52,7 +52,7 @@ class FakeSession:
 
 
 def _lead(**overrides):
-    from lqabr_core.types import VoiceLead
+    from text_voice_core.types import VoiceLead
     base = dict(
         employee_id="E1", object_id="123", phone_number="+15550001111",
         full_name="Jane Smith", job_title="VP", company_name="Acme",
@@ -151,7 +151,7 @@ def test_vapi_client_audit_logs_every_attempt(tv_tools, monkeypatch):
     the `obs.log_http_out` call directly (rather than parsing captured stdout)
     sidesteps `observability.configure()`'s one-time-per-process handler setup,
     which is idempotent by design and so cannot be re-armed mid-suite."""
-    from lqabr_core import observability as obs
+    from text_voice_core import observability as obs
     calls = []
     monkeypatch.setattr(obs, "log_http_out", lambda *a, **kw: calls.append((a, kw)))
     client, _ = make_vapi_client(tv_tools, [FakeResponse(200, {"id": "call-4"})])
@@ -166,7 +166,7 @@ def test_vapi_client_audit_logs_every_attempt(tv_tools, monkeypatch):
 
 
 def test_vapi_client_audit_logs_each_retry_attempt_number(tv_tools, monkeypatch):
-    from lqabr_core import observability as obs
+    from text_voice_core import observability as obs
     calls = []
     monkeypatch.setattr(obs, "log_http_out", lambda *a, **kw: calls.append(kw))
     client, _ = make_vapi_client(tv_tools, [FakeResponse(500), FakeResponse(200, {"id": "x"})])

@@ -1,0 +1,95 @@
+# LQABR collector — LOCAL config. Files only; no external backends.
+#
+# Three files, one per signal:
+#   logs/otel/otel-logs.jsonl
+#   logs/otel/otel-traces.jsonl
+#   logs/otel/otel-metrics.jsonl
+# Split by stream when you need it — every record carries `log_group`:
+#
+#     jq -c 'select(.attributes["log_group"]=="audit")' logs/otel/otel-logs.jsonl
+#
+# Loki / Tempo / Prometheus exporters removed: nothing listens for them
+# locally, so they only produced connection-refused retries. Add back when
+# those services are actually running.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 65
+    spike_limit_percentage: 20
+
+  transform:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # PARTIAL MASKING.
+          #   email -> keep the FIRST 4 chars:  johnXXXX@XXXX.XXX
+          #   phone -> keep the LAST  4 digits: xxx-xxx-4995
+          #
+          # `$${1}` not `$$1`: the collector expands ${...} for env vars so a
+          # literal $ is doubled, AND Go's regexp expansion reads `$1XXXX` as
+          # a group NAMED "1XXXX" - undefined, so it substitutes empty and the
+          # first four characters vanish. The braces are load-bearing.
+          #
+          # Every rule runs twice: on `body` (a string) and across every value
+          # in `attributes`, which is where the agent's data actually lives.
+
+          # -- email ---------------------------------------------------------
+          - replace_pattern(body, "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+          - replace_all_patterns(attributes, "value", "([a-zA-Z0-9_.+-]{1,4})[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+", "$${1}XXXX@XXXX.XXX")
+
+          # -- phone: international, parentheses allowed  +1 (469) 887-4995 --
+          - replace_pattern(body, "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\+\\d{1,3}[\\s.-]?\\(?\\d{2,5}\\)?[\\s.-]?\\d{2,4}[\\s.-]?(\\d{4})\\b", "+xx-xxx-$${1}")
+
+          # -- phone: national, with or without parens  (469) 887-4995 -------
+          - replace_pattern(body, "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+          - replace_all_patterns(attributes, "value", "\\(?\\b\\d{3}\\)?[\\s.-]\\d{3}[\\s.-](\\d{4})\\b", "xxx-xxx-$${1}")
+
+          # -- phone: bare 10-digit mobile starting 6-9  9876543210 ----------
+          # NOTE: also matches any bare 10-digit id in that range. Your HubSpot
+          # ids are 12 digits so they are safe today; drop this pair if you add
+          # a 10-digit identifier.
+          - replace_pattern(body, "\\b[6-9]\\d{5}(\\d{4})\\b", "xxxxxx$${1}")
+          - replace_all_patterns(attributes, "value", "\\b[6-9]\\d{5}(\\d{4})\\b", "xxxxxx$${1}")
+
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  debug:
+    verbosity: normal 
+  file/logs:
+    path: /var/log/otel/otel-logs.jsonl
+    rotation: {max_megabytes: 50, max_backups: 5}
+  file/traces:
+    path: /var/log/otel/otel-traces.jsonl
+    rotation: {max_megabytes: 50, max_backups: 5}
+  file/metrics:
+    path: /var/log/otel/otel-metrics.jsonl
+    rotation: {max_megabytes: 50, max_backups: 5}
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform, batch]
+      exporters: [file/logs, debug]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [file/traces, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [file/metrics]

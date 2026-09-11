@@ -10,7 +10,7 @@ export PROJECT_ID="ldqfingsrv-dev"          # CHANGE ME
 export REGION="us-central1"                      # CHANGE ME if needed
 
 # ── Service accounts ─────────────────────────────────────────
-export AGENT_SA_NAME="lqabr-agent-runtime"
+export AGENT_SA_NAME="lqabr-agent-dev"   # was lqabr-agent-runtime, which does not exist (RunBook P9)
 export AGENT_SA="${AGENT_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # ── Artifact Registry ────────────────────────────────────────

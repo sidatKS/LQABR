@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from research_core.obs import (Observability, STREAMS, configure_logging,
+from research_core.research_logging import (ResearchLogging, STREAMS, configure_logging,
                                sink_state)
 
 FILES = ("research_process.log", "research_audit.log", "research_system.log")
@@ -32,13 +32,13 @@ def _clean_handlers():
     _fresh()
 
 
-def _one_of_each(run_id: str = "res-sink") -> Observability:
-    obs = Observability(run_id=run_id)
-    obs.process.emit("run_start", objectId="1")
-    obs.hop(service="mcp", endpoint="http://localhost:8080/mcp", status=200,
+def _one_of_each(run_id: str = "res-sink") -> ResearchLogging:
+    run_log = ResearchLogging(run_id=run_id)
+    run_log.process.emit("run_start", objectId="1")
+    run_log.outbound_call(service="mcp", endpoint="http://localhost:8080/mcp", status=200,
             duration_ms=7.0)
-    obs.system.emit("service_start", service="lqabr-research-agent")
-    return obs
+    run_log.system.emit("service_start", service="lqabr-research-agent")
+    return run_log
 
 
 class _Recorder(logging.Handler):
@@ -46,7 +46,7 @@ class _Recorder(logging.Handler):
 
     Two jobs: it proves child records propagate up (which is what keeps the
     console a single narrative), and it catches the sink's own warnings —
-    `log_sink_legacy`, `log_sink_unavailable`, `log_rotate_failed` — which are
+    `log_sink_unavailable`, `log_export_disabled` — which are
     emitted during configure_logging itself, before any test could look at
     stdout. Because the parent then already has a handler, configure_logging
     adds no console handler and stdout stays clean.
@@ -112,8 +112,10 @@ def test_the_parent_still_receives_all_three(tmp_path):
     recorder = _recording()
     configure_logging("INFO", str(tmp_path), "json")
     _one_of_each()
-    assert sorted(r["stream"] for r in recorder.events()) == ["audit", "process",
-                                                              "system"]
+    # Only this run's records: configure_logging also emits its own sink notes
+    # (log_export_disabled, log_sink_otlp) under a run id it mints itself.
+    mine = [r for r in recorder.events() if r["run_id"] == "res-sink"]
+    assert sorted(r["stream"] for r in mine) == ["audit", "process", "system"]
 
 
 def test_an_empty_log_dir_writes_nothing_and_raises_nothing(tmp_path):
@@ -122,7 +124,8 @@ def test_an_empty_log_dir_writes_nothing_and_raises_nothing(tmp_path):
     _one_of_each()
     assert list(tmp_path.iterdir()) == []
     assert sink_state()["files"] == {}
-    assert len(recorder.events()) == 3, "the streams still flow, file-less"
+    mine = [r for r in recorder.events() if r["run_id"] == "res-sink"]
+    assert len(mine) == 3, "the streams still flow, file-less"
 
 
 def _really_unwritable(path) -> bool:
@@ -166,16 +169,6 @@ def test_an_unwritable_dir_degrades_and_names_itself(tmp_path):
         blocked.chmod(0o700)
 
 
-def test_the_deprecated_log_file_still_works_and_announces_itself(tmp_path):
-    legacy = tmp_path / "agent.log"
-    recorder = _recording()
-    configure_logging("INFO", "", "json", log_file=str(legacy))
-    _one_of_each()
-    announcement = [e for e in recorder.events() if e.get("event") == "log_sink_legacy"]
-    assert announcement and announcement[0]["path"] == str(legacy)
-    assert sorted({r["stream"] for r in _records(legacy)}) == ["audit", "process", "system"]
-
-
 def test_every_line_of_every_file_parses_as_json(tmp_path):
     configure_logging("INFO", str(tmp_path), "json")
     _one_of_each()
@@ -185,35 +178,7 @@ def test_every_line_of_every_file_parses_as_json(tmp_path):
                 json.loads(line)
 
 
-def test_a_small_ceiling_rolls_over_and_the_live_file_keeps_its_name(tmp_path):
-    configure_logging("INFO", str(tmp_path), "json", max_bytes=400, backups=2)
-    obs = Observability(run_id="res-roll")
-    for n in range(12):
-        obs.process.emit("run_start", objectId=str(n), filler="x" * 60)
-    names = sorted(p.name for p in tmp_path.iterdir())
-    assert "research_process.log" in names, "the live file keeps the exact name"
-    assert "research_process.log.1" in names
-
-
-def test_a_rollover_that_raises_is_reported_once_and_writing_continues(tmp_path,
-                                                                      monkeypatch):
-    """WinError 32: another handle holds the file. Uncaught, this spams stderr
-    on every subsequent emit. Observability must never kill a run."""
-    import research_core.obs as obs_module
-
-    def _boom(self):
-        raise PermissionError(32, "used by another process")
-
-    monkeypatch.setattr(obs_module.RotatingFileHandler, "doRollover", _boom)
-    recorder = _recording()
-    configure_logging("INFO", str(tmp_path), "json", max_bytes=300, backups=1)
-    obs = Observability(run_id="res-boom")
-    for n in range(10):
-        obs.process.emit("run_start", objectId=str(n), filler="y" * 60)
-
-    failures = [e for e in recorder.events() if e.get("event") == "log_rotate_failed"]
-    assert len(failures) == 1, "reported once, not on every subsequent emit"
-    assert failures[0]["sink"] == "process" and failures[0]["reason"]
-    written = _records(tmp_path / "research_process.log")
-    assert len(written) == 10, "every record still reached the file"
-    assert sink_state()["degraded"] == ["process:rotate"]
+# The two rotation tests that lived here are gone with the behaviour they
+# covered: the per-stream files are plain and uncapped — one fixed name each,
+# no size cap, no backups, no day sweep. `test_file_grows_uncapped_no_rotation`
+# in test_log_export.py is what asserts that now.

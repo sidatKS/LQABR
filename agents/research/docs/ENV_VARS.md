@@ -76,10 +76,6 @@ Leave a variable unset to take the config map. Names only in `.env.example`.
 | `LQABR_RESEARCH_LOG_DIR` | `logs/research` — where the three per-stream files go (relative → repo root; absolute honoured; **empty disables file logging**) |
 | `LQABR_RESEARCH_LOG_MODE` | `normal` (`terse` \| `normal` \| `debug`) — how much of a value reaches the log. See the caution below |
 | `LQABR_RESEARCH_LOG_FORMAT` | `auto` (`auto` \| `text` \| `json`) — console shape only; the FILES are always JSON |
-| `LQABR_RESEARCH_LOG_MAX_BYTES` | `52428800` — 50 MB before a stream's file rolls over; `0` = never |
-| `LQABR_RESEARCH_LOG_BACKUPS` | `5` — `research_process.log.1` … `.5`; the live file keeps its exact name |
-| `LQABR_RESEARCH_LOG_FILE` | *(unset)* — **deprecated.** Set it and all three streams share one file; the boot emits `log_sink_legacy` naming it |
-| `LQABR_RESEARCH_LOG_DETAIL` | *(unset)* — **deprecated alias.** `0` → `terse`, `1` → `normal`, and the boot emits `log_detail_deprecated` |
 
 ### The three log files
 

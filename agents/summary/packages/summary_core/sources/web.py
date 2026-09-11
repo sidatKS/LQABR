@@ -11,7 +11,7 @@ from typing import Optional
 
 import requests
 
-from ..obs import Observability
+from ..summary_logging import SummaryLogging
 from ..settings import Settings
 from ..types import NormalizedDocument, SourceSpec
 from . import html as html_extract
@@ -20,7 +20,7 @@ from .base import register, request, truncate
 
 def fetch_url(spec: SourceSpec, settings: Settings, *,
               session: Optional[requests.Session] = None,
-              obs: Observability | None = None) -> NormalizedDocument:
+              obs: SummaryLogging | None = None) -> NormalizedDocument:
     response = request(
         "GET", str(spec.url), settings=settings, session=session, obs=obs,
         headers={"User-Agent": html_extract.BROWSER_UA},

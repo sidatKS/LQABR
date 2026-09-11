@@ -84,12 +84,6 @@ logging:
   # note, full call arguments. Credentials stay redacted in every mode, but do
   # not run debug on a shared box.
   mode: normal
-  # Bytes before a stream's file rolls over; 0 = never.
-  max_bytes: 52428800
-  backups: 5
-  # DEPRECATED single-file sink. Setting it puts all three streams back in one
-  # file and the boot emits `log_sink_legacy`. Left unset on purpose.
-  # file: ""
   level: INFO
   # auto = readable text when stdout is a terminal, JSON when it is not.
   # The log FILE is always JSON, whatever this says.

@@ -59,7 +59,7 @@ def _from_secret_manager(secret_name: str, project: str) -> Optional[str]:
 
 
 def resolve_secret(secret_name: str, *, settings: Optional[Settings] = None,
-                   obs=None) -> str:
+                   run_log=None) -> str:
     """The secret's value, or SecretError naming where it was looked for."""
     settings = settings or get_settings()
     source = (settings.secrets_source or "auto").lower()
@@ -67,8 +67,8 @@ def resolve_secret(secret_name: str, *, settings: Optional[Settings] = None,
     project = settings.gcp_project or os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 
     def _emit(where: str) -> None:
-        if obs is not None:
-            obs.process.emit("secret_resolved", secret=secret_name, source=where)
+        if run_log is not None:
+            run_log.process.emit("secret_resolved", secret=secret_name, source=where)
 
     if source in ("env", "auto"):
         value = os.environ.get(env_name, "").strip()

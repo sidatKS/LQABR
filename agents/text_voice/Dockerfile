@@ -37,6 +37,10 @@ ENV AGENT_DIR=text_voice \
 
 WORKDIR /app
 
+# Non-root runtime user, uid 1001 / `agent` — same identity as every other
+# LQABR image (see infra/gcp/cloud-run/Dockerfile and agents/summary/Dockerfile).
+RUN useradd --create-home --uid 1001 agent
+
 # Shared core first (better layer caching), then the agent itself.
 COPY packages/lqabr_core packages/lqabr_core
 RUN pip install --no-cache-dir ./packages/lqabr_core
@@ -49,5 +53,8 @@ RUN pip install --no-cache-dir -r agents/text_voice/requirements.txt
 COPY infra/gcp/cloud-run/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER nobody
+# Everything COPYed above is root-owned; hand the app tree to the runtime user.
+RUN chown -R agent:agent /app
+
+USER agent
 ENTRYPOINT ["/entrypoint.sh"]

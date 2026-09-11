@@ -16,7 +16,7 @@ import os
 import time
 from typing import Any, List, Optional
 
-from ..obs import (Observability, debugging, get_obs, preview, redact,
+from ..research_logging import (ResearchLogging, debugging, get_run_log, preview, redact,
                    summarize_args)
 from ..secrets import SecretError, resolve_secret
 from ..settings import Settings, get_settings
@@ -86,11 +86,11 @@ class AnthropicWebSearch:
     name = "anthropic"
 
     def __init__(self, settings: Settings | None = None, *,
-                 client: Any = None, obs: Observability | None = None,
+                 client: Any = None, run_log: ResearchLogging | None = None,
                  api_key: Optional[str] = None,
                  tool_type: str = DEFAULT_TOOL_TYPE) -> None:
         self._settings = settings or get_settings()
-        self._obs = obs or get_obs()
+        self._run_log = run_log or get_run_log()
         self._tool_type = os.environ.get("LQABR_RESEARCH_SEARCH_TOOL_TYPE", tool_type).strip()
         self._client = client
         self._api_key = api_key
@@ -123,7 +123,7 @@ class AnthropicWebSearch:
 
         override = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if override:
-            self._obs.process.emit(
+            self._run_log.process.emit(
                 "secret_resolved", secret=self._settings.model_token_secret,
                 source="env:ANTHROPIC_API_KEY",
                 note="environment override — Secret Manager was not consulted")
@@ -131,7 +131,7 @@ class AnthropicWebSearch:
 
         try:
             return resolve_secret(self._settings.model_token_secret,
-                                  settings=self._settings, obs=self._obs)
+                                  settings=self._settings, run_log=self._run_log)
         except SecretError as exc:
             # A missing model credential is a research failure with a reason,
             # not a stack trace: the caller reports it against the lead.
@@ -224,7 +224,7 @@ class AnthropicWebSearch:
 
         payload, dropped = _supported_kwargs(client.messages.create, payload)
         if dropped:
-            self._obs.process.emit("search_kwargs_dropped", dropped=dropped,
+            self._run_log.process.emit("search_kwargs_dropped", dropped=dropped,
                                    reason="this anthropic SDK version does not "
                                           "accept them; the call proceeds without")
 
@@ -232,7 +232,7 @@ class AnthropicWebSearch:
         # the system prompt and the user prompt — follow as length-marked
         # previews rather than in full: enough to see what was asked, never a
         # 4,000-character block in the middle of a run.
-        self._obs.process.emit(
+        self._run_log.process.emit(
             "model_request", model=model, max_tokens=payload.get("max_tokens"),
             search_enabled=settings.search_enabled,
             search_tool=tool.get("type") if settings.search_enabled else "",
@@ -271,7 +271,7 @@ class AnthropicWebSearch:
             message = client.messages.create(**payload)
         except Exception as exc:  # noqa: BLE001 - surfaced as SearchError with the step named
             duration = round((time.monotonic() - started) * 1000, 1)
-            self._obs.hop(service="anthropic", endpoint="messages.create",
+            self._run_log.outbound_call(service="anthropic", endpoint="messages.create",
                           error=str(exc), duration_ms=duration, params=sent)
             raise SearchError(f"the web-search model call failed "
                               f"({type(exc).__name__}): {exc}") from exc
@@ -282,13 +282,13 @@ class AnthropicWebSearch:
         # answering "what did that call cost" meant joining audit to process on
         # run_id and ordering.
         usage = _usage(message)
-        self._obs.hop(service="anthropic", endpoint="messages.create",
+        self._run_log.outbound_call(service="anthropic", endpoint="messages.create",
                       status=200, duration_ms=duration, params=sent, usage=usage)
 
         text, sources, searches = self._collect(message)
         # The reply, before it is judged: token cost, why it stopped, how many
         # searches it really ran, and the head of what it wrote back.
-        self._obs.process.emit(
+        self._run_log.process.emit(
             "model_response", model=model, duration_ms=duration,
             stop_reason=_field(message, "stop_reason", "") or "",
             # Kept on process for ONE release alongside the new audit fields.

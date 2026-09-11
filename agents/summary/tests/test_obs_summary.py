@@ -1,6 +1,6 @@
 """Phase 4 — summary reaches parity with research.
 
-`summary_core/obs.py` is a deliberate COPY of research's, not an import: see
+`summary_core/summary_logging.py` is a deliberate COPY of research's, not an import: see
 the header of either file, and `test_standalone.py`, which exists to keep the
 two agents unable to break each other.
 
@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from summary_core.obs import (ConsoleFormatter, Observability, STREAMS,
+from summary_core.summary_logging import (ConsoleFormatter, SummaryLogging, STREAMS,
                               _GLYPHS_UNICODE, configure_logging, current_mode,
                               preview, redact, set_mode, summarize_args)
 
@@ -56,7 +56,7 @@ def _obs(name: str):
     logger.setLevel(logging.INFO)
     sink = _Rows()
     logger.addHandler(sink)
-    return Observability(run_id="sum-parity", logger=logger), sink
+    return SummaryLogging(run_id="sum-parity", logger=logger), sink
 
 
 # --- CHANGED BEHAVIOUR 1: the redactor blanked a credential's NAME --------
@@ -88,7 +88,7 @@ def test_a_credential_nested_in_a_bag_is_still_blanked():
 
 def test_service_start_lands_on_the_system_stream(tmp_path):
     configure_logging("INFO", str(tmp_path), "json")
-    Observability(run_id="sum-boot").system.emit("service_start",
+    SummaryLogging(run_id="sum-boot").system.emit("service_start",
                                                  service="lqabr-summary-agent")
     system = [json.loads(line) for line in
               (tmp_path / "summary_system.log").read_text(encoding="utf-8").splitlines()
@@ -168,7 +168,7 @@ def test_no_console_line_exceeds_the_width_in_any_mode(mode, width):
 
     sink = _Sink()
     logger.addHandler(sink)
-    Observability(run_id="sum-w", logger=logger).process.emit(
+    SummaryLogging(run_id="sum-w", logger=logger).process.emit(
         "model_call", model="gemini-2.5-flash", attempt=1,
         params={"temperature": 0.2, "max_tokens": 2000},
         summary_preview=preview(MULTILINE))
@@ -195,9 +195,9 @@ def test_an_unknown_mode_falls_back_rather_than_raising():
 
 def test_both_obs_files_say_why_they_are_copies():
     from pathlib import Path
-    here = Path(__file__).resolve().parents[1] / "packages" / "summary_core" / "obs.py"
+    here = Path(__file__).resolve().parents[1] / "packages" / "summary_core" / "summary_logging.py"
     there = (Path(__file__).resolve().parents[2] / "research" / "packages"
-             / "research_core" / "obs.py")
+             / "research_core" / "research_logging.py")
     for path in (here, there):
         text = path.read_text(encoding="utf-8")
         assert "deliberate copy" in text, f"{path.name} does not say why"
